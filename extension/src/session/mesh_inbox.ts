@@ -110,9 +110,10 @@ export class MeshInbox {
     this.cap = cap
   }
 
-  /** Store a delivered message + notify any matching waiter. Dedups by id. */
-  add(msg: MeshMessage): void {
-    if (this.messages.has(msg.id)) return
+  /** Store a delivered message + notify any matching waiter. Dedups by id:
+   *  returns false for a message already stored (a redelivery). */
+  add(msg: MeshMessage): boolean {
+    if (this.messages.has(msg.id)) return false
     this.messages.set(msg.id, msg)
     this.order.push(msg.id)
     // bound: drop the oldest past the cap
@@ -130,6 +131,7 @@ export class MeshInbox {
         w.resolve(msg)
       }
     }
+    return true
   }
 
   /** Fetch a single message by id (null if absent). */
@@ -236,4 +238,11 @@ export class MeshInbox {
   get size(): number {
     return this.messages.size
   }
+}
+
+/** Whether an envelope's `to` names the agent at `me`: the address itself,
+ *  or behind a relay label (`<relay>:<address>`). */
+export function _addressMatches(to: string, me: string | undefined | null): boolean {
+  if (!me) return false
+  return to === me || to.endsWith(`:${me}`)
 }

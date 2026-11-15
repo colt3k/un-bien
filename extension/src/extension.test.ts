@@ -939,6 +939,21 @@ describe("agent-network mesh delivery", () => {
     harness.handler("agent_end")({ type: "agent_end" })
     await new Promise<void>((resolve) => setTimeout(resolve, 5))
   })
+
+  test("a message delivered twice (two routes) reaches the agent once", async () => {
+    const harness = captureEventHarness()
+    const sendMessage = vi.fn()
+    _setPiForTest({ sendMessage, sendUserMessage: () => undefined })
+    const env = { id: "mesh-dup-1", from: "/work/repo@reviewer", re: null, body: "hello" }
+    _deliverMeshMessageToAgentForTest(env)
+    _deliverMeshMessageToAgentForTest({ ...env })
+    await new Promise<void>((resolve) => setTimeout(resolve, 5))
+    const delivered = sendMessage.mock.calls.filter(([m]) =>
+      String((m as { content?: unknown }).content).includes("mesh-dup-1"))
+    expect(delivered).toHaveLength(1)
+    harness.handler("agent_end")({ type: "agent_end" })
+    await new Promise<void>((resolve) => setTimeout(resolve, 5))
+  })
 })
 
 // ── user_input mirroring (local terminal / RPC) ───────────────────────────────

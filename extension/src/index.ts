@@ -73,7 +73,7 @@ import { envLog } from "./session/debug_log.js"
 import { chainUiNotify, notifyOwners, setOwnerNotifyHook } from "./session/owner_notify.js"
 import { roomIdForSession } from "./rooms.js"
 import { registerAgentTools } from "./session/tools.js"
-import { MeshInbox, type MeshMessage } from "./session/mesh_inbox.js"
+import { MeshInbox, _addressMatches, type MeshMessage } from "./session/mesh_inbox.js"
 import {
   formatPeerInventoryDetailed,
   type RosterInfo,
@@ -1113,7 +1113,9 @@ const relayDeps: RelayLifecycleDeps = {
           // WITHOUT needing the cross-PC bridge (BrokerRemote).
           if (frame.type === "pi_envelope_in" && frame.envelope) {
             const env = frame.envelope as { from?: string; to?: string; body?: unknown; id?: string; re?: string | null }
-            if (env.id && env.from && env.to) {
+            // Addressed to a MACHINE (the relay hands it to every pi
+            // connection there): deliver only the one meant for this agent.
+            if (env.id && env.from && env.to && _isAddressedToThisAgent(env.to)) {
               _deliverMeshMessageToAgent(env as MeshEnvelope)
             }
           }
@@ -2395,7 +2397,12 @@ function _deliverMeshMessageToAgent(env: MeshEnvelope): void {
     sentAt: Date.now(),
     deliveredAt: null,
   }
-  _meshInbox.add(message)
+  // A message already delivered (it reached this agent by two routes, e.g.
+  // the relay and the cross-PC bridge) is not pushed into the turn again.
+  if (!_meshInbox.add(message)) {
+    console.error(`[un-bien] agent-network message ${env.id} from "${env.from}" already delivered — ignored`)
+    return
+  }
   try {
     _pi?.events?.emit("un-bien:message_received", { message })
   } catch {
@@ -2403,6 +2410,14 @@ function _deliverMeshMessageToAgent(env: MeshEnvelope): void {
   }
   _pendingMeshMessages.push(env)
   _scheduleMeshMessageDrain()
+}
+
+/** Whether a federated envelope's `to` names this agent: its mesh address,
+ *  or that address behind a relay label (`<relay>:<address>`, the form the
+ *  federated peer list hands senders). */
+function _isAddressedToThisAgent(to: string): boolean {
+  const me = _meshNode?.address()
+  return _addressMatches(to, me)
 }
 
 // ── routeClientMessage ────────────────────────────────────────────────────────
