@@ -6,20 +6,9 @@
  */
 import { describe, expect, test, vi, beforeEach, afterEach } from "vitest"
 import { EventEmitter } from "node:events"
-import { createHash } from "node:crypto"
-import {
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from "node:fs"
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { basename, dirname, join } from "node:path"
-import { fileURLToPath } from "node:url"
-import { getCapabilities, setCapabilities } from "@earendil-works/pi-tui"
+import { join } from "node:path"
 import { roomIdForSession } from "./rooms.js"
 import type {
   ExtensionAPI,
@@ -304,24 +293,6 @@ beforeEach(() => {
 })
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function makeMockPi(): { pi: ExtensionAPI; registeredCommands: string[] } {
-  const registeredCommands: string[] = []
-  const pi = {
-    on: () => undefined,
-    registerCommand(name: string, _opts: unknown) {
-      registeredCommands.push(name)
-    },
-    registerTool: () => undefined,
-    registerShortcut: () => undefined,
-    registerFlag: () => undefined,
-    getFlag: () => undefined,
-    registerMessageRenderer: () => undefined,
-    sendMessage: () => undefined,
-    sendUserMessage: () => undefined,
-  } as unknown as ExtensionAPI
-  return { pi, registeredCommands }
-}
 
 function makeMockCtx(cwd = "/home/user/projects/remote_pi") {
   return { ui: { notify: vi.fn() }, cwd, abort: vi.fn() }
@@ -1042,55 +1013,6 @@ function captureEventHarness(): {
     },
     busListenerCount(channel: string) {
       return busHandlers.get(channel)?.length ?? 0
-    },
-  }
-}
-
-function captureMessageRenderer(): {
-  getRenderer(): (
-    message: { details?: unknown },
-    options: unknown,
-    theme: unknown,
-  ) => unknown
-} {
-  let renderer:
-    | ((
-        message: { details?: unknown },
-        options: unknown,
-        theme: unknown,
-      ) => unknown)
-    | undefined
-  const pi = {
-    on() {
-      /* no-op */
-    },
-    registerCommand: () => undefined,
-    registerTool: () => undefined,
-    registerShortcut: () => undefined,
-    registerFlag: () => undefined,
-    getFlag: () => undefined,
-    registerMessageRenderer(type: string, callback: unknown) {
-      if (type === "un-bien:received-image") {
-        renderer = callback as (
-          message: { details?: unknown },
-          options: unknown,
-          theme: unknown,
-        ) => unknown
-      }
-    },
-    sendMessage: () => undefined,
-    sendUserMessage: () => undefined,
-  } as unknown as ExtensionAPI
-  ;(extension as ExtensionFactory)(pi)
-  if (!renderer) throw new Error("custom image renderer not registered")
-  return {
-    getRenderer(): (
-      message: { details?: unknown },
-      options: unknown,
-      theme: unknown,
-    ) => unknown {
-      if (!renderer) throw new Error("custom image renderer not registered")
-      return renderer
     },
   }
 }
