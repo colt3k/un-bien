@@ -5,6 +5,8 @@
  * dispatches, so the full relay/storage mock harness isn't needed — but
  * the helpers are verbatim copies of the ones in extension.test.ts.
  */
+// Isolates the state root (mesh broker sockets) from the live mesh; must come first.
+import "../test_support/isolated_state.js"
 import { describe, expect, test, vi } from "vitest"
 import type {
   ExtensionAPI,

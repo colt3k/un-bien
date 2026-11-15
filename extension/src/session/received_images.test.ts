@@ -7,6 +7,8 @@
  * threaded through index.ts's ImagePipelineDeps, so the extension factory is
  * the entry point.
  */
+// Isolates the state root (mesh broker sockets) from the live mesh; must come first.
+import "../test_support/isolated_state.js"
 import { describe, expect, test, vi, beforeEach } from "vitest"
 import { EventEmitter } from "node:events"
 import {

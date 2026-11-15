@@ -4,6 +4,8 @@
  * Post plano 06: no Noise XX. Pairing is `pair_request → pair_ok|pair_error`
  * over an opaque outer envelope whose `ct` is base64(JSON.stringify(inner)).
  */
+// Isolates the state root (mesh broker sockets) from the live mesh; must come first.
+import "./test_support/isolated_state.js"
 import { describe, expect, test, vi, beforeEach, afterEach } from "vitest"
 import { EventEmitter } from "node:events"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
@@ -265,7 +267,6 @@ const {
   _getCachedPublicKeyForTest,
   _hasActivePeerForTest,
   _getActivePeerCountForTest,
-  _checkSelfRevokeForTest,
   _setDisposedForTest,
   _resetAutoInitedForTest,
   _setAutoInitedForTest,

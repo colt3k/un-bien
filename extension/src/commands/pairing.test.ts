@@ -10,22 +10,17 @@
  * Post plano 06: no Noise XX. Pairing is `pair_request → pair_ok|pair_error`
  * over an opaque outer envelope whose `ct` is base64(JSON.stringify(inner)).
  */
-import { describe, expect, test, vi, beforeEach, afterEach } from "vitest"
+// Isolates the state root (mesh broker sockets) from the live mesh; must come first.
+import "../test_support/isolated_state.js"
+import { describe, expect, test, vi, beforeEach } from "vitest"
 import { EventEmitter } from "node:events"
 import { createHash } from "node:crypto"
 import {
-  mkdirSync,
   mkdtempSync,
-  readdirSync,
-  readFileSync,
   rmSync,
-  statSync,
-  writeFileSync,
 } from "node:fs"
 import { tmpdir } from "node:os"
-import { basename, dirname, join } from "node:path"
-import { fileURLToPath } from "node:url"
-import { getCapabilities, setCapabilities } from "@earendil-works/pi-tui"
+import {   join } from "node:path"
 
 // STATE-DIR ISOLATION: the allow-list version lockfile lives under the
 // un-bien state dir; without redirecting it, parallel vitest workers contend
@@ -271,32 +266,14 @@ const indexModule = await import("../index.js")
 const {
   default: extension,
   _getState,
-  _onPeerDisconnect,
-  _resetBridgeOwnersForTest,
-  _setSessionStartedAtForTest,
-  _hasPendingReconnect,
-  _setCurrentModelForTest,
   _setPiForTest,
-  _getCurrentTurnIdForTest,
   _connectForTest,
-  _startRelayForTest,
-  _getCachedPublicKeyForTest,
   _hasActivePeerForTest,
   _getActivePeerCountForTest,
   _checkSelfRevokeForTest,
-  _setDisposedForTest,
-  _resetAutoInitedForTest,
-  _setAutoInitedForTest,
-  _hasMeshNodeForTest,
-  _getLockedNameForTest,
-  _resetCwdLockForTest,
   _resetSessionsForTest,
   _seedRootSessionForTest,
-  _handleControl,
-  _deliverMeshMessageToAgentForTest,
-  CTRL_PREFIX,
 } = indexModule
-const { acquireCwdLock } = await import("../session/cwd_lock.js")
 
 // Keyed per-session state (_sessions Map + _rootSessionId) is module-global;
 // reset it at every test boundary so it can't leak across tests. NOT in
@@ -311,40 +288,8 @@ beforeEach(() => {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function makeMockPi(): { pi: ExtensionAPI; registeredCommands: string[] } {
-  const registeredCommands: string[] = []
-  const pi = {
-    on: () => undefined,
-    registerCommand(name: string, _opts: unknown) {
-      registeredCommands.push(name)
-    },
-    registerTool: () => undefined,
-    registerShortcut: () => undefined,
-    registerFlag: () => undefined,
-    getFlag: () => undefined,
-    registerMessageRenderer: () => undefined,
-    sendMessage: () => undefined,
-    sendUserMessage: () => undefined,
-  } as unknown as ExtensionAPI
-  return { pi, registeredCommands }
-}
-
 function makeMockCtx(cwd = "/home/user/projects/remote_pi") {
   return { ui: { notify: vi.fn() }, cwd, abort: vi.fn() }
-}
-
-function deferred<T>(): {
-  promise: Promise<T>
-  resolve(value: T): void
-  reject(reason?: unknown): void
-} {
-  let resolve!: (value: T) => void
-  let reject!: (reason?: unknown) => void
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res
-    reject = rej
-  })
-  return { promise, resolve, reject }
 }
 
 type CmdHandler = (
@@ -380,100 +325,15 @@ function makeInnerLine(
   return JSON.stringify({ peer, ct })
 }
 
-function decodeSentCt(raw: string): {
-  peer: string
-  inner: { type: string; [k: string]: unknown }
-} {
-  const outer = JSON.parse(raw) as { peer: string; ct: string }
-  const inner = JSON.parse(
-    Buffer.from(outer.ct, "base64").toString("utf8"),
-  ) as {
-    type: string
-    [k: string]: unknown
-  }
-  return { peer: outer.peer, inner }
-}
-
 // ── Envelope session_sync helpers (stock protocol retired) ──────────────────
 // The app now requests reconstruction as {rpc:{type:"session_sync",...}}. A bare
 // stock session_sync falls through the retired switch, so tests drive the real
 // channel path: emit an envelope frame for the paired peer and let onRpc route
 // it to _routeRpcCommandFrom.
-function emitEnvelopeSync(
-  peer: string,
-  id: string,
-  limit?: number,
-): Promise<void> {
-  relayRef.current!.emit(
-    "message",
-    JSON.stringify({
-      peer,
-      ct: Buffer.from(
-        JSON.stringify({
-          ub: {
-            type: "session_sync",
-            id,
-            ...(limit == null ? {} : { limit }),
-          },
-        }),
-      ).toString("base64"),
-    }),
-  )
-  return new Promise<void>((r) => setImmediate(r))
-}
-
 /** Decoded `{rpc}` frames from a slice of relay sends, in order. */
-function rpcFramesFrom(raws: string[]): Array<Record<string, unknown>> {
-  return raws
-    .map(decodeSentCt)
-    .map((d) => d.inner["rpc"])
-    .filter((r): r is Record<string, unknown> => !!r && typeof r === "object")
-}
-
 /** Decoded `{ub}` frames (un-bien plane) from a slice of relay sends, in order. */
-function ubFramesFrom(raws: string[]): Array<Record<string, unknown>> {
-  return raws
-    .map(decodeSentCt)
-    .map((d) => d.inner["ub"])
-    .filter((r): r is Record<string, unknown> => !!r && typeof r === "object")
-}
-
 /** The `message_end` replay frames (transcript rows) from a slice of sends. */
-function replayMessageEnds(raws: string[]): Array<{
-  role: string
-  text: string
-  id?: string
-}> {
-  return rpcFramesFrom(raws)
-    .filter((f) => f["type"] === "message_end")
-    .map((f) => {
-      const m = (f["message"] ?? {}) as Record<string, unknown>
-      // Faithful replay forwards the raw message, so user content can be a bare
-      // string (UserMessage.content: string | block[]); handle both shapes.
-      const content = m["content"]
-      const textBlock = Array.isArray(content)
-        ? (content as Array<Record<string, unknown>>).find(
-            (c) => c?.["type"] === "text",
-          )
-        : undefined
-      const text =
-        typeof content === "string"
-          ? content
-          : String(textBlock?.["text"] ?? "")
-      return {
-        role: String(m["role"] ?? ""),
-        text,
-        ...(m["id"] == null ? {} : { id: String(m["id"]) }),
-      }
-    })
-}
-
 /** The single `session_sync_end` terminator frame from a slice of sends. */
-function syncEndFrame(raws: string[]): Record<string, unknown> | undefined {
-  // session_sync_end is un-bien's own terminator on the un plane.
-  return ubFramesFrom(raws).find((f) => f["type"] === "session_sync_end")
-}
-
 const OWNER_PUBLIC_FIXTURE = Buffer.from(
   "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
   "hex",

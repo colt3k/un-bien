@@ -1,3 +1,5 @@
+// Isolates the state root (mesh broker sockets) from the live mesh; must come first.
+import "../test_support/isolated_state.js"
 import { describe, expect, test, vi } from "vitest"
 import { EventEmitter } from "node:events"
 import { mkdtempSync, readFileSync } from "node:fs"
