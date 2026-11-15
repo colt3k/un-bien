@@ -240,9 +240,23 @@ export class MeshInbox {
   }
 }
 
-/** Whether an envelope's `to` names the agent at `me`: the address itself,
- *  or behind a relay label (`<relay>:<address>`). */
-export function _addressMatches(to: string, me: string | undefined | null): boolean {
-  if (!me) return false
-  return to === me || to.endsWith(`:${me}`)
+/** Whether an envelope's `to` names this agent under any of its `names`
+ *  (its mesh address, and the `<cwd>@<name>` forms other machines build
+ *  from its room metadata): bare, or behind a relay label
+ *  (`<relay>:<name>`). */
+export function _addressMatches(to: string, names: readonly (string | undefined | null)[]): boolean {
+  return names.some((me) => Boolean(me) && (to === me || to.endsWith(`:${me}`)))
+}
+
+/** A room's mesh address as other machines see it in the relay's
+ *  federated_peer_list: `<cwd>@<name>`, the room id when it has no name. One
+ *  builder for the sender's peer list and the receiver's match, so the two
+ *  agree by construction. */
+export function _roomAddress(room: { cwd?: string; name?: string; room_id?: string }): string {
+  return `${room.cwd ?? ""}@${room.name ?? room.room_id ?? "?"}`
+}
+
+/** A federated address: a room address behind its relay's label. */
+export function _federatedAddress(relayName: string, roomAddress: string): string {
+  return `${relayName}:${roomAddress}`
 }

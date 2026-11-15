@@ -73,7 +73,13 @@ import { envLog } from "./session/debug_log.js"
 import { chainUiNotify, notifyOwners, setOwnerNotifyHook } from "./session/owner_notify.js"
 import { roomIdForSession } from "./rooms.js"
 import { registerAgentTools } from "./session/tools.js"
-import { MeshInbox, _addressMatches, type MeshMessage } from "./session/mesh_inbox.js"
+import {
+  MeshInbox,
+  _addressMatches,
+  _federatedAddress,
+  _roomAddress,
+  type MeshMessage,
+} from "./session/mesh_inbox.js"
 import {
   formatPeerInventoryDetailed,
   type RosterInfo,
@@ -1088,9 +1094,7 @@ const relayDeps: RelayLifecycleDeps = {
             for (const peer of frame.peers) {
               const relayName = peer.relay_name ?? "?"
               for (const room of peer.rooms ?? []) {
-                const cwd = room.cwd ?? ""
-                const name = room.name ?? room.room_id ?? "?"
-                addresses.push(`${relayName}:${cwd}@${name}`)
+                addresses.push(_federatedAddress(relayName, _roomAddress(room)))
               }
             }
             _remoteRelayPeers = addresses
@@ -1100,9 +1104,7 @@ const relayDeps: RelayLifecycleDeps = {
               const relayName = peer.relay_name ?? "?"
               const peerAddresses: string[] = []
               for (const room of peer.rooms ?? []) {
-                const cwd = room.cwd ?? ""
-                const name = room.name ?? room.room_id ?? "?"
-                peerAddresses.push(`${relayName}:${cwd}@${name}`)
+                peerAddresses.push(_federatedAddress(relayName, _roomAddress(room)))
               }
               detail.set(peer.epk ?? "", { relayName, addresses: peerAddresses })
             }
@@ -2412,12 +2414,20 @@ function _deliverMeshMessageToAgent(env: MeshEnvelope): void {
   _scheduleMeshMessageDrain()
 }
 
-/** Whether a federated envelope's `to` names this agent: its mesh address,
- *  or that address behind a relay label (`<relay>:<address>`, the form the
- *  federated peer list hands senders). */
+/** Whether a federated envelope's `to` names this agent. Senders build a
+ *  federated address from the room metadata the relay lists
+ *  (`<relay>:<room cwd>@<room name>`, the room id when unnamed; see the
+ *  federated_peer_list handler), which is the session's display name and
+ *  raw cwd, not necessarily its mesh address (agent name, resolved cwd):
+ *  all three forms name it. */
 function _isAddressedToThisAgent(to: string): boolean {
-  const me = _meshNode?.address()
-  return _addressMatches(to, me)
+  const st = _rootState()
+  const meta = st.myRoomMeta
+  return _addressMatches(to, [
+    _meshNode?.address(),
+    meta ? _roomAddress({ cwd: meta.cwd, name: meta.name }) : null,
+    meta && st.myRoomId ? _roomAddress({ cwd: meta.cwd, room_id: st.myRoomId }) : null,
+  ])
 }
 
 // ── routeClientMessage ────────────────────────────────────────────────────────
