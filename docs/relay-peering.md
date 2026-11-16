@@ -287,9 +287,11 @@ tail -20 ~/.local/state/un-bien/relay.log | grep -i federat
 
 ### Sending
 
-1. Agent A calls `agent_send` with `to: "hostB:/path/to/cwd@name"`; the
-   extension routes it to the federated epk (strips the `hostB:`
-   prefix) and sends a `pi_envelope` with `to_pc = epk_B`.
+1. Agent A calls `agent_send` with `to: "hostB:/path/to/cwd@name"`, an
+   address from `list_peers`. The extension finds the machine whose room
+   list has that address and sends a `pi_envelope` with `to_pc = epk_B`.
+   The envelope's `to` is the address as given, prefix included; the
+   receiver accepts its room-list forms bare or behind any label.
 2. Relay A authorizes at the SOURCE (content gates below), then sends a
    signed `relay_forward` — directly to relay B, or onward via the
    advertisement-implied route if B is only reachable through another
@@ -299,6 +301,30 @@ tail -20 ~/.local/state/un-bien/relay.log | grep -i federat
    `relay_forward_ack` — acks return verbatim along the delivery path
    (a bounded request_id-to-backlink map at each hop). 5s timeout,
    `unknown_peer` back to the sender on refusal or timeout.
+4. Relay B hands `pi_envelope_in` to every pi connection on machine B.
+   Each session delivers only an envelope whose `to` names it (its mesh
+   address, or its room's `<cwd>@<name>` / `<cwd>@<room_id>`), once per
+   message id.
+5. **Delivery ack.** The relay reports only failures, so reaching machine
+   B says nothing about a session there accepting the message (a stale
+   name drops silently). The sender sets `ack: true` in the envelope; the
+   receiving session, once the message is in its inbox (before its agent
+   sees it), sends back `{body: {type: "ack", status: "received",
+   target}, re: <id>}` to `from_pc`. `agent_send` waits up to 5s and
+   reports delivered, the relay's refusal, or "not confirmed". The ack
+   means arrived and will be delivered, never read, so neither side waits
+   on the other's agent. `agent_request` waits for a reply only after an
+   ack. A receiver older than acks ignores the flag (the send is
+   unconfirmed, not failed); a sender older than acks never sets it, so is
+   never sent one.
+
+### Broadcast
+
+Plain `broadcast` stays on the local machine's broker. A federated
+broadcast is explicit: `<relay>:broadcast` reaches every session on that
+machine, `*:broadcast` every federated machine (one `pi_envelope` per
+machine). Broadcasts are fire-and-forget and not acked. `list_peers`
+names the addresses available.
 
 ### The app
 

@@ -31,6 +31,7 @@ import { defineMeshTools } from "../core/tools.js"
 import { PiToolRegistrar } from "../pi_binding/tool_registrar.js"
 import type { SessionPeer } from "./peer.js"
 import type { MeshInbox } from "./mesh_inbox.js"
+import type { FederatedAcks } from "./federated_send.js"
 
 export function registerAgentTools(
   pi: ExtensionAPI,
@@ -42,6 +43,7 @@ export function registerAgentTools(
     { relayName: string; addresses: string[] }
   > = () => new Map(),
   getRelay: () => { send: (data: string) => void } | null = () => null,
+  getFederatedAcks: () => FederatedAcks | null = () => null,
 ): void {
   const defs = defineMeshTools({
     getSessionPeer,
@@ -49,6 +51,7 @@ export function registerAgentTools(
     getRemoteRelayPeers,
     getRemoteRelayPeersDetail,
     getRelay,
+    getFederatedAcks,
   })
   const registrar = new PiToolRegistrar(pi)
   for (const def of defs) registrar.registerTool(def)

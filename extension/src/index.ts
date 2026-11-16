@@ -81,6 +81,13 @@ import {
   type MeshMessage,
 } from "./session/mesh_inbox.js"
 import {
+  FederatedAcks,
+  ackEnvelopeFor,
+  isAckEnvelope,
+  isFederatedBroadcast,
+  type FederatedEnvelope,
+} from "./session/federated_send.js"
+import {
   formatPeerInventoryDetailed,
   type RosterInfo,
 } from "./session/peer_inventory.js"
@@ -540,6 +547,9 @@ let _pendingMeshMessages: MeshEnvelope[] = []
 // missed push is recoverable (list_messages/get_message) and a reply can be
 // awaited by correlation id (wait_message). Fed by _deliverMeshMessageToAgent.
 let _meshInbox = new MeshInbox()
+// Federated sends awaiting the receiver's delivery ack, and the acks this
+// agent sent back (see session/federated_send.ts).
+const _federatedAcks = new FederatedAcks()
 // Federated peers cache (from the relay's federated_peer_list push).
 // Updated by a listener on _relay — works without the cross-PC bridge.
 // Remote relay peers (from the relay's federated_peer_list push).
@@ -1088,7 +1098,7 @@ const relayDeps: RelayLifecycleDeps = {
         // no remote-relay peers and agent_send's federated routing no-ops.
         if (loadConfig().mesh?.federation === false) return
         try {
-          const frame = JSON.parse(line) as { type?: string; peers?: Array<{ epk?: string; relay_name?: string; rooms?: Array<{ cwd?: string; name?: string; room_id?: string }> }>; envelope?: { from?: string; to?: string; body?: unknown; id?: string; re?: string | null } }
+          const frame = JSON.parse(line) as { type?: string; peers?: Array<{ epk?: string; relay_name?: string; rooms?: Array<{ cwd?: string; name?: string; room_id?: string }> }>; envelope?: FederatedEnvelope; from_pc?: string }
           if (frame.type === "federated_peer_list" && Array.isArray(frame.peers)) {
             const addresses: string[] = []
             for (const peer of frame.peers) {
@@ -1114,12 +1124,7 @@ const relayDeps: RelayLifecycleDeps = {
           // mesh messages. Handles pi_envelope_in from federated peer relays
           // WITHOUT needing the cross-PC bridge (BrokerRemote).
           if (frame.type === "pi_envelope_in" && frame.envelope) {
-            const env = frame.envelope as { from?: string; to?: string; body?: unknown; id?: string; re?: string | null }
-            // Addressed to a MACHINE (the relay hands it to every pi
-            // connection there): deliver only the one meant for this agent.
-            if (env.id && env.from && env.to && _isAddressedToThisAgent(env.to)) {
-              _deliverMeshMessageToAgent(env as MeshEnvelope)
-            }
+            _handleFederatedEnvelope(frame.envelope as FederatedEnvelope, frame.from_pc)
           }
         } catch {
           // Not JSON or malformed — ignore
@@ -1627,7 +1632,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   // true) — when false, the tools are NOT registered; the broker + relay
   // still work for the paired app, but the model can't send/list/wait.
   if (loadConfig().mesh?.tools !== false) {
-    registerAgentTools(pi, () => _meshNode?.peer() ?? null, () => _meshInbox, () => _remoteRelayPeers, () => _remoteRelayPeerEpks, () => _relay)
+    registerAgentTools(pi, () => _meshNode?.peer() ?? null, () => _meshInbox, () => _remoteRelayPeers, () => _remoteRelayPeerEpks, () => _relay, () => _federatedAcks)
   }
   _registerReceivedImageRenderer(pi)
 
@@ -2385,7 +2390,40 @@ function _scheduleMeshMessageDrain(): void {
   })
 }
 
-function _deliverMeshMessageToAgent(env: MeshEnvelope): void {
+/** Handle one inbound federated envelope (`pi_envelope_in`). It is addressed
+ *  to a MACHINE: the relay hands it to every pi connection there, so each
+ *  session takes only what is meant for it.
+ *   - An ack, or the relay's refusal, for one of this agent's pending sends
+ *     settles that send; an ack is never an agent message.
+ *   - A message for this session (or a federated broadcast) is delivered,
+ *     and acked when the sender asked: the ack says it reached the inbox,
+ *     not that the agent read it, so neither side waits on the other's
+ *     agent. Broadcasts are not acked. */
+function _handleFederatedEnvelope(env: FederatedEnvelope, fromPc: string | undefined): void {
+  if (_federatedAcks.settle(env)) return
+  if (isAckEnvelope(env)) return // late, or another session's
+  if (_federatedAcks.isErrorForOwnAck(env)) return // an ack that could not go back
+  if (!env.id || !env.from || !env.to) return
+  const broadcast = isFederatedBroadcast(env.to)
+  if (!broadcast && !_isAddressedToThisAgent(env.to)) return
+  const accepted = _deliverMeshMessageToAgent(env as MeshEnvelope)
+  if (!accepted || broadcast || env.ack !== true || !fromPc || !_relay) return
+  const ack = ackEnvelopeFor(
+    { ...env, id: env.id, from: env.from, to: env.to },
+    _meshNode?.address() ?? env.to,
+    randomUUID(),
+  )
+  try {
+    _relay.send(JSON.stringify({ type: "pi_envelope", to_pc: fromPc, envelope: ack }))
+    _federatedAcks.noteAckSent(ack.id)
+  } catch (err) {
+    console.error(`[un-bien] federated ack for ${env.id} not sent: ${String(err)}`)
+  }
+}
+
+/** Deliver an inbound mesh message to the agent. True when it is in the
+ *  inbox (newly, or already from another route); false when dropped. */
+function _deliverMeshMessageToAgent(env: MeshEnvelope): boolean {
   // The inbound mesh message is surfaced to the app via the agent message it is
   // delivered as (pi.sendMessage with display:true in _scheduleMeshMessageDrain
   // -> message_start/message_end forwarded by createRpcEnvelope as `{rpc}`), NOT
@@ -2395,7 +2433,7 @@ function _deliverMeshMessageToAgent(env: MeshEnvelope): void {
     console.error(
       `[un-bien] agent-network message from "${env.from}": agent session not bound yet — message dropped`,
     )
-    return
+    return false
   }
   // Store in the inbox (pull/wait surface), emit on pi.events (observers), AND
   // push via the drain (nudge). Build the record once so all three see the same
@@ -2413,7 +2451,7 @@ function _deliverMeshMessageToAgent(env: MeshEnvelope): void {
   // the relay and the cross-PC bridge) is not pushed into the turn again.
   if (!_meshInbox.add(message)) {
     console.error(`[un-bien] agent-network message ${env.id} from "${env.from}" already delivered — ignored`)
-    return
+    return true
   }
   try {
     _pi?.events?.emit("un-bien:message_received", { message })
@@ -2422,6 +2460,7 @@ function _deliverMeshMessageToAgent(env: MeshEnvelope): void {
   }
   _pendingMeshMessages.push(env)
   _scheduleMeshMessageDrain()
+  return true
 }
 
 /** Whether a federated envelope's `to` names this agent. Senders build a

@@ -36,6 +36,13 @@ import {
   matchesFilter,
   type MeshInbox,
 } from "../session/mesh_inbox.js"
+import {
+  FEDERATED_BROADCAST_ALL,
+  federatedBroadcastAddress,
+  isFederatedBroadcast,
+  resolveFederatedTarget,
+  type FederatedAcks,
+} from "../session/federated_send.js"
 
 const NOT_IN_SESSION = "Not in a session. Run /unbien join first"
 const ACK_TIMEOUT_MS = 5_000
@@ -90,6 +97,10 @@ export interface MeshToolDeps {
   >
   /** The relay WS (federated pi_envelope routing). Null when the relay is off. */
   getRelay(): { send: (data: string) => void } | null
+  /** Pending federated sends awaiting the receiver's delivery ack. Absent
+   *  (or null) when the host does not read acks off the relay: federated
+   *  sends then settle as soon as the relay has them. */
+  getFederatedAcks?(): FederatedAcks | null
 }
 
 /** One text-content tool outcome. */
@@ -142,11 +153,42 @@ export function defineMeshTools(deps: MeshToolDeps): Array<MeshToolDef> {
     getRelay,
   } = deps
 
+  /** Hand one envelope to the relay for a federated machine. With `wantAck`
+   *  (and a host that reads acks), wait for the receiver's delivery ack or
+   *  the relay's refusal; otherwise settle `sent` once the relay has it. The
+   *  wait is registered before the send so a fast ack cannot be missed.
+   *  Throws when the relay socket refuses the frame. */
+  const sendFederated = async (
+    from: string,
+    epk: string,
+    to: string,
+    body: unknown,
+    re: string | null,
+    wantAck: boolean,
+  ): Promise<AckResult | { status: "sent"; id: string }> => {
+    const relay = getRelay()
+    if (!relay) throw new Error("relay not connected")
+    const id = crypto.randomUUID()
+    const acks = wantAck ? (deps.getFederatedAcks?.() ?? null) : null
+    const settled = acks ? acks.wait(id, ACK_TIMEOUT_MS) : null
+    relay.send(
+      JSON.stringify({
+        type: "pi_envelope",
+        to_pc: epk,
+        envelope: { from, to, body, id, re, ...(acks ? { ack: true } : {}) },
+      }),
+    )
+    return settled ? await settled : { status: "sent", id }
+  }
+
   const SendParams = Type.Object({
     to: Type.String({
       description:
         "Recipient agent name (e.g. 'backend'), 'broadcast', or array of names. " +
-        "Broadcast/multicast are fire-and-forget; unicast returns an ACK status.",
+        "'broadcast' reaches this machine only; '<relay>:broadcast' every session " +
+        "on that federated machine, '*:broadcast' every federated machine (see " +
+        "list_peers). Broadcast/multicast are fire-and-forget; unicast returns " +
+        "an ACK status.",
     }),
     body: Type.Unknown({
       description: "Free-form JSON payload. String or object — your choice.",
@@ -227,57 +269,59 @@ export function defineMeshTools(deps: MeshToolDeps): Array<MeshToolDef> {
 
       const isUnicast = to !== "broadcast"
 
-      // Federated peer routing: if the target is on a federated peer relay,
-      // send a pi_envelope directly via the relay. The relay handles cross-relay
-      // forwarding (Phase 3c). This works with OR without the BrokerRemote
-      // (the bridge might not be attached if the topology is empty).
-      if (isUnicast) {
-        const fedDetail = getRemoteRelayPeersDetail()
-        const relay = getRelay()
-        if (relay) {
-          for (const [epk, info] of fedDetail) {
-            if (info.addresses.includes(to)) {
-              const envelope = {
-                from: peer.address(),
-                to,
-                body,
-                id: crypto.randomUUID(),
-                re: re ?? null,
-              }
-              try {
-                relay.send(
-                  JSON.stringify({
-                    type: "pi_envelope",
-                    to_pc: epk,
-                    envelope,
-                  }),
-                )
-                const details: SendDetails = { status: "sent", ok: true }
-                return {
-                  content: [
-                    {
-                      type: "text",
-                      text: `Sent to federated peer (${info.relayName}).`,
-                    },
-                  ],
-                  details,
-                }
-              } catch (err) {
-                const msg = err instanceof Error ? err.message : String(err)
-                const details: SendDetails = {
-                  status: "timeout",
-                  ok: false,
-                  error: msg,
-                }
-                return {
-                  content: [
-                    { type: "text", text: `Federated send failed: ${msg}` },
-                  ],
-                  details,
-                }
-              }
-            }
+      // Federated routing: a room address listed by the relay's federated
+      // peer list goes to that machine through the relay, and waits for the
+      // receiver's delivery ack. '<relay>:broadcast' / '*:broadcast' reach
+      // every session on one / every federated machine (never the default:
+      // plain 'broadcast' stays on this machine's broker).
+      if (isFederatedBroadcast(to) && !getRelay()) {
+        const msg = `Cannot send to "${to}": the relay is not connected, so no federated machine is reachable.`
+        const details: SendDetails = { status: "refused", ok: false, error: msg }
+        return { content: [{ type: "text", text: msg }], details }
+      }
+      const fedTarget = getRelay()
+        ? resolveFederatedTarget(to, getRemoteRelayPeersDetail())
+        : null
+      if (fedTarget?.kind === "unknown_relay") {
+        const msg = `No federated machine is labelled "${fedTarget.relayName}" (list_peers shows the labels).`
+        const details: SendDetails = { status: "refused", ok: false, error: msg }
+        return { content: [{ type: "text", text: msg }], details }
+      }
+      if (fedTarget?.kind === "broadcast") {
+        if (fedTarget.epks.length === 0) {
+          const msg = "No federated machines to broadcast to."
+          const details: SendDetails = { status: "refused", ok: false, error: msg }
+          return { content: [{ type: "text", text: msg }], details }
+        }
+        try {
+          for (const epk of fedTarget.epks) {
+            await sendFederated(peer.address(), epk, to, body, re ?? null, false)
           }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          const details: SendDetails = { status: "timeout", ok: false, error: msg }
+          return { content: [{ type: "text", text: `Federated broadcast failed: ${msg}` }], details }
+        }
+        const n = fedTarget.epks.length
+        const details: SendDetails = { status: "sent", ok: true }
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Broadcast sent to ${n} federated machine${n === 1 ? "" : "s"} (${fedTarget.relayNames.join(", ")}).`,
+            },
+          ],
+          details,
+        }
+      }
+      if (fedTarget?.kind === "unicast") {
+        try {
+          const result = await sendFederated(peer.address(), fedTarget.epk, to, body, re ?? null, true)
+          return _federatedSendOutcome(to, fedTarget.relayName, result, re)
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          const details: SendDetails = { status: "timeout", ok: false, error: msg }
+          return { content: [{ type: "text", text: `Federated send failed: ${msg}` }], details }
         }
       }
 
@@ -416,12 +460,21 @@ export function defineMeshTools(deps: MeshToolDeps): Array<MeshToolDef> {
         const detailedFiltered = detailed.filter(
           (d) => d.address !== selfAddress,
         )
+        const relayNames = [
+          ...new Set([...getRemoteRelayPeersDetail().values()].map((info) => info.relayName)),
+        ]
+        const broadcastLine =
+          relayNames.length === 0
+            ? ""
+            : `\nFederated broadcast: ${relayNames.map(federatedBroadcastAddress).join(", ")} ` +
+              `(every session on that machine), ${FEDERATED_BROADCAST_ALL} (every federated ` +
+              `machine). Plain "broadcast" reaches this machine only.`
         const text =
-          filtered.length === 0
+          (filtered.length === 0
             ? "(no peers)"
             : formatPeerInventoryDetailed(detailedFiltered, {
                 selfAddress,
-              })
+              })) + broadcastLine
         return {
           content: [{ type: "text", text }],
           details: {
@@ -515,11 +568,33 @@ export function defineMeshTools(deps: MeshToolDeps): Array<MeshToolDef> {
         typeof timeout_ms === "number" && timeout_ms > 0
           ? timeout_ms
           : LEGACY_REQUEST_TIMEOUT_MS
-      // 1. Broker-ACK'd delivery — a denial/timeout surfaces HERE instead of
-      // blocking on a reply that can never come.
+      // 1. ACK'd delivery: the broker's, or a federated receiver's — a
+      // denial/timeout surfaces HERE instead of blocking on a reply that can
+      // never come.
+      const fedTarget = getRelay()
+        ? resolveFederatedTarget(to, getRemoteRelayPeersDetail())
+        : null
+      if (fedTarget && fedTarget.kind !== "unicast") {
+        const msg = `agent_request needs one peer; "${to}" is not a single session. Use agent_send for broadcasts.`
+        return { content: [{ type: "text", text: msg }], details: { error: msg } }
+      }
       let ack: AckResult
       try {
-        ack = await peer.sendWithAck(to, body, null, ACK_TIMEOUT_MS)
+        if (fedTarget) {
+          const result = await sendFederated(peer.address(), fedTarget.epk, to, body, null, true)
+          if (result.status === "sent" || (result.status === "timeout" && !result.reason)) {
+            // Unconfirmed: waiting on a reply that may never come is the
+            // deadlock the ack exists to avoid.
+            const msg =
+              `Sent to "${to}" (federated, ${fedTarget.relayName}) but delivery was not ` +
+              `confirmed, so not waiting for a reply. If it arrives it lands in your ` +
+              `inbox: mesh_wait_message({re: "${result.id}"}).`
+            return { content: [{ type: "text", text: msg }], details: { status: "sent", sendId: result.id } }
+          }
+          ack = result
+        } else {
+          ack = await peer.sendWithAck(to, body, null, ACK_TIMEOUT_MS)
+        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         return {
@@ -763,6 +838,53 @@ export function defineMeshTools(deps: MeshToolDeps): Array<MeshToolDef> {
     listMessages,
     waitMessage,
   ]
+}
+
+/** The agent_send outcome of a federated unicast send. */
+function _federatedSendOutcome(
+  to: string,
+  relayName: string,
+  result: AckResult | { status: "sent"; id: string },
+  re: string | null | undefined,
+): MeshToolOutcome {
+  const reSuffix = re ? ` (re=${re})` : ""
+  if (result.status === "received") {
+    const details: SendDetails = { status: "received", ok: true, id: result.id, target: to }
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Delivered to "${to}" (federated, ${relayName})${reSuffix} — peer will process it in an upcoming turn.`,
+        },
+      ],
+      details,
+    }
+  }
+  if (result.status === "sent" || (result.status === "timeout" && !result.reason)) {
+    // No ack: an older receiver that does not send one, or no session there
+    // has this address. Not a failure — resending could deliver it twice.
+    const details: SendDetails = { status: "sent", ok: true, id: result.id }
+    return {
+      content: [
+        {
+          type: "text",
+          text:
+            `Sent to "${to}" (federated, ${relayName})${reSuffix}, but delivery was not confirmed: ` +
+            `the receiving machine may run an older un-bien, or no session there has this ` +
+            `address. Don't resend blindly; a reply, if any, lands in your inbox ` +
+            `(mesh_wait_message({re: "${result.id}"})).`,
+        },
+      ],
+      details,
+    }
+  }
+  const details: SendDetails = {
+    status: result.status,
+    ok: false,
+    ...(result.error === undefined ? {} : { error: result.error }),
+    ...(result.reason === undefined ? {} : { reason: result.reason }),
+  }
+  return { content: [{ type: "text", text: _formatAck(to, result, re) }], details }
 }
 
 function _formatAck(

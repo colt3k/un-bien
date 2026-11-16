@@ -2098,6 +2098,43 @@ describe("rooms wiring", () => {
     expect(contents.filter((c) => c.includes("fed-other"))).toHaveLength(0)
   })
 
+  test("a federated receiver acks what it accepts, and only that", async () => {
+    captureHandler("unbien")
+    await _connectForTest(makeMockCtx("/tmp/unbien-test-fed-ack"))
+    const sendMessage = vi.fn()
+    _setPiForTest({ sendMessage, sendUserMessage: () => undefined })
+    const meta = _getRootProjectionForTest().myRoomMeta as { name: string; cwd: string } | null
+    const relay = relayRef.current!
+    const emit = (envelope: Record<string, unknown>) =>
+      relay.emit("message", JSON.stringify({ type: "pi_envelope_in", from_pc: "remote-pc", envelope }))
+    const sentAcks = () =>
+      relay.send.mock.calls
+        .map(([line]) => JSON.parse(String(line)) as { type?: string; to_pc?: string; envelope?: { re?: string; body?: { type?: string } } })
+        .filter((f) => f.type === "pi_envelope" && f.envelope?.body?.type === "ack")
+    const mine = `cascade:${meta!.cwd}@${meta!.name}`
+    relay.send.mockClear()
+
+    // Asked for an ack, addressed here: delivered, and acked to the sender's machine.
+    emit({ id: "fed-ack-1", from: "/remote@asker", to: mine, re: null, body: "hi", ack: true })
+    // Not asked (an older sender): delivered, no ack.
+    emit({ id: "fed-ack-2", from: "/remote@asker", to: mine, re: null, body: "hi" })
+    // Another session's message: neither.
+    emit({ id: "fed-ack-3", from: "/remote@asker", to: `cascade:${meta!.cwd}@someone-else`, re: null, body: "hi", ack: true })
+    // A federated broadcast: delivered, never acked.
+    emit({ id: "fed-ack-4", from: "/remote@asker", to: "*:broadcast", re: null, body: "all", ack: true })
+    // A stray ack: never shown to the agent.
+    emit({ id: "fed-ack-5", from: "/remote@asker", to: mine, re: "not-pending", body: { type: "ack", status: "received" } })
+    await new Promise<void>((resolve) => setTimeout(resolve, 5))
+
+    expect(sentAcks()).toHaveLength(1)
+    expect(sentAcks()[0]).toMatchObject({ to_pc: "remote-pc", envelope: { re: "fed-ack-1" } })
+    const contents = sendMessage.mock.calls.map(([m]) => String((m as { content?: unknown }).content))
+    const deliveredIds = ["fed-ack-1", "fed-ack-2", "fed-ack-3", "fed-ack-4", "fed-ack-5"].filter((id) =>
+      contents.some((c) => c.includes(id)),
+    )
+    expect(deliveredIds).toEqual(["fed-ack-1", "fed-ack-2", "fed-ack-4"])
+  })
+
   test("_cmdStart calls relay.connect with the session-id-derived roomId (design 01M1CAW0)", async () => {
     const capturedOpts: unknown[] = []
     _defaultConnectImpl = async (opts?: unknown) => {

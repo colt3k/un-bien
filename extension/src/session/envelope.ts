@@ -53,14 +53,10 @@ export function asTransportErrorBody(
     return null
   }
   const reason = (value as Record<string, unknown>)["reason"]
-  if (
-    reason !== "offline" &&
-    reason !== "not_authorized" &&
-    reason !== "bad_envelope"
-  ) {
+  if (!(TRANSPORT_ERROR_REASONS as readonly unknown[]).includes(reason)) {
     return null
   }
-  return { type: "transport_error", reason }
+  return { type: "transport_error", reason: reason as TransportErrorReason }
 }
 
 /**
