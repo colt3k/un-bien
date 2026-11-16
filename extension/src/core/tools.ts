@@ -572,6 +572,10 @@ export function defineMeshTools(deps: MeshToolDeps): Array<MeshToolDef> {
       }
       const text =
         typeof reply.body === "string" ? reply.body : JSON.stringify(reply.body)
+      // The agent reads the reply here, so it is not pushed into a later turn.
+      // (An early interrupt above names the message without its body, so that
+      // one still is.)
+      getInbox().markShown(reply.id)
       return {
         content: [{ type: "text", text }],
         details: reply.body,
@@ -600,6 +604,7 @@ export function defineMeshTools(deps: MeshToolDeps): Array<MeshToolDef> {
     execute: async (params, _signal) => {
       const { id } = params as { id: string }
       const msg = getInbox().get(id)
+      if (msg) getInbox().markShown(msg.id)
       return {
         content: [
           {
@@ -722,6 +727,7 @@ export function defineMeshTools(deps: MeshToolDeps): Array<MeshToolDef> {
         }
       }
       if (matchesFilter(msg, filter)) {
+        getInbox().markShown(msg.id)
         return {
           content: [{ type: "text", text: JSON.stringify(msg) }],
           details: msg,

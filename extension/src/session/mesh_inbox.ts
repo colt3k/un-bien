@@ -26,7 +26,9 @@ export interface MeshMessage {
   re: string | null
   /** Epoch ms when the broker delivered it to this agent. */
   sentAt: number
-  /** Epoch ms when it was pushed via pi.sendMessage (null if not yet pushed). */
+  /** Epoch ms when the agent was first shown its body: pushed into its turn,
+   *  or returned by a tool that prints it (null until then). A message the
+   *  agent has already been shown is not pushed into a later turn. */
   deliveredAt: number | null
 }
 
@@ -132,6 +134,18 @@ export class MeshInbox {
       }
     }
     return true
+  }
+
+  /** Record that the agent has been shown this message's body (see
+   *  `MeshMessage.deliveredAt`). The first time wins; unknown ids are ignored. */
+  markShown(id: string, at: number = Date.now()): void {
+    const msg = this.messages.get(id)
+    if (msg && msg.deliveredAt === null) msg.deliveredAt = at
+  }
+
+  /** Whether the agent has already been shown this message's body. */
+  wasShown(id: string): boolean {
+    return (this.messages.get(id)?.deliveredAt ?? null) !== null
   }
 
   /** Fetch a single message by id (null if absent). */

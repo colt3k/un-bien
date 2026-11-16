@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest"
 import { registerAgentTools } from "./tools.js"
-import { MeshTransportError, type SessionPeer, type AckResult } from "./peer.js"
+import type { SessionPeer, AckResult } from "./peer.js"
 import { MeshInbox, type MeshMessage } from "./mesh_inbox.js"
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent"
 
@@ -1119,5 +1119,76 @@ describe("inbox tools (get_message / list_messages / wait_message)", () => {
     const text = (result.content[0] as { type: "text"; text: string }).text
     expect(text).toMatch(/Early interrupt/)
     expect(result.details).toMatchObject({ id: "m-stored" })
+  })
+})
+
+describe("which tool results count as the agent having read a message", () => {
+  // A message whose body a tool returned to the agent is not pushed into a
+  // later turn. A result that only names the message (an early interrupt, a
+  // listing) leaves it to be pushed.
+  const stored = (id: string, re: string | null, sentAt = Date.now()): MeshMessage => ({
+    id,
+    from: "backend",
+    to: "orq",
+    body: `body of ${id}`,
+    re,
+    sentAt,
+    deliveredAt: null,
+  })
+  const run = (inbox: MeshInbox, name: string, args: Record<string, unknown>) => {
+    const { pi, tools } = makeMockPi()
+    registerAgentTools(pi, () => makeMockPeer(), () => inbox)
+    return tools.get(name)!.execute(TOOL_CALL_ID, args, undefined, undefined, {} as never)
+  }
+
+  test("agent_request's correlated reply is read", async () => {
+    const inbox = new MeshInbox()
+    inbox.add(stored("m-reply", "uuid-out"))
+    await run(inbox, "agent_request", { to: "backend", body: "?" })
+    expect(inbox.wasShown("m-reply")).toBe(true)
+  })
+
+  test("agent_request's early interrupt names the message but leaves it unread", async () => {
+    const inbox = new MeshInbox()
+    const p = run(inbox, "agent_request", { to: "backend", body: "?", timeout_ms: 2_000 })
+    setTimeout(() => inbox.add(stored("m-fresh", null)), 5)
+    const result = await p
+    expect(JSON.stringify(result.content)).toMatch(/Early interrupt/)
+    expect(inbox.wasShown("m-fresh")).toBe(false)
+  })
+
+  test("mesh_wait_message's match is read; its early interrupt is not", async () => {
+    const inbox = new MeshInbox()
+    inbox.add(stored("m-match", "r-1"))
+    await run(inbox, "mesh_wait_message", { re: "r-1" })
+    expect(inbox.wasShown("m-match")).toBe(true)
+
+    const p = run(inbox, "mesh_wait_message", { re: "r-2", timeout_ms: 2_000 })
+    setTimeout(() => inbox.add(stored("m-interrupt", null)), 5)
+    const result = await p
+    expect(JSON.stringify(result.content)).toMatch(/Early interrupt/)
+    expect(inbox.wasShown("m-interrupt")).toBe(false)
+  })
+
+  test("mesh_get_message reads a message; mesh_list_messages only lists it", async () => {
+    const inbox = new MeshInbox()
+    inbox.add(stored("m-a", null))
+    inbox.add(stored("m-b", null))
+    await run(inbox, "mesh_list_messages", {})
+    expect(inbox.wasShown("m-a")).toBe(false)
+    expect(inbox.wasShown("m-b")).toBe(false)
+    await run(inbox, "mesh_get_message", { id: "m-b" })
+    expect(inbox.wasShown("m-a")).toBe(false)
+    expect(inbox.wasShown("m-b")).toBe(true)
+  })
+
+  test("the first time a message is shown is the one recorded", () => {
+    const inbox = new MeshInbox()
+    inbox.add(stored("m-1", null))
+    inbox.markShown("m-1", 100)
+    inbox.markShown("m-1", 200)
+    inbox.markShown("unknown", 300)
+    expect(inbox.get("m-1")?.deliveredAt).toBe(100)
+    expect(inbox.wasShown("unknown")).toBe(false)
   })
 })

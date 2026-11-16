@@ -260,6 +260,7 @@ const {
   _hasPendingReconnect,
   _setCurrentModelForTest,
   _setPiForTest,
+  _meshInboxForTest,
   _getCurrentTurnIdForTest,
   _getRootProjectionForTest,
   _connectForTest,
@@ -923,6 +924,46 @@ describe("agent-network mesh delivery", () => {
     const delivered = sendMessage.mock.calls.filter(([m]) =>
       String((m as { content?: unknown }).content).includes("mesh-dup-1"))
     expect(delivered).toHaveLength(1)
+    harness.handler("agent_end")({ type: "agent_end" })
+    await new Promise<void>((resolve) => setTimeout(resolve, 5))
+  })
+
+  test("a reply the agent already read through a tool is not pushed after the run", async () => {
+    const harness = captureEventHarness()
+    const sendMessage = vi.fn()
+    _setPiForTest({ sendMessage, sendUserMessage: () => undefined })
+    harness.handler("agent_start")({ type: "agent_start" })
+    // Mid-run: the reply agent_request is blocked on, and an unrelated request.
+    _deliverMeshMessageToAgentForTest({ id: "mesh-read-1", from: "/work/repo@reviewer", re: "out-1", body: "pong" })
+    _deliverMeshMessageToAgentForTest({ id: "mesh-fresh-1", from: "/work/repo@worker", re: null, body: "ping" })
+    // agent_request returns the reply's body to the agent.
+    _meshInboxForTest().markShown("mesh-read-1")
+    harness.handler("agent_end")({ type: "agent_end" })
+    await new Promise<void>((resolve) => setTimeout(resolve, 5))
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+    expect(sendMessage.mock.calls[0]).toEqual([
+      expect.objectContaining({ content: expect.stringContaining("mesh-fresh-1") }),
+      { triggerTurn: true, deliverAs: "followUp" },
+    ])
+    expect(_meshInboxForTest().wasShown("mesh-fresh-1")).toBe(true)
+    harness.handler("agent_end")({ type: "agent_end" })
+    await new Promise<void>((resolve) => setTimeout(resolve, 5))
+  })
+
+  test("a run whose queued messages were all read through tools starts no turn", async () => {
+    const harness = captureEventHarness()
+    const sendMessage = vi.fn()
+    _setPiForTest({ sendMessage, sendUserMessage: () => undefined })
+    harness.handler("agent_start")({ type: "agent_start" })
+    _deliverMeshMessageToAgentForTest({ id: "mesh-read-2", from: "/work/repo@reviewer", re: "out-2", body: "pong" })
+    _meshInboxForTest().markShown("mesh-read-2")
+    harness.handler("agent_end")({ type: "agent_end" })
+    await new Promise<void>((resolve) => setTimeout(resolve, 5))
+    expect(sendMessage).not.toHaveBeenCalled()
+    // The run is not left marked active: a later message is still pushed.
+    _deliverMeshMessageToAgentForTest({ id: "mesh-later-2", from: "/work/repo@worker", re: null, body: "ping" })
+    await new Promise<void>((resolve) => setTimeout(resolve, 5))
+    expect(sendMessage).toHaveBeenCalledTimes(1)
     harness.handler("agent_end")({ type: "agent_end" })
     await new Promise<void>((resolve) => setTimeout(resolve, 5))
   })
@@ -2031,6 +2072,30 @@ describe("rooms wiring", () => {
     })
     const stop = captureHandler("unbien stop")
     await stop("", makeMockCtx())
+  })
+
+  test("a federated pi_envelope_in reaches the agent under its room address, and only that agent", async () => {
+    captureHandler("unbien")
+    await _connectForTest(makeMockCtx("/tmp/unbien-test-fed"))
+    const sendMessage = vi.fn()
+    _setPiForTest({ sendMessage, sendUserMessage: () => undefined })
+    const meta = _getRootProjectionForTest().myRoomMeta as { name: string; cwd: string } | null
+    expect(meta).not.toBeNull()
+    const frame = (id: string, to: string) =>
+      JSON.stringify({
+        type: "pi_envelope_in",
+        from_pc: "remote-pc",
+        envelope: { id, from: "/remote/repo@asker", to, re: null, body: "hello" },
+      })
+    // How a sender on another machine addresses this room: the relay's room
+    // list (display name, raw cwd) behind the relay's label.
+    relayRef.current!.emit("message", frame("fed-mine", `cascade:${meta!.cwd}@${meta!.name}`))
+    // Another session on this machine, delivered to this connection too.
+    relayRef.current!.emit("message", frame("fed-other", `cascade:${meta!.cwd}@someone-else`))
+    await new Promise<void>((resolve) => setTimeout(resolve, 5))
+    const contents = sendMessage.mock.calls.map(([m]) => String((m as { content?: unknown }).content))
+    expect(contents.filter((c) => c.includes("fed-mine"))).toHaveLength(1)
+    expect(contents.filter((c) => c.includes("fed-other"))).toHaveLength(0)
   })
 
   test("_cmdStart calls relay.connect with the session-id-derived roomId (design 01M1CAW0)", async () => {

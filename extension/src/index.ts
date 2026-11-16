@@ -1520,6 +1520,7 @@ const _testHooks = createTestHooks({
     } as ExtensionContext["sessionManager"]
   },
   deliverMeshMessageToAgent: _deliverMeshMessageToAgent,
+  meshInbox: () => _meshInbox,
 })
 
 export const _connectForTest = _testHooks.connectForTest
@@ -1547,6 +1548,7 @@ export const _getActivePeerCountForTest = _testHooks.getActivePeerCountForTest
 export const _hasActivePeerForTest = _testHooks.hasActivePeerForTest
 export const _deliverMeshMessageToAgentForTest =
   _testHooks.deliverMeshMessageToAgentForTest
+export const _meshInboxForTest = _testHooks.meshInboxForTest
 
 const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   const applied = _appliedRegistry()
@@ -2345,7 +2347,14 @@ function _scheduleMeshMessageDrain(): void {
     )
       return
 
-    const batch = _pendingMeshMessages.splice(0)
+    // A message the agent already read through a tool (agent_request's reply,
+    // mesh_wait_message, mesh_get_message) is not pushed again: that push
+    // would start a turn whose only content is something it has already
+    // handled.
+    const batch = _pendingMeshMessages
+      .splice(0)
+      .filter((env) => !_meshInbox.wasShown(env.id))
+    if (batch.length === 0) return
     let delivered = 0
     _rootState().agentRun.active = true
     try {
@@ -2357,6 +2366,7 @@ function _scheduleMeshMessageDrain(): void {
             ? { triggerTurn: true, deliverAs: "followUp" }
             : { triggerTurn: false },
         )
+        _meshInbox.markShown(env.id)
         delivered += 1
       })
     } catch (err) {

@@ -18,6 +18,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import type { Ed25519Keypair } from "./pairing/crypto.js"
 import type { SelfRevoke } from "./mesh/self_revoke.js"
 import type { MeshNode } from "./session/mesh_node.js"
+import type { MeshInbox } from "./session/mesh_inbox.js"
 import type { AcquiredLock } from "./session/cwd_lock.js"
 import type { PlainPeerChannel } from "./transport/peer_channel.js"
 import type { PanelBridge } from "./panel_bridge.js"
@@ -111,6 +112,7 @@ export interface TestHooksDeps {
   seedRootSession(sid: string): void
   /** Queue an inbound mesh message for agent delivery. */
   deliverMeshMessageToAgent(env: MeshEnvelope): void
+  meshInbox(): MeshInbox
 }
 
 /** The hooks `createTestHooks` returns (re-exported 1:1 by index.ts). */
@@ -183,6 +185,8 @@ export interface TestHooks {
   hasActivePeerForTest(appPeerIdStd: string): boolean
   /** Test-only entry point for verifying mesh-to-agent delivery semantics. */
   deliverMeshMessageToAgentForTest(env: MeshEnvelope): void
+  /** Test-only: the root inbox the mesh tools read (pull/wait surface). */
+  meshInboxForTest(): MeshInbox
   /** Test-only: the stable root record's relay-room projection (myRoomId /
    *  myRoomMeta). Used by the session-rotation regression test to assert the
    *  projection survives a `_rootSessionId` rotation (plan 01M18RNH). */
@@ -308,6 +312,10 @@ export function createTestHooks(deps: TestHooksDeps): TestHooks {
 
     deliverMeshMessageToAgentForTest(env: MeshEnvelope): void {
       deps.deliverMeshMessageToAgent(env)
+    },
+
+    meshInboxForTest(): MeshInbox {
+      return deps.meshInbox()
     },
 
     getRootProjectionForTest(): {
