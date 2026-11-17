@@ -68,6 +68,7 @@ export interface AskRequest {
 export interface SubagentRecord {
   id: string
   status: string
+  type?: string
   description?: string
   result?: string
   error?: string
@@ -205,6 +206,12 @@ export function toEnvelope(line: unknown): EnvelopeMessage | null {
   if (typeof obj.type === "string") return { rpc: obj }
   return null
 }
+
+/** Blocking dialogs — the only `extension_ui_request` methods that become a
+ *  pending ask. Mirrors the reference reducer's case list. */
+const ASK_METHODS = new Set(["select", "confirm", "input", "editor"])
+/** Panel statuses the `subagents:*` channels name. */
+const SUBAGENT_STATUSES = new Set(["started", "steered", "completed", "failed"])
 
 export class TranscriptReducer {
   private readonly items: TranscriptItem[] = []
@@ -449,7 +456,6 @@ export class TranscriptReducer {
         if (!card.hunks && Array.isArray(env.aux?.hunks))
           card.hunks = env.aux?.hunks as unknown[]
         card.images = countImages(result?.content)
-        this.streaming = true // a running turn is still in flight
         break
       }
       case "response": {
@@ -507,9 +513,18 @@ export class TranscriptReducer {
       case "turn_end":
       case "agent_end":
       case "agent_settled": {
+        // A turn ending is NOT the session ending. `ended` means the machine
+        // stopped being drivable, and only `session_shutdown` says that; the
+        // corpus asserts `ended == false` after a completed turn for a reason.
         this.streaming = false
-        this.ended = true
         // Any row still marked streaming is stale once the turn settles.
+        for (const item of this.items)
+          if (item.kind !== "tool") item.streaming = false
+        break
+      }
+      case "session_shutdown": {
+        this.ended = true
+        this.streaming = false
         for (const item of this.items)
           if (item.kind !== "tool") item.streaming = false
         break
@@ -803,6 +818,12 @@ export class TranscriptReducer {
       return
     }
     if (!id) return
+    // Only a BLOCKING dialog is a pending ask. The reference registers exactly
+    // `select | confirm | input | editor`; `notify`, `setStatus` and `setWidget`
+    // ride the same frame type and are side-state. Folding every ui_request as
+    // an ask made the client pop an overlay for a status line — scenario 003
+    // holds 8 such frames and expects ZERO pending asks.
+    if (!ASK_METHODS.has(method)) return
     this.asks.set(id, {
       id,
       method: method as AskRequest["method"],
@@ -820,26 +841,29 @@ export class TranscriptReducer {
 
   private applyEvt(channel: string, data: unknown): void {
     const payload = asFrame(data) ?? {}
-    if (channel.startsWith("subagents")) {
+    if (channel.startsWith("subagents:")) {
+      // The STATUS IS THE CHANNEL NAME: `subagents:started`, `:steered`,
+      // `:completed`, `:failed`. A payload-level `status` is the exception, and
+      // reading only that (as this fold did) leaves a finished subagent stuck at
+      // "started" in the panel forever.
+      const status = channel.slice("subagents:".length)
+      if (!SUBAGENT_STATUSES.has(status)) return
       const id = typeof payload.id === "string" ? payload.id : null
       if (!id) return
       const previous = this.subagents.find((row) => row.id === id)
       const record: SubagentRecord = {
         id,
-        status:
-          typeof payload.status === "string"
-            ? payload.status
-            : (previous?.status ?? "started"),
+        status,
+        type: typeof payload.type === "string" ? payload.type : previous?.type,
         description:
           typeof payload.description === "string"
             ? payload.description
             : previous?.description,
-        result:
-          typeof payload.result === "string"
-            ? payload.result
-            : previous?.result,
-        error:
-          typeof payload.error === "string" ? payload.error : previous?.error,
+        // Everything else comes fresh from the frame: a completion frame carries
+        // the result, and keeping a stale one would show an answer the machine
+        // never sent for this run.
+        result: typeof payload.result === "string" ? payload.result : undefined,
+        error: typeof payload.error === "string" ? payload.error : undefined,
       }
       this.subagents = [
         ...this.subagents.filter((row) => row.id !== id),
@@ -865,8 +889,14 @@ export class TranscriptReducer {
     const customType =
       typeof entry.customType === "string" ? entry.customType : ""
     const data = asFrame(entry.data)
-    if (customType === "subagents:record" && data)
-      this.applyEvt("subagents", data)
+    if (customType === "subagents:record" && data) {
+      // NOT folded, and deliberately so: the reference reducer folds subagent
+      // rows only from the `subagents:{status}` evt channels, and this client
+      // has never observed a machine send a `subagents:record` custom message.
+      // Handling an unobserved frame is how a client starts rendering itself a
+      // private reality. If a real machine does send one, the corpus will say.
+      return
+    }
     if (customType.startsWith("plan")) this.applyEvt("plan", data ?? {})
     if (typeof entry.id === "string") {
       this.leafId = entry.id
@@ -952,6 +982,17 @@ export class TranscriptReducer {
     if (!streaming) {
       for (const item of this.items) item.streaming = false
     }
+  }
+
+  /** The viewer's session-ended signal. pi says it with `session_shutdown`; a
+   *  device learning it from the relay's `room_ended` is the same fact arriving
+   *  by a different route. */
+  setEnded(ended: boolean): void {
+    this.ended = ended
+    if (!ended) return
+    this.streaming = false
+    for (const item of this.items)
+      if (item.kind !== "tool") item.streaming = false
   }
 
   reset(): void {

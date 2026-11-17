@@ -2,6 +2,7 @@ import { readFileSync, readdirSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import { TranscriptReducer, toEnvelope } from "../src/reducer.js"
+import type { TranscriptItem } from "../src/reducer.js"
 
 /**
  * Corpus-driven check against `contracts/conformance/` — the fixtures BOTH the
@@ -19,13 +20,25 @@ import { TranscriptReducer, toEnvelope } from "../src/reducer.js"
  * below is the mechanism for skipping one honestly; it is deliberately empty.
  *
  * STILL NOT COMPARED — do not read 10/10 as conformance:
- *   - ORDER is compared (see `projections`), but `blocks`, `flags`,
- *     `pendingAsks`, `leafId` and the panel projections are NOT.
- *   - `replay` mode: every scenario declares `modes: ["live"]` except none —
- *     the corpus has no recorded paging fixture, so the paging contract is
- *     only covered by test/derive.test.ts, not here.
+ *   - `blocks`: the tool card's RESULT FACE (`ToolFaceResolver.resolve` in the
+ *     app — terminal / file / diff / lines / script / markdown / error / text,
+ *     plus "hunks" when an edit-family card carries a diff). This client renders
+ *     tool output as text and does not resolve faces yet.
+ *   - `plan` (only scenario 006 exercises it) and the panel projections.
+ *   - `replay` mode: every scenario declares `modes: ["live"]` — the corpus has
+ *     no recorded paging fixture, so the paging contract is covered only by
+ *     test/derive.test.ts, not here.
  *   - 003/006/008 expect NO items, so for them this asserts "produces no
  *     spurious rows", which is weaker than it looks.
+ *
+ * Everything else the reference projects — `text` (prefix, because the corpus
+ * scrubs long strings and escapes their newlines), `streaming`, `images`,
+ * `state`, `tool`, `flags`, `leafId`, `subagents`, `pendingAsks` — is compared,
+ * and that is what caught the phantom-dialog bug (8 `setStatus`/`notify` frames
+ * folded as 8 blocking asks), the "session ended after every turn" bug
+ * (`turn_end` setting `ended`), a subagent panel stuck at "started" (the status
+ * is the CHANNEL name, not a payload field), and inferring "a turn is in
+ * flight" from a completed tool result.
  */
 const SCENARIO_DIR = join(
   __dirname,
@@ -46,14 +59,77 @@ interface ScenarioMeta {
 
 interface Expected {
   version: number
-  items: { kind: string; row: string }[]
+  items: Record<string, unknown>[]
+  flags?: { streaming: boolean; ended: boolean }
+  leafId?: string | null
+  subagents?: Record<string, unknown>[]
+  pendingAsks?: Record<string, unknown>[]
+  plan?: Record<string, unknown> | null
 }
 
 /** `kind@row`, in RENDER ORDER. The vocab says items are in render order, so
  *  sorting here would hide a fold that births the rootward ancestry below the
  *  rows it should precede. */
-function projections(items: { kind: string; row: string }[]): string[] {
+function projections(items: { kind?: unknown; row?: unknown }[]): string[] {
   return items.map((item) => `${item.kind}@${item.row}`)
+}
+
+/** The corpus scrubs long strings and ends them with an ellipsis, so a scrubbed
+ *  expectation is a PREFIX requirement, not an equality one. The reference also
+ *  escapes newlines when it scrubs (so `expected.json` stays line-wise
+ *  diffable) — a projection that reads the wire literally must undo that escape
+ *  before comparing, or every multi-line reply "mismatches" on a formatting
+ *  artifact. */
+function textMatches(actual: string, expected: string): boolean {
+  if (!expected.endsWith("…")) return actual === expected
+  const prefix = expected.slice(0, -1).replace(/\\n/g, "\n")
+  return actual.startsWith(prefix)
+}
+
+/** Compare every field the expected item declares. `blocks` is the one gap:
+ *  it is the tool card's RESULT FACE (`ToolFaceResolver.resolve` in the app —
+ *  terminal / file / diff / lines / script / markdown / …), which this client
+ *  does not resolve yet. Everything else is held to the same bar as (kind,row). */
+function itemProblems(
+  want: Record<string, unknown>,
+  got: TranscriptItem,
+): string[] {
+  const problems: string[] = []
+  for (const key of Object.keys(want)) {
+    const expected = want[key]
+    switch (key) {
+      case "kind":
+      case "row":
+        break // compared as the sequence
+      case "text":
+        if (!textMatches(got.text, String(expected ?? "")))
+          problems.push(
+            `text ${JSON.stringify(got.text.slice(0, 60))} !~ ${JSON.stringify(expected)}`,
+          )
+        break
+      case "streaming":
+        if (got.streaming !== Boolean(expected))
+          problems.push(`streaming ${got.streaming} != ${Boolean(expected)}`)
+        break
+      case "images":
+        if (got.images !== Number(expected))
+          problems.push(`images ${got.images} != ${Number(expected)}`)
+        break
+      case "state":
+        if (got.state !== expected)
+          problems.push(`state ${got.state} != ${expected}`)
+        break
+      case "tool":
+        if (got.tool !== expected)
+          problems.push(`tool ${got.tool} != ${expected}`)
+        break
+      case "blocks":
+        break // result faces not ported — recorded, not silently passed
+      default:
+        problems.push(`expected key this client does not project: ${key}`)
+    }
+  }
+  return problems
 }
 
 describe("conformance corpus (kind + row)", () => {
@@ -80,7 +156,7 @@ describe("conformance corpus (kind + row)", () => {
 
     const run = skipReason ? it.skip : it
     run(
-      `${name}${skipReason ? ` — SKIP: ${skipReason}` : ": matches expected (kind,row)"}`,
+      `${name}${skipReason ? ` — SKIP: ${skipReason}` : ": matches expected (kind,row + fields, flags, leafId, subagents, asks)"}`,
       () => {
         const reducer = new TranscriptReducer()
         let unrecognised = 0
@@ -92,9 +168,102 @@ describe("conformance corpus (kind + row)", () => {
         // A frame this client cannot even shape is worth knowing about — it
         // means the corpus grew a plane this fold has not read.
         expect(unrecognised).toBe(0)
-        expect(projections(reducer.snapshot().items)).toEqual(
-          projections(expected.items),
-        )
+        const got = reducer.snapshot()
+        expect(projections(got.items)).toEqual(projections(expected.items))
+
+        const problems: string[] = []
+        got.items.forEach((item, index) => {
+          const want = expected.items[index] as Record<string, unknown>
+          for (const problem of itemProblems(want, item))
+            problems.push(`item[${index}] ${item.kind}@${item.row}: ${problem}`)
+        })
+
+        // Flags: the fold must not claim a turn is running (or ended) when the
+        // reference does not, and vice versa — that flag drives the composer's
+        // steer/follow affordance.
+        if (expected.flags) {
+          if (got.flags.streaming !== expected.flags.streaming)
+            problems.push(
+              `flags.streaming ${got.flags.streaming} != ${expected.flags.streaming}`,
+            )
+          if (got.flags.ended !== expected.flags.ended)
+            problems.push(
+              `flags.ended ${got.flags.ended} != ${expected.flags.ended}`,
+            )
+        }
+
+        // The leaf beacon: what the client would resume from.
+        if ("leafId" in expected && got.leafId !== (expected.leafId ?? null))
+          problems.push(`leafId ${got.leafId} != ${expected.leafId ?? null}`)
+
+        // Subagent rows: the panel's content, not just its presence.
+        const wantAgents = (expected.subagents ?? []) as Record<
+          string,
+          unknown
+        >[]
+        if (got.subagents.length !== wantAgents.length) {
+          problems.push(
+            `subagents ${got.subagents.length} != ${wantAgents.length}`,
+          )
+        } else {
+          wantAgents.forEach((want, i) => {
+            const mine = got.subagents[i] as unknown as Record<string, unknown>
+            for (const key of Object.keys(want)) {
+              const expectedValue = want[key]
+              if (typeof expectedValue === "string") {
+                if (!textMatches(String(mine[key] ?? ""), expectedValue))
+                  problems.push(
+                    `subagent[${i}].${key} ${JSON.stringify(mine[key])} !~ ${JSON.stringify(expectedValue)}`,
+                  )
+              } else if (mine[key] !== expectedValue) {
+                problems.push(
+                  `subagent[${i}].${key} ${mine[key]} != ${expectedValue}`,
+                )
+              }
+            }
+          })
+        }
+
+        // Asks the machine is still waiting on — the overlay's whole reason to exist.
+        const wantAsks = (expected.pendingAsks ?? []) as Record<
+          string,
+          unknown
+        >[]
+        if (got.pendingAsks.length !== wantAsks.length) {
+          problems.push(
+            `pendingAsks ${got.pendingAsks.length} != ${wantAsks.length}`,
+          )
+        } else {
+          wantAsks.forEach((want, i) => {
+            const mine = got.pendingAsks[i] as unknown as Record<
+              string,
+              unknown
+            >
+            for (const key of Object.keys(want)) {
+              const expectedValue = want[key]
+              if (Array.isArray(expectedValue)) {
+                if (
+                  JSON.stringify(mine[key] ?? []) !==
+                  JSON.stringify(expectedValue)
+                )
+                  problems.push(
+                    `ask[${i}].${key} ${JSON.stringify(mine[key])} != ${JSON.stringify(expectedValue)}`,
+                  )
+              } else if (typeof expectedValue === "string") {
+                if (!textMatches(String(mine[key] ?? ""), expectedValue))
+                  problems.push(
+                    `ask[${i}].${key} ${JSON.stringify(mine[key])} !~ ${JSON.stringify(expectedValue)}`,
+                  )
+              } else if (mine[key] !== expectedValue) {
+                problems.push(
+                  `ask[${i}].${key} ${mine[key]} != ${expectedValue}`,
+                )
+              }
+            }
+          })
+        }
+
+        expect(problems).toEqual([])
       },
     )
   }

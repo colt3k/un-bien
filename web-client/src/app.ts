@@ -69,6 +69,7 @@ export class App {
   private readonly toastEl = $<HTMLElement>("toast")
   private readonly input = $<HTMLTextAreaElement>("input")
   private readonly stopBtn = $<HTMLButtonElement>("stopBtn")
+  private readonly sendBtn = $<HTMLButtonElement>("sendBtn")
 
   private client: SessionClient | null = null
   private relayUrl = ""
@@ -108,7 +109,7 @@ export class App {
       if (url) void this.connect(url)
     })
     $("pairBtn").addEventListener("click", () => void this.pair())
-    $("sendBtn").addEventListener("click", () => this.send("auto"))
+    this.sendBtn.addEventListener("click", () => this.send("auto"))
     $("queueBtn").addEventListener("click", () => this.send("queue"))
     this.stopBtn.addEventListener("click", () => this.client?.abort())
     this.input.addEventListener("keydown", (event: KeyboardEvent) => {
@@ -277,6 +278,10 @@ export class App {
           forgetLastRoom(epk)
           this.toast("that session ended on the machine")
           this.title.textContent = `${this.active.name} (ended)`
+          // The relay saying the room is gone IS the session ending for a
+          // viewer, even when the machine never got to send `session_shutdown`.
+          this.reducer.setEnded(true)
+          this.render()
         }
         break
       }
@@ -396,6 +401,9 @@ export class App {
     client.setRoom(roomId)
     this.active = { epk, roomId, name, caps: [] }
     rememberLastRoom({ epk, roomId, name })
+    // Attaching means the room is live and drivable again — clear any ended flag
+    // the previous room left behind.
+    this.reducer.setEnded(false)
     this.title.textContent = name
     this.sub.textContent = "syncing…"
     this.drawer.hidden = true
@@ -594,6 +602,12 @@ export class App {
     this.renderAsks(snapshot.pendingAsks)
     this.busy = snapshot.flags.streaming
     this.stopBtn.hidden = !snapshot.flags.streaming
+    // An ended session is not drivable: say so where the user will hit it rather
+    // than letting `prompt` fail with `unknown_peer`/`room_ended` toasts.
+    this.sendBtn.disabled = snapshot.flags.ended
+    this.input.disabled = snapshot.flags.ended
+    if (snapshot.flags.ended)
+      this.sub.textContent = `${this.active?.name ?? "session"} · ended`
     if (followTail || !anchor || !anchor.isConnected) {
       this.transcript.scrollTop = this.transcript.scrollHeight
       return
@@ -665,7 +679,9 @@ export class App {
         `plan: ${snapshot.plan.project ?? "plan"} (${snapshot.plan.itemCount})`,
       )
     for (const row of snapshot.subagents)
-      bits.push(`subagent ${row.status}: ${row.description ?? row.id}`)
+      bits.push(
+        `subagent ${row.status}${row.type ? ` · ${row.type}` : ""}: ${row.description ?? row.id}`,
+      )
     if (bits.length === 0) {
       this.panels.hidden = true
       return

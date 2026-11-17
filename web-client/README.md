@@ -16,7 +16,7 @@ runs) is imported directly, aliased through Vite so three node-isms don't drag
 pnpm --filter web-client dev            # vite dev server, bound to all interfaces
 pnpm --filter web-client build          # dist/ (88 kB JS, 30 kB gzip)
 pnpm --filter web-client preview        # serve dist/ — use THIS on a phone
-pnpm --filter web-client test           # 57 passing (see Conformance)
+pnpm --filter web-client test           # 58 passing (see Conformance)
 ```
 
 On a phone, use `preview`, not `dev`: the dev server's HMR socket drops on a
@@ -73,12 +73,23 @@ Screenshot of a live turn: `/tmp/unbien-smoke/web-client-live.png`.
 
 ## What is not here
 
-- **Conformance is (kind, row) only.** `test/corpus.test.ts` runs all ten
-  `contracts/conformance/` scenarios and compares `(kind, row)` in **render
-  order** — no skips. What that does NOT cover: `blocks`, `flags`,
-  `pendingAsks`, `leafId`, the panel projections, and `replay` mode (the corpus
-  records no paged fixture, so paging is only covered by `test/derive.test.ts`).
-  Three scenarios expect zero items, so for them this means "no spurious rows".
+- **Conformance covers the projection, not the pixels.** `test/corpus.test.ts`
+  runs all ten `contracts/conformance/` scenarios with no skips and compares,
+  in **render order**: `(kind, row)`, `text` (prefix — the corpus scrubs long
+  strings and escapes their newlines), `streaming`, `images`, `state`, `tool`,
+  `flags`, `leafId`, `subagents` and `pendingAsks`. Not compared: `blocks` — the
+  tool card's result face (`ToolFaceResolver.resolve`: terminal / file / diff /
+  lines / script / markdown / …), which this client does not resolve yet — plus
+  `plan`, and `replay` mode (the corpus records no paged fixture, so paging is
+  covered only by `test/derive.test.ts`). Three scenarios expect zero items, so
+  for them this means "no spurious rows".
+- **Widening that comparison paid for itself immediately.** It found eight
+  `setStatus`/`notify` frames folded as eight blocking dialogs (the overlay
+  popped for a status line), `turn_end` setting `ended` (the session looked dead
+  after every reply — `session_shutdown` is the only frame that says that), a
+  subagent panel stuck at `started` because the status is the CHANNEL name
+  (`subagents:completed`), a subagent `type` the panel never carried, and
+  `tool_execution_end` asserting a turn was in flight.
 - **Row identity and the derived path are ported**, from the app's reference:
   `SessionState.swift` (`applyEntries` / `derivePath` /
   `renderPendingPathEntries`), `SessionState+Identify.swift` and

@@ -122,8 +122,22 @@ describe("streaming fold", () => {
       text({ type: "turn_end" }),
     ]).snapshot()
     expect(snapshot.flags.streaming).toBe(false)
-    expect(snapshot.flags.ended).toBe(true)
+    // A turn settling is NOT the session ending. `ended` means the machine
+    // stopped being drivable, and getting that wrong dims the transcript and
+    // kills the composer after every reply.
+    expect(snapshot.flags.ended).toBe(false)
     expect(snapshot.items.every((item) => !item.streaming)).toBe(true)
+  })
+
+  it("marks the session ended only on session_shutdown", () => {
+    const snapshot = fold([
+      text({ type: "turn_start" }),
+      text({ type: "agent_end" }),
+      text({ type: "agent_settled" }),
+      text({ type: "session_shutdown" }),
+    ]).snapshot()
+    expect(snapshot.flags.ended).toBe(true)
+    expect(snapshot.flags.streaming).toBe(false)
   })
 })
 
