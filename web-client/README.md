@@ -15,7 +15,7 @@ runs) is imported directly, aliased through Vite so three node-isms don't drag
 ```sh
 pnpm --filter web-client dev            # vite dev server, bound to all interfaces
 pnpm --filter web-client build          # dist/ (88 kB JS, 30 kB gzip)
-pnpm --filter web-client test           # 28 passing, 4 skipped (see Conformance)
+pnpm --filter web-client test           # 50 passing (see Conformance)
 ```
 
 Then open `http://<tailnet-host>:5173` (e.g. `http://m5max.tail5f1ece.ts.net:5173`)
@@ -66,18 +66,28 @@ Screenshot of a live turn: `/tmp/unbien-smoke/web-client-live.png`.
 
 ## What is not here
 
-- **Conformance is partial.** `test/corpus.test.ts` asserts `(kind, row)` against
-  `contracts/conformance/`. 6/10 live scenarios match. The 4 skips are two
-  subsystems this fold lacks, named in that file:
-  1. *row identity across live and replay* — pi's `RowBoundsStore` derives row
-     identity from entry ids + parent links + content hashes, so a block seen
-     live and again in a `get_entries` page is one row. This fold keys live rows
-     `<kind>#<seq>`, so redelivery duplicates them (001, 007).
-  2. *derived-path membership* — rows exist only for blocks on pi's derived path;
-     an abandoned branch is retained data with no row. This fold is linear
-     (002, 009).
-  `blocks`, `flags`, `pendingAsks`, `leafId`, the panel projections and the
-  replay paging contract are not compared at all.
+- **Conformance is (kind, row) only.** `test/corpus.test.ts` runs all ten
+  `contracts/conformance/` scenarios and compares `(kind, row)` in **render
+  order** — no skips. What that does NOT cover: `blocks`, `flags`,
+  `pendingAsks`, `leafId`, the panel projections, and `replay` mode (the corpus
+  records no paged fixture, so paging is only covered by `test/derive.test.ts`).
+  Three scenarios expect zero items, so for them this means "no spurious rows".
+- **Row identity and the derived path are ported**, from the app's reference:
+  `SessionState.swift` (`applyEntries` / `derivePath` /
+  `renderPendingPathEntries`), `SessionState+Identify.swift` and
+  `SessionState+BirthEntry.swift` — NOT `RowBoundsStore.swift`, which despite the
+  name holds measured row *heights* for windowed layout and says nothing about
+  identity. So: entries are indexed and retained, the active path is backwalked
+  from pi's leaf beacon, and rows are born only for path entries (an abandoned
+  branch is data with no row). A live row is matched to its entry by
+  `identify = hash(role|timestamp|contentSignature)` and re-keyed to the durable
+  entry id instead of twinning.
+- **Known deviation from the reference:** the app keeps delta-built bubble text at
+  `message_end`; this fold takes pi's stored content when it holds MORE (a client
+  that joined mid-stream saw a prefix). Never loses content, never truncates.
+  Entry-born rows also append at the tail rather than inserting before the live
+  tail (`insertBeforeLiveTail`), so a reconnect that folds old entries alongside
+  live rows can float them low.
 - No model/thinking pickers, no session list controls (fork/compact/new/navigate),
   no `session_launch` UI beyond `App.launch()`, no image rendering, no
   tool-arg/`partial` streaming detail beyond a tail.
@@ -85,13 +95,14 @@ Screenshot of a live turn: `/tmp/unbien-smoke/web-client-live.png`.
 - Slash commands are sent as ordinary prompts (pi expands them on the machine).
   The iOS app's command registry and its refusal toasts for TUI-only commands are
   not reimplemented.
-- Not on the pnpm workspace's lint/format gate yet.
 
 ## Layout
 
 | file | job |
 | --- | --- |
 | `src/main.ts` | boot; import order is load-bearing (polyfills first) |
+| `src/derive.ts` | pi's entry tree: backwalk the leaf, derive the active path, birth only path rows |
+| `src/content-identity.ts` | `identify` — the id-less live frame to durable entry bridge |
 | `src/polyfills.ts` | `Buffer` global before anything touches the core |
 | `src/session-client.ts` | port of `unbien-cli/src/client.ts`: pairing awaited, `rooms_check` honesty, paged `get_entries`, identity pin |
 | `src/framing.ts` | outer envelope, plane stamping (`rpc`/`evt`/`ub` — an unstamped frame is silently dropped), inbound classification |

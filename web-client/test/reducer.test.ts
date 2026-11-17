@@ -286,11 +286,13 @@ describe("replay through the same fold", () => {
     const entries = [
       {
         id: "e1",
+        parentId: null,
         type: "message",
         message: { role: "user", content: [{ type: "text", text: "hi" }] },
       },
       {
         id: "e2",
+        parentId: "e1",
         type: "message",
         message: {
           role: "assistant",
@@ -307,6 +309,7 @@ describe("replay through the same fold", () => {
       },
       {
         id: "e3",
+        parentId: "e2",
         type: "message",
         message: {
           role: "toolResult",
@@ -319,7 +322,10 @@ describe("replay through the same fold", () => {
     ]
 
     const reducer = new TranscriptReducer()
-    reducer.applyEntries(entries)
+    // The beacon is the leaf entry: the tree derives e1 -> e2 -> e3 from the
+    // parent links and births a row for each. Without it, entries are indexed
+    // and stay invisible.
+    reducer.applyEntries(entries, "e3")
     const replayed = reducer.snapshot()
     // Replay rows carry pi's stable entry ids (the corpus's replayStable rule);
     // a tool card is keyed by its toolCall id, exactly as the corpus expects.
@@ -337,21 +343,30 @@ describe("replay through the same fold", () => {
     // the live fold. Replay must not leave the app stuck in steer-mode, so the
     // app seeds the flag from pi's get_state instead.
     const reducer = new TranscriptReducer()
-    reducer.applyEntries([
-      {
-        id: "e9",
-        type: "message",
-        message: {
-          role: "assistant",
-          content: [
-            { type: "text", text: "hi" },
-            { type: "toolCall", id: "t9", name: "bash" },
-          ],
+    reducer.applyEntries(
+      [
+        {
+          id: "e9",
+          type: "message",
+          message: {
+            role: "assistant",
+            content: [
+              { type: "text", text: "hi" },
+              { type: "toolCall", id: "t9", name: "bash" },
+            ],
+          },
         },
-      },
-    ])
-    expect(reducer.snapshot().flags.streaming).toBe(true) // what history alone implies
-    reducer.setTurnStreaming(false) // what pi's get_state says
+      ],
+      "e9",
+    )
+    // Replaying history does NOT claim a turn is in flight — that was the spike
+    // inferring "streaming" from tool calls sitting in a completed entry. The
+    // app still seeds the flag from pi's own get_state, which is the only
+    // authority on it.
+    expect(reducer.snapshot().flags.streaming).toBe(false)
+    reducer.setTurnStreaming(true)
+    expect(reducer.snapshot().flags.streaming).toBe(true)
+    reducer.setTurnStreaming(false)
     expect(reducer.snapshot().flags.streaming).toBe(false)
     expect(reducer.snapshot().items.every((item) => !item.streaming)).toBe(true)
   })

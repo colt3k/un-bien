@@ -14,6 +14,13 @@
  * counts, not yet the full normalized projection (blocks/rows/leafId).
  */
 import type { EnvelopeMessage } from "@geohar/un-bien/client"
+import { EntryTree, type PathPlan } from "./derive.js"
+import {
+  identify,
+  imagesFromContent,
+  joinedText,
+  stableHash,
+} from "./content-identity.js"
 
 export type ItemKind =
   "user" | "assistant" | "reasoning" | "tool" | "notice" | "compaction"
@@ -195,6 +202,21 @@ export class TranscriptReducer {
   /** row key → item, for live/streaming upserts and tool-result pairing. */
   private readonly byRow = new Map<string, TranscriptItem>()
   private readonly toolsById = new Map<string, TranscriptItem>()
+  /** pi's entry tree: every entry retained, the derived path, the membership
+   *  gate. Rows are born only for entries on that path. */
+  private readonly tree = new EntryTree()
+  /** `identify(message)` → the row that message already owns. This is the ONLY
+   *  bridge between an id-less live frame and the id-carrying entry that shows
+   *  up later; the match loop re-keys the live row to the durable entry id
+   *  instead of birthing a twin. */
+  private readonly identifyIndex = new Map<string, string>()
+  /** Rows still waiting for their entry id (live-built placeholders). */
+  private readonly pendingRows = new Set<string>()
+  /** The row the current message's text deltas are landing in — ONE per kind
+   *  per message, so a message with three text blocks is one bubble, not three
+   *  rows. */
+  private openAssistant: string | null = null
+  private openReasoning: string | null = null
   private subagents: SubagentRecord[] = []
   private plan: PlanSnapshot | null = null
   private readonly asks = new Map<string, AskRequest>()
@@ -211,9 +233,147 @@ export class TranscriptReducer {
     compaction: 0,
   }
 
-  applyEntries(entries: readonly unknown[]): void {
-    for (const { env, rowHint } of entriesToEnvelopes(entries))
-      this.apply(env, rowHint)
+  /** Fold a page of pi entries. `leafId` is the ACTIVE-LEAF BEACON, and is only
+   *  one when the page COMPLETED the walk (came back empty) — a partial page's
+   *  `leafId` is a resume cursor, and deriving from it builds a partial path
+   *  that can strand the transcript empty. */
+  applyEntries(
+    entries: readonly unknown[],
+    leafId?: string | null,
+    authoritative = true,
+  ): void {
+    if (typeof leafId === "string" && leafId !== "") this.leafId = leafId
+    this.applyPlan(
+      this.tree.applyEntries(
+        entries,
+        leafId ?? null,
+        authoritative,
+        this.turnOpen(),
+      ),
+    )
+  }
+
+  /** A turn is in flight: a reset would tear a streaming bubble in half, so the
+   *  derive defers it and the held leaf re-derives at turn end. */
+  private turnOpen(): boolean {
+    return (
+      this.streaming ||
+      this.openAssistant !== null ||
+      this.openReasoning !== null
+    )
+  }
+
+  private applyPlan(plan: PathPlan): void {
+    if (plan.reset) this.resetRows()
+    if (plan.prepend.length > 0) {
+      const born: string[] = []
+      for (const id of plan.prepend) {
+        const before = this.items.length
+        this.birthEntry(this.tree.entry(id))
+        for (let i = before; i < this.items.length; i++)
+          born.push(this.items[i]!.row)
+      }
+      this.moveToFront(born)
+    }
+    for (const id of plan.birth) this.birthEntry(this.tree.entry(id))
+  }
+
+  /** Rootward ancestry is the OLDEST content, so it belongs before everything
+   *  already on screen — including rows the live stream is still building. */
+  private moveToFront(rows: readonly string[]): void {
+    if (rows.length === 0) return
+    const wanted = new Set(rows)
+    const moved = this.items.filter((item) => wanted.has(item.row))
+    if (moved.length === 0) return
+    const rest = this.items.filter((item) => !wanted.has(item.row))
+    this.items.length = 0
+    this.items.push(...moved, ...rest)
+  }
+
+  /** Drop every rendered row after a derive DIVERGED (the only destructive
+   *  outcome). The entry tree keeps everything — the abandoned branch stays as
+   *  data — and the new path re-births from it. */
+  private resetRows(): void {
+    this.items.length = 0
+    this.byRow.clear()
+    this.toolsById.clear()
+    this.identifyIndex.clear()
+    this.pendingRows.clear()
+    this.openAssistant = null
+    this.openReasoning = null
+  }
+
+  /** Birth ONE entry's rows. Port of `SessionState+BirthEntry.birthEntry` — the
+   *  same funnel the live path uses, so a replayed entry and the frame that
+   *  streamed it produce the same row. */
+  private birthEntry(raw: unknown): void {
+    const entry = asFrame(raw)
+    if (!entry) return
+    const entryId = typeof entry.id === "string" ? entry.id : undefined
+    switch (entry.type) {
+      case "compaction":
+        this.push({
+          kind: "compaction",
+          row: entryId ?? this.row("compaction"),
+          text: "",
+          streaming: false,
+          blocks: [],
+          images: 0,
+        })
+        return
+      case "custom_message": {
+        // pi's custom-role entry: content + display are TOP-LEVEL here (no
+        // `message` object). Extension bookkeeping rides display:false and must
+        // stay invisible; mesh agent messages ride display:true.
+        if (entry.display === false) return
+        this.push({
+          kind: "notice",
+          row: this.row("notice"),
+          text: joinedText(entry.content),
+          streaming: false,
+          blocks: [],
+          images: 0,
+          code: "custom",
+        })
+        return
+      }
+      case "message": {
+        const message = asFrame(entry.message)
+        if (!message) return
+        const role = String(message.role ?? "")
+        if (role === "toolResult") {
+          // A tool result is not a row: it settles the card the toolCall born.
+          this.finishTool(String(message.toolCallId ?? ""), message)
+          return
+        }
+        this.applyMessageEnd(message, entryId)
+        return
+      }
+      default:
+        // model_change / thinking_level_change / label / ... : state, not rows.
+        return
+    }
+  }
+
+  /** The match loop's other half: rename a live-built row to the durable entry
+   *  id, keeping its content and position. Anchors and later replays then key
+   *  on the id pi gave it. */
+  private rekeyRow(
+    row: string,
+    entryId: string,
+    kind: ItemKind,
+  ): string | null {
+    const item = this.byRow.get(row)
+    if (!item) return null
+    const next = entryId
+    if (this.byRow.has(next) && next !== row) return null
+    this.byRow.delete(row)
+    this.pendingRows.delete(row)
+    if (this.openAssistant === row) this.openAssistant = next
+    if (this.openReasoning === row) this.openReasoning = next
+    item.row = next
+    this.byRow.set(next, item)
+    return next
   }
 
   apply(env: EnvelopeMessage, rowHint?: string): void {
@@ -227,11 +387,12 @@ export class TranscriptReducer {
 
     switch (rpc.type) {
       case "message_start": {
-        // Opens a message; its content rows are created by the deltas below or
-        // by message_end, so nothing is emitted here. Rows are keyed per content
-        // index, so the live deltas and the authoritative message_end land on
-        // the same row.
+        // Opens a message; its rows are created by the deltas or by message_end.
+        // One open row per kind per message — that is what keeps a message with
+        // several text blocks a single bubble.
         this.messageSeq += 1
+        this.openAssistant = null
+        this.openReasoning = null
         this.streaming = true
         break
       }
@@ -276,15 +437,20 @@ export class TranscriptReducer {
       }
       case "response": {
         // pi's reconstruction pages arrive as `get_entries` RESPONSES. They fold
-        // through the same path as live frames — that is the point of the fold.
-        // Rows are keyed by entry id, so a page repeating what the live stream
-        // already showed updates in place instead of duplicating. (Deduping
-        // against rows that only have a PLACEHOLDER id needs pi's entry content
-        // hashes — listed as an open gap in the README.)
+        // through the entry tree, NOT as live frames: the tree decides which
+        // entries are on the derived path at all, and a row is only born for
+        // those. Folding a page as frames (what the spike did) renders abandoned
+        // branches and duplicates the rows the live stream already built.
         if (rpc.command === "get_entries") {
           const data = asFrame(rpc.data) ?? {}
-          if (Array.isArray(data.entries))
-            this.applyEntries(data.entries as unknown[])
+          const entries = Array.isArray(data.entries)
+            ? (data.entries as unknown[])
+            : []
+          const completed = entries.length === 0
+          this.applyEntries(
+            entries,
+            completed ? String(data.leafId ?? "") || null : null,
+          )
           if (typeof data.leafId === "string") this.leafId = data.leafId
         }
         break
@@ -338,93 +504,199 @@ export class TranscriptReducer {
   private applyMessageUpdate(rpc: Frame, rowHint?: string): void {
     const event = asFrame(rpc.assistantMessageEvent)
     if (!event) return
-    const index =
-      typeof event.contentIndex === "number" ? event.contentIndex : 0
+    // Delta dedup: the wire's delta frames carry NO id, and duplicate delivery
+    // (reconnect, doubled subscription paths) would double every chunk — and the
+    // doubled pending text then fails the identify match at completion, birthing
+    // a twin row. An EXACT immediate repeat is a redelivery; real consecutive
+    // deltas are distinct by construction.
+    const signature = `${String(event.type)}|${String(event.delta ?? event.content ?? "")}`
+    if (signature === this.lastDelta) return
+    this.lastDelta = signature
+
     const kind: ItemKind =
       event.type === "thinking_start" ||
       event.type === "thinking_delta" ||
       event.type === "thinking_end"
         ? "reasoning"
         : "assistant"
-    const row = this.segmentRow(kind, rowHint, index)
-
-    switch (event.type) {
-      case "text_start":
-      case "thinking_start": {
-        this.touch(kind, row)
-        this.streaming = true
-        break
-      }
-      case "text_delta":
-      case "thinking_delta": {
-        const item = this.touch(kind, row)
-        item.streaming = true
-        item.text += typeof event.delta === "string" ? event.delta : ""
-        break
-      }
-      case "text_end":
-      case "thinking_end": {
-        const item = this.touch(kind, row)
-        if (typeof event.content === "string") item.text = event.content
-        item.streaming = false
-        break
-      }
-      case "toolcall_start": {
-        // The card itself is born on tool_execution_start (with args); when the
-        // delta arrives first, open the card so the stream has somewhere to go.
+    // Only text and thinking allocate a row. A `toolcall_*` delta must NOT open
+    // a text bubble, or a tool-only message renders an empty assistant row.
+    const isText = /^text_/.test(String(event.type))
+    const isThinking = /^thinking_/.test(String(event.type))
+    if (!isText && !isThinking) {
+      if (event.type === "toolcall_start")
         this.startTool(
           String(event.id ?? ""),
           String(event.toolName ?? "?"),
           undefined,
         )
+      return
+    }
+    const row = this.openRow(kind, rowHint)
+    if (!row) return
+    const item = this.touch(kind, row)
+
+    switch (event.type) {
+      case "text_start":
+      case "thinking_start":
+        this.streaming = true
         break
-      }
+      case "text_delta":
+      case "thinking_delta":
+        item.streaming = true
+        item.text += typeof event.delta === "string" ? event.delta : ""
+        break
+      case "text_end":
+      case "thinking_end":
+        if (typeof event.content === "string") item.text = event.content
+        item.streaming = false
+        break
       default:
         break
     }
   }
 
-  private applyMessageEnd(message: Frame | null, rowHint?: string): void {
+  /** The row the current message's text (or thinking) deltas are landing in.
+   *  Allocated once per message per kind — the placeholder is pi's entry id when
+   *  a replay hands one over, else the corpus's `<kind>#<seq>`. */
+  private openRow(kind: ItemKind, rowHint?: string): string | null {
+    if (kind === "reasoning") {
+      if (this.openReasoning === null)
+        this.openReasoning = rowHint ?? this.row("reasoning")
+      return this.openReasoning
+    }
+    if (this.openAssistant === null)
+      this.openAssistant = rowHint ?? this.row("assistant")
+    return this.openAssistant
+  }
+
+  /** Fold `message_end` for both planes: a LIVE frame (no `entryId`) builds a
+   *  placeholder row that the match loop re-keys when the entry lands; an
+   *  ENTRY-born frame (from the tree) matches first and births only on a miss.
+   *  Port of `applyRPCMessageEnd` + the match loop in `birthEntry`. */
+  private applyMessageEnd(message: Frame | null, entryId?: string): void {
     if (!message) return
     const role = String(message.role ?? "")
-    // A toolResult message duplicates the tool card's own result frame.
     if (role === "toolResult" || role === "system") return
+    const key = identify(message)
+
+    if (role === "custom") {
+      // un-bien's own bookkeeping (mesh name assignment, relay state) rides
+      // custom-role messages flagged display:false precisely so clients don't
+      // surface them. The id is content-keyed so a live birth and its later
+      // entry replay are the same row.
+      if (message.display === false) return
+      const text = joinedText(message.content)
+      this.push({
+        kind: "notice",
+        row: `notice@${stableHash(text)}`,
+        text,
+        streaming: false,
+        blocks: [],
+        images: 0,
+        code: "custom",
+      })
+      return
+    }
+    if (role !== "user" && role !== "assistant") return
+    const kind: ItemKind = role === "user" ? "user" : "assistant"
+
+    if (message.stopReason === "error") {
+      // A failed turn is a notice, not a bubble. Content-keyed, so a live error
+      // and its later entry replay dedup into one row.
+      const text = String(message.errorMessage ?? "Provider error")
+      this.push({
+        kind: "notice",
+        row: `notice@err@${stableHash(text)}`,
+        text,
+        streaming: false,
+        blocks: [],
+        images: 0,
+        code: "provider_error",
+      })
+      return
+    }
 
     const content = blocksOf(message)
-    let toolIndex = 0
-    for (const [index, block] of content.entries()) {
-      if (block.type === "text") {
-        const row = this.segmentRow(
-          role === "user" ? "user" : "assistant",
-          rowHint,
-          index,
-        )
-        const item = this.touch(role === "user" ? "user" : "assistant", row)
-        item.text = typeof block.text === "string" ? block.text : ""
-        item.streaming = false
-      } else if (block.type === "thinking") {
-        const row = this.segmentRow("reasoning", rowHint, index)
-        const item = this.touch("reasoning", row)
-        item.text = typeof block.thinking === "string" ? block.thinking : ""
-        item.streaming = false
-      } else if (block.type === "toolCall") {
-        this.startTool(
-          String(block.id ?? `call-${index}`),
-          String(block.name ?? "?"),
-          undefined,
-        )
-        toolIndex += 1
-      } else if (block.type === "image") {
-        const row = this.segmentRow(
-          role === "user" ? "user" : "assistant",
-          rowHint,
-          index,
-        )
-        const item = this.touch(role === "user" ? "user" : "assistant", row)
-        item.images += 1
+    const calls = content.filter((block) => block.type === "toolCall")
+    const images = imagesFromContent(message.content).length
+    const text = joinedText(message.content)
+
+    if (entryId !== undefined) {
+      // MATCH FIRST: this entry is a row already on screen (live-built, or born
+      // by an earlier page). Re-key it — never append a twin.
+      const existing = this.identifyIndex.get(key)
+      if (existing !== undefined) {
+        const next = this.rekeyRow(existing, entryId, kind)
+        if (next !== null) this.identifyIndex.set(key, next)
+        this.reconstructCards(calls)
+        return
       }
+      // An assistant entry with no prose and no image births NOTHING: its
+      // thinking is not a replay row, and its tool calls are cards.
+      if (kind === "assistant" && text === "" && images === 0) {
+        this.reconstructCards(calls)
+        return
+      }
+      this.push({
+        kind,
+        row: entryId,
+        text,
+        streaming: false,
+        blocks: [],
+        images,
+      })
+      this.identifyIndex.set(key, entryId)
+      this.reconstructCards(calls)
+      return
     }
-    if (toolIndex > 0) this.streaming = true
+
+    // LIVE plane. A live frame for a message that already owns a row is a
+    // redelivery — the relay does not redeliver, but a reconnect or a replayed
+    // subscription buffer can.
+    if (this.identifyIndex.has(key)) return
+    if (kind === "assistant" && this.openAssistant !== null) {
+      // Settle the delta-built bubble and KEEP its placeholder id; the entry id
+      // arrives with the next `get_entries` and the match loop re-keys it.
+      // pi's stored content wins when it holds MORE than the deltas delivered
+      // (a client that joined mid-stream saw a prefix, never more) — content is
+      // never lost, and the row keeps the position the viewer watched.
+      const item = this.touch(kind, this.openAssistant)
+      item.streaming = false
+      if (text.length > item.text.length) item.text = text
+      if (images > 0) item.images = images
+      this.identifyIndex.set(key, this.openAssistant)
+      this.pendingRows.add(this.openAssistant)
+      this.openAssistant = null
+    } else {
+      if (kind === "assistant" && text === "" && images === 0) {
+        this.reconstructCards(calls)
+        return
+      }
+      const row = this.row(kind)
+      this.push({ kind, row, text, streaming: false, blocks: [], images })
+      this.identifyIndex.set(key, row)
+      this.pendingRows.add(row)
+    }
+    this.reconstructCards(calls)
+  }
+
+  /** Replay reconstructs tool cards from the assistant entry's own `toolCall`
+   *  blocks — the live stream opened them with separate `tool_execution_start`
+   *  frames. `startTool` dedups by call id, so a live-opened card is untouched. */
+  private reconstructCards(calls: readonly ContentBlock[]): void {
+    for (const call of calls)
+      this.startTool(String(call.id ?? ""), String(call.name ?? "?"), undefined)
+  }
+
+  /** A replayed `toolResult` entry settles the card its toolCall opened. */
+  private finishTool(toolCallId: string, message: Frame): void {
+    const card = this.toolsById.get(toolCallId)
+    if (!card) return
+    card.state = message.isError === true ? "failed" : "ok"
+    card.text = summarizeResult(message.content)
+    card.blocks = blocksFor({ content: message.content }, message.details)
+    card.images = countImages(message.content)
   }
 
   private startTool(
@@ -550,39 +822,23 @@ export class TranscriptReducer {
     if (customType === "subagents:record" && data)
       this.applyEvt("subagents", data)
     if (customType.startsWith("plan")) this.applyEvt("plan", data ?? {})
-    if (typeof entry.id === "string") this.leafId = entry.id
+    if (typeof entry.id === "string") {
+      this.leafId = entry.id
+      // INDEX only — no beacon, so nothing is born. Live rows come from the
+      // live frames; the durable entry id arrives with the next `get_entries`
+      // and the match loop re-keys the row then. Birthing a row from
+      // `entry_appended` would (a) duplicate what the stream already built and
+      // (b) promote a live placeholder to a replay-stable id early, which is
+      // what the conformance golden says must NOT happen.
+      this.tree.applyEntries([entry], null, false, this.turnOpen())
+    }
   }
 
-  /** Row key for a segment of a streamed message: one row per content block, so
-   *  live deltas and the authoritative message_end land on the same row.
-   *  Memoized: a placeholder row id is allocated ONCE per segment, otherwise
-   *  every delta would invent a new row and the transcript would shatter. */
-  private readonly segmentRows = new Map<string, string>()
-  /** Which message is currently being folded: every message numbers its content
-   *  blocks from 0, so without this the per-segment row keys would collide
-   *  across messages. */
+  /** Which message is currently being folded (fold bookkeeping; row identity no
+   *  longer depends on it — there is one open row per kind per message). */
   private messageSeq = 0
-
-  private segmentRow(
-    kind: ItemKind,
-    rowHint: string | undefined,
-    index: number,
-  ): string {
-    const key = `${kind}:${rowHint ?? `msg${this.messageSeq}`}:${index}`
-    const existing = this.segmentRows.get(key)
-    if (existing) return existing
-    // Replay-stable rows ARE pi's entry ids (the corpus's `replayStable` rule);
-    // live rows are the `<kind>#<seq>` placeholder. Only a message with more
-    // than one block of the same kind needs the index suffix.
-    const row =
-      rowHint === undefined
-        ? this.row(kind)
-        : index === 0
-          ? rowHint
-          : `${rowHint}#${index}`
-    this.segmentRows.set(key, row)
-    return row
-  }
+  /** Full-frame dedup for streaming deltas; see `applyMessageUpdate`. */
+  private lastDelta: string | undefined
 
   /** The `<kind>#<seq>` placeholder the corpus uses when ids are not replay-stable. */
   private row(kind: ItemKind, rowHint?: string): string {
@@ -607,6 +863,10 @@ export class TranscriptReducer {
   }
 
   private push(item: TranscriptItem): void {
+    // The dedup guard: a row key is either a pi entry id or a toolCall id, and
+    // both are identical across the live plane and a replay. If the key is
+    // already on screen, this is the same block arriving again.
+    if (this.byRow.has(item.row)) return
     this.items.push(item)
     this.byRow.set(item.row, item)
   }
@@ -634,8 +894,13 @@ export class TranscriptReducer {
     this.items.length = 0
     this.byRow.clear()
     this.toolsById.clear()
+    this.tree.reset()
+    this.identifyIndex.clear()
+    this.pendingRows.clear()
+    this.openAssistant = null
+    this.openReasoning = null
+    this.lastDelta = undefined
     this.asks.clear()
-    this.segmentRows.clear()
     this.subagents = []
     this.plan = null
     this.leafId = null

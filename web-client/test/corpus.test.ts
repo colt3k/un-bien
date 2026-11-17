@@ -12,25 +12,20 @@ import { TranscriptReducer, toEnvelope } from "../src/reducer.js"
  * normalized `expected.json`. Rows are compared on purpose: `row` is where pi's
  * entry identity shows up, so a fold that invents or loses rows fails here.
  *
- * WHAT THIS CLIENT DOES NOT IMPLEMENT YET — the four skipped scenarios are not
- * incidental bugs, they are two named subsystems this fold does not have:
+ * ALL TEN SCENARIOS RUN. They did not always: four were skipped for two missing
+ * subsystems — row identity across live and replay, and entry-tree derivation
+ * with its membership gate. Both are ported now (src/derive.ts,
+ * src/content-identity.ts, and the match loop in the reducer). SKIP_REASONS
+ * below is the mechanism for skipping one honestly; it is deliberately empty.
  *
- *   1. Row identity across live and replay. The reference (pi's
- *      RowBoundsStore) derives row identity from pi's ENTRY ids, parent links
- *      and content hashes, so a block seen live and again in a `get_entries`
- *      page is ONE row. This fold keys live rows `<kind>#<seq>` and replay rows
- *      by entry id, so redelivery would duplicate them.
- *      → 001-message-turn, 007-redelivery-dedup
- *   2. Entry-tree derivation and the membership gate. Rows only exist for
- *      blocks on the derived path from pi's leaf; a block that was abandoned
- *      (branch switched, path truncated) is retained data with NO row. This
- *      fold is linear — it renders every entry it is given.
- *      → 002-subagent-run, 009-derive-path-truncation
- *
- * Also not compared anywhere: `blocks`, `flags`, `pendingAsks`, `leafId`, the
- * panel projections, and the replay-mode paging contract. 003/006/008 pass at
- * (kind, row) level, which for scenarios whose expected items are empty means
- * "produces no spurious rows" — weaker than it looks.
+ * STILL NOT COMPARED — do not read 10/10 as conformance:
+ *   - ORDER is compared (see `projections`), but `blocks`, `flags`,
+ *     `pendingAsks`, `leafId` and the panel projections are NOT.
+ *   - `replay` mode: every scenario declares `modes: ["live"]` except none —
+ *     the corpus has no recorded paging fixture, so the paging contract is
+ *     only covered by test/derive.test.ts, not here.
+ *   - 003/006/008 expect NO items, so for them this asserts "produces no
+ *     spurious rows", which is weaker than it looks.
  */
 const SCENARIO_DIR = join(
   __dirname,
@@ -41,14 +36,9 @@ const SCENARIO_DIR = join(
   "scenarios",
 )
 
-/** Scenario → why it is out of this fold's reach, so the skip is auditable. */
-const SKIP_REASONS: Record<string, string> = {
-  "001-message-turn": "needs entry-content row identity (redelivery dedup)",
-  "002-subagent-run":
-    "needs derived-path membership gate + entry-content row identity",
-  "007-redelivery-dedup": "needs entry-content row identity (redelivery dedup)",
-  "009-derive-path-truncation": "needs derived-path membership gate + paging",
-}
+/** Scenario → why it is out of this fold's reach, so a skip stays auditable.
+ *  Keep this empty: an unexplained skip is how a client drifts. */
+const SKIP_REASONS: Record<string, string> = {}
 
 interface ScenarioMeta {
   modes?: string[]
@@ -59,8 +49,11 @@ interface Expected {
   items: { kind: string; row: string }[]
 }
 
+/** `kind@row`, in RENDER ORDER. The vocab says items are in render order, so
+ *  sorting here would hide a fold that births the rootward ancestry below the
+ *  rows it should precede. */
 function projections(items: { kind: string; row: string }[]): string[] {
-  return items.map((item) => `${item.kind}@${item.row}`).sort()
+  return items.map((item) => `${item.kind}@${item.row}`)
 }
 
 describe("conformance corpus (kind + row)", () => {
