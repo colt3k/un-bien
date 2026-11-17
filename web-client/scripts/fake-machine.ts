@@ -112,7 +112,7 @@ function addEntry(message: Record<string, unknown>): Entry {
   const entry: Entry = {
     id: `e${++entrySeq}`,
     type: "message",
-    parentId: entries.length ? entries[entries.length - 1].id : null,
+    parentId: entries.at(-1)?.id ?? null,
     timestamp,
     message: stamped,
   }
@@ -530,7 +530,6 @@ async function main(): Promise<void> {
       cwd: "/tmp/fake-project",
       caps: CAPS,
       model: "claude-test",
-      working: false,
     },
   })
   pushAllowList()

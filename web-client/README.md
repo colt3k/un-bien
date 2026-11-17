@@ -40,6 +40,21 @@ That double is **not** a second implementation of the extension and proves
 nothing about the real one; it exists so the browser end can be driven against
 the real Rust relay. Everything it emits was copied from `extension/src`.
 
+To capture what a REAL session sends, as a fixture for this fold:
+
+```sh
+# in the pi session: /unbien pair   → copy the pairing URI ("camera-less devices")
+npx tsx web-client/scripts/dump-entries.ts \
+  --relay http://<tailnet-host>:3000 \
+  --pair  'unbien://pair?t=…&epk=…&n=…&rm=…' \
+  --out   /tmp/unbien-fixture.json
+```
+
+It pairs as a throwaway device (Node has no stored identity, so each run needs a
+fresh code — the machine's code is single-use), lists rooms, walks `get_entries`
+to its leaf, and writes the entries verbatim. The output file IS your session —
+prompts, tool output, paths — so it goes in `/tmp`, never in the repo.
+
 ## What was verified end to end (Chrome + real relay + the double)
 
 - Connect: Ed25519 challenge/response over the browser's native `WebSocket`
