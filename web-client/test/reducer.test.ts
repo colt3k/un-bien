@@ -381,3 +381,144 @@ describe("replay through the same fold", () => {
     expect(toEnvelope({ nonsense: true })).toBeNull()
   })
 })
+
+describe("history vs the live tail", () => {
+  const liveAssistant = (text: string) => [
+    { rpc: { type: "message_start" } },
+    {
+      rpc: {
+        type: "message_update",
+        assistantMessageEvent: {
+          type: "text_delta",
+          contentIndex: 0,
+          delta: text,
+        },
+      },
+    },
+    {
+      rpc: {
+        type: "message_end",
+        message: {
+          role: "assistant",
+          timestamp: 1000,
+          content: [{ type: "text", text }],
+        },
+      },
+    },
+  ]
+
+  it("inserts a late entry birth ABOVE the live tail", () => {
+    const reducer = new TranscriptReducer()
+    for (const frame of liveAssistant("answer I watched stream"))
+      reducer.apply(frame)
+    expect(reducer.snapshot().items.map((i) => i.row)).toEqual(["assistant#1"])
+
+    // A reconnect folds older history while the live rows are still on screen.
+    // Historical rows must land in the log, not float below the newest message.
+    reducer.applyEntries(
+      [
+        {
+          id: "e1",
+          parentId: null,
+          type: "message",
+          message: {
+            role: "user",
+            timestamp: 900,
+            content: [{ type: "text", text: "old prompt" }],
+          },
+        },
+        {
+          id: "e2",
+          parentId: "e1",
+          type: "message",
+          message: {
+            role: "assistant",
+            timestamp: 901,
+            content: [{ type: "text", text: "old answer" }],
+          },
+        },
+      ],
+      "e2",
+    )
+    expect(reducer.snapshot().items.map((i) => i.row)).toEqual([
+      "e1",
+      "e2",
+      "assistant#1",
+    ])
+  })
+
+  it("re-keys a live row to its entry id and keeps its position", () => {
+    const reducer = new TranscriptReducer()
+    for (const frame of liveAssistant("answer I watched streamed"))
+      reducer.apply(frame)
+
+    // The post-turn re-read: pi now has an ENTRY for what just streamed. Same
+    // content identity, different plane — the match loop renames the row.
+    reducer.applyEntries(
+      [
+        {
+          id: "e1",
+          parentId: null,
+          type: "message",
+          message: {
+            role: "assistant",
+            timestamp: 1000,
+            content: [{ type: "text", text: "answer I watched streamed" }],
+          },
+        },
+      ],
+      "e1",
+    )
+    const items = reducer.snapshot().items
+    expect(items.map((i) => i.row)).toEqual(["e1"])
+    expect(items[0]!.text).toBe("answer I watched streamed")
+    expect(items[0]!.replayStable).toBe(true)
+  })
+
+  it("a re-keyed row counts as history for the NEXT late birth", () => {
+    const reducer = new TranscriptReducer()
+    for (const frame of liveAssistant("streamed")) reducer.apply(frame)
+    reducer.applyEntries(
+      [
+        {
+          id: "e5",
+          parentId: null,
+          type: "message",
+          message: {
+            role: "assistant",
+            timestamp: 1000,
+            content: [{ type: "text", text: "streamed" }],
+          },
+        },
+      ],
+      "e5",
+    )
+    // A genuinely new live row is now the tail again.
+    for (const frame of liveAssistant("brand new")) reducer.apply(frame)
+    const before = reducer.snapshot().items.map((i) => i.row)
+    expect(before).toEqual(["e5", "assistant#2"])
+    // And history arriving later still goes above it.
+    reducer.applyEntries(
+      [
+        {
+          id: "e6",
+          parentId: "e5",
+          type: "message",
+          message: {
+            role: "assistant",
+            timestamp: 1100,
+            content: [{ type: "text", text: "backfilled middle" }],
+          },
+        },
+      ],
+      "e6",
+    )
+    // Backfilled ancestry extends the path and is born as HISTORY — above the
+    // live row, even though it arrived last on the wire.
+    expect(reducer.snapshot().items.map((i) => i.row)).toEqual([
+      "e5",
+      "e6",
+      "assistant#2",
+    ])
+  })
+})

@@ -40,6 +40,10 @@ export interface TranscriptItem {
   blocks: string[]
   images: number
   toolCallId?: string
+  /** True when this row's key IS a pi entry id (born from an entry, or re-keyed
+   *  to one). The boundary between replayed history and the live tail is
+   *  defined by this, and that boundary is where late entry births insert. */
+  replayStable: boolean
   /** Edit-family diff hunks the extension rides in `env.aux` alongside the
    *  byte-faithful rpc frame. Not part of the corpus vocabulary. */
   hunks?: unknown[]
@@ -92,6 +96,11 @@ export interface ReducerSnapshot {
    *  reference projection keeps these OUT of `items` — scenarios 001, 002 and
    *  007 each carry a rate-limit warning of exactly this kind. */
   toasts: Toast[]
+  /** Rows whose key changed this batch (a live placeholder becoming a pi entry
+   *  id). The DOM must RENAME the element, not build a new one: a rename keeps
+   *  the reader's scroll position and the row's place in the log. Drained on
+   *  read, like `toasts`. */
+  rekeys: { from: string; to: string }[]
   leafId: string | null
 }
 
@@ -221,6 +230,8 @@ export class TranscriptReducer {
   private plan: PlanSnapshot | null = null
   private readonly asks = new Map<string, AskRequest>()
   private pendingToasts: Toast[] = []
+  /** Row renames awaiting the next render — see `ReducerSnapshot.rekeys`. */
+  private rekeyLog: { from: string; to: string }[] = []
   private leafId: string | null = null
   private streaming = false
   private ended = false
@@ -312,13 +323,14 @@ export class TranscriptReducer {
     const entryId = typeof entry.id === "string" ? entry.id : undefined
     switch (entry.type) {
       case "compaction":
-        this.push({
+        this.insertBeforeLiveTail({
           kind: "compaction",
           row: entryId ?? this.row("compaction"),
           text: "",
           streaming: false,
           blocks: [],
           images: 0,
+          replayStable: true,
         })
         return
       case "custom_message": {
@@ -326,14 +338,15 @@ export class TranscriptReducer {
         // `message` object). Extension bookkeeping rides display:false and must
         // stay invisible; mesh agent messages ride display:true.
         if (entry.display === false) return
-        this.push({
+        this.insertBeforeLiveTail({
           kind: "notice",
-          row: this.row("notice"),
+          row: `notice@${stableHash(joinedText(entry.content))}`,
           text: joinedText(entry.content),
           streaming: false,
           blocks: [],
           images: 0,
           code: "custom",
+          replayStable: true,
         })
         return
       }
@@ -369,9 +382,13 @@ export class TranscriptReducer {
     if (this.byRow.has(next) && next !== row) return null
     this.byRow.delete(row)
     this.pendingRows.delete(row)
+    this.rekeyLog.push({ from: row, to: next })
     if (this.openAssistant === row) this.openAssistant = next
     if (this.openReasoning === row) this.openReasoning = next
     item.row = next
+    // The row is now anchored to pi's durable id: it counts as history, so a
+    // later late birth inserts before it, not after.
+    item.replayStable = true
     this.byRow.set(next, item)
     return next
   }
@@ -476,6 +493,7 @@ export class TranscriptReducer {
           text: "",
           streaming: false,
           blocks: [],
+          replayStable: false,
           images: 0,
         })
         break
@@ -595,6 +613,7 @@ export class TranscriptReducer {
         blocks: [],
         images: 0,
         code: "custom",
+        replayStable: false,
       })
       return
     }
@@ -605,15 +624,21 @@ export class TranscriptReducer {
       // A failed turn is a notice, not a bubble. Content-keyed, so a live error
       // and its later entry replay dedup into one row.
       const text = String(message.errorMessage ?? "Provider error")
-      this.push({
-        kind: "notice",
+      const item = {
+        kind: "notice" as ItemKind,
         row: `notice@err@${stableHash(text)}`,
         text,
         streaming: false,
-        blocks: [],
+        blocks: [] as string[],
         images: 0,
         code: "provider_error",
-      })
+        replayStable: entryId !== undefined,
+      }
+      // A "now" failure belongs at the tail; a REPLAYED one belongs in the log,
+      // where it happened — historical warnings must not float below the newest
+      // message on a reconnect.
+      if (entryId !== undefined) this.insertBeforeLiveTail(item)
+      else this.push(item)
       return
     }
 
@@ -629,25 +654,26 @@ export class TranscriptReducer {
       if (existing !== undefined) {
         const next = this.rekeyRow(existing, entryId, kind)
         if (next !== null) this.identifyIndex.set(key, next)
-        this.reconstructCards(calls)
+        this.reconstructCards(calls, true)
         return
       }
       // An assistant entry with no prose and no image births NOTHING: its
       // thinking is not a replay row, and its tool calls are cards.
       if (kind === "assistant" && text === "" && images === 0) {
-        this.reconstructCards(calls)
+        this.reconstructCards(calls, true)
         return
       }
-      this.push({
+      this.insertBeforeLiveTail({
         kind,
         row: entryId,
         text,
         streaming: false,
         blocks: [],
         images,
+        replayStable: true,
       })
       this.identifyIndex.set(key, entryId)
-      this.reconstructCards(calls)
+      this.reconstructCards(calls, true)
       return
     }
 
@@ -670,23 +696,39 @@ export class TranscriptReducer {
       this.openAssistant = null
     } else {
       if (kind === "assistant" && text === "" && images === 0) {
-        this.reconstructCards(calls)
+        this.reconstructCards(calls, false)
         return
       }
       const row = this.row(kind)
-      this.push({ kind, row, text, streaming: false, blocks: [], images })
+      this.push({
+        kind,
+        row,
+        text,
+        streaming: false,
+        blocks: [],
+        images,
+        replayStable: false,
+      })
       this.identifyIndex.set(key, row)
       this.pendingRows.add(row)
     }
-    this.reconstructCards(calls)
+    this.reconstructCards(calls, false)
   }
 
   /** Replay reconstructs tool cards from the assistant entry's own `toolCall`
    *  blocks — the live stream opened them with separate `tool_execution_start`
    *  frames. `startTool` dedups by call id, so a live-opened card is untouched. */
-  private reconstructCards(calls: readonly ContentBlock[]): void {
+  private reconstructCards(
+    calls: readonly ContentBlock[],
+    fromEntry: boolean,
+  ): void {
     for (const call of calls)
-      this.startTool(String(call.id ?? ""), String(call.name ?? "?"), undefined)
+      this.startTool(
+        String(call.id ?? ""),
+        String(call.name ?? "?"),
+        undefined,
+        fromEntry,
+      )
   }
 
   /** A replayed `toolResult` entry settles the card its toolCall opened. */
@@ -703,6 +745,7 @@ export class TranscriptReducer {
     toolCallId: string,
     toolName: string,
     hunks: unknown[] | undefined,
+    fromEntry = false,
   ): void {
     if (!toolCallId) return
     const existing = this.toolsById.get(toolCallId)
@@ -719,10 +762,12 @@ export class TranscriptReducer {
       blocks: hunks && hunks.length > 0 ? ["diff", "hunks"] : [],
       images: 0,
       toolCallId,
+      replayStable: fromEntry,
       ...(hunks ? { hunks } : {}),
     }
     this.toolsById.set(toolCallId, item)
-    this.push(item)
+    if (fromEntry) this.insertBeforeLiveTail(item)
+    else this.push(item)
   }
 
   private applyUiRequest(rpc: Frame): void {
@@ -753,6 +798,7 @@ export class TranscriptReducer {
         blocks: [],
         images: 0,
         code: rpc.code,
+        replayStable: false,
       })
       return
     }
@@ -837,8 +883,8 @@ export class TranscriptReducer {
   /** Which message is currently being folded (fold bookkeeping; row identity no
    *  longer depends on it — there is one open row per kind per message). */
   private messageSeq = 0
-  /** Full-frame dedup for streaming deltas; see `applyMessageUpdate`. */
-  private lastDelta: string | undefined
+  /** Full-frame dedup for streaming deltas; see `applyMessageUpdate`. */ private lastDelta:
+    string | undefined
 
   /** The `<kind>#<seq>` placeholder the corpus uses when ids are not replay-stable. */
   private row(kind: ItemKind, rowHint?: string): string {
@@ -857,6 +903,7 @@ export class TranscriptReducer {
       streaming: true,
       blocks: [],
       images: 0,
+      replayStable: false,
     }
     this.push(item)
     return item
@@ -868,6 +915,23 @@ export class TranscriptReducer {
     // already on screen, this is the same block arriving again.
     if (this.byRow.has(item.row)) return
     this.items.push(item)
+    this.byRow.set(item.row, item)
+  }
+
+  /** Where a row that belongs to HISTORY goes: before the live tail, not at the
+   *  very end. Without this, a reconnect that folds old entries while live rows
+   *  are on screen floats historical content below the newest message — the
+   *  app's own bug class ("warnings drift to below the normal messages"). */
+  private insertBeforeLiveTail(item: TranscriptItem): void {
+    if (this.byRow.has(item.row)) return
+    let at = this.items.length
+    for (let i = 0; i < this.items.length; i++) {
+      if (!this.items[i]!.replayStable) {
+        at = i
+        break
+      }
+    }
+    this.items.splice(at, 0, item)
     this.byRow.set(item.row, item)
   }
 
@@ -918,8 +982,15 @@ export class TranscriptReducer {
       plan: this.plan,
       pendingAsks: [...this.asks.values()],
       toasts: this.drainToasts(),
+      rekeys: this.drainRekeys(),
       leafId: this.leafId,
     }
+  }
+
+  private drainRekeys(): { from: string; to: string }[] {
+    const out = this.rekeyLog
+    this.rekeyLog = []
+    return out
   }
 
   private drainToasts(): Toast[] {

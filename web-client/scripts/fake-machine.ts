@@ -99,12 +99,19 @@ const entries: Entry[] = []
 let entrySeq = 0
 
 function addEntry(message: Record<string, unknown>): Entry {
+  // pi's message objects carry their own `timestamp`, and the live plane sends
+  // the SAME object the entry stores. That is what lets a viewer match a live
+  // row to its durable entry (`identify` hashes role|timestamp|content) — a
+  // double that left it out would only look alike, and would collapse two
+  // identical-text messages into one row.
+  const timestamp = new Date().toISOString()
+  const stamped = { timestamp, ...message }
   const entry: Entry = {
     id: `e${++entrySeq}`,
     type: "message",
     parentId: entries.length ? entries[entries.length - 1].id : null,
-    timestamp: new Date().toISOString(),
-    message,
+    timestamp,
+    message: stamped,
   }
   entries.push(entry)
   return entry
@@ -288,6 +295,27 @@ async function runTurn(
     },
     isError: false,
   })
+  // pi writes ONE entry per assistant message, and the live `message_end` for
+  // that message carries the SAME message object the entry stores. Same role,
+  // same timestamp, same content — that is exactly what lets a viewer match the
+  // row it built from deltas to the durable entry id later. Created before the
+  // toolResult so the parent chain matches pi's (assistant → toolResult).
+  const first = addEntry({
+    role: "assistant",
+    content: [
+      { type: "thinking", thinking: "Check the tests." },
+      {
+        type: "text",
+        text: "Running the suite for you now — one bash call.",
+      },
+      {
+        type: "toolCall",
+        id: callId,
+        name: "bash",
+        arguments: { command: "pnpm test" },
+      },
+    ],
+  })
   const toolResult = addEntry({
     role: "toolResult",
     toolCallId: callId,
@@ -300,6 +328,9 @@ async function runTurn(
     ],
     isError: false,
   })
+  rpc(peer, { type: "message_end", message: first.message })
+  rpc(peer, { type: "entry_appended", entry: first })
+  rpc(peer, { type: "entry_appended", entry: toolResult })
   const final = addEntry({
     role: "assistant",
     content: [
@@ -312,26 +343,21 @@ async function runTurn(
       },
     ],
   })
+  // The turn's second assistant message: streamed live, stored as an entry.
   rpc(peer, {
-    type: "message_end",
-    message: {
-      role: "assistant",
-      content: [
-        { type: "thinking", thinking: "Check the tests." },
-        {
-          type: "text",
-          text: "Running the suite for you now — one bash call.",
-        },
-        {
-          type: "toolCall",
-          id: callId,
-          name: "bash",
-          arguments: { command: "pnpm test" },
-        },
-      ],
+    type: "message_start",
+    message: { role: "assistant", content: [] },
+  })
+  rpc(peer, {
+    type: "message_update",
+    assistantMessageEvent: {
+      type: "text_delta",
+      contentIndex: 0,
+      delta: "Green: 27 passed, 4 skipped with named reasons.",
     },
   })
-  rpc(peer, { type: "entry_appended", entry: toolResult })
+  rpc(peer, { type: "message_end", message: final.message })
+  rpc(peer, { type: "entry_appended", entry: final })
   // An actionable dialog, so the ask overlay gets exercised too.
   rpc(peer, {
     type: "extension_ui_request",

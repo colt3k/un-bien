@@ -1,4 +1,4 @@
-import { readJson, writeJson } from "./storage.js"
+import { kv, readJson, writeJson } from "./storage.js"
 
 /**
  * What this browser remembers: relays (with the relay's pinned identity), paired
@@ -8,6 +8,10 @@ import { readJson, writeJson } from "./storage.js"
  */
 const RELAYS_KEY = "unbien.web.relays.v1"
 const PEERS_KEY = "unbien.web.peers.v1"
+/** The session this client was last driving. Reloads, phone-tab recycling and
+ *  sleep should resume the transcript, not dump the user back on an empty
+ *  screen at the top — and nothing else in storage says WHICH room that was. */
+const LAST_ROOM_KEY = "unbien.web.lastRoom.v1"
 const ALLOW_VERSION_KEY = "unbien.web.allow-version"
 
 export interface RememberedRelay {
@@ -101,4 +105,30 @@ export function nextAllowVersion(): number {
   const version = Math.max(Math.floor(Date.now() / 1000), floor + 1)
   writeJson(ALLOW_VERSION_KEY, version)
   return version
+}
+
+/** The session to resume when the socket comes back. */
+export interface LastRoom {
+  epk: string
+  roomId: string
+  name?: string
+}
+
+export function lastRoom(): LastRoom | undefined {
+  return readJson<LastRoom>(LAST_ROOM_KEY)
+}
+
+export function rememberLastRoom(room: LastRoom): void {
+  writeJson(LAST_ROOM_KEY, room)
+}
+
+/** Drop the resume target — on unpair, or when that room is reported ended.
+ *  Leaving it behind would make every boot chase a dead session. */
+export function forgetLastRoom(epk?: string): void {
+  if (!epk) {
+    kv.remove(LAST_ROOM_KEY)
+    return
+  }
+  const held = lastRoom()
+  if (held && held.epk === epk) kv.remove(LAST_ROOM_KEY)
 }

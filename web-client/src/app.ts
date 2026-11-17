@@ -9,11 +9,14 @@ import { deviceIdentity, devicePublicKey } from "./identity.js"
 import { parseInvite } from "./invite.js"
 import {
   forgetPeer,
+  forgetLastRoom,
   forgetRelay,
+  lastRoom,
   listPeers,
   listRelays,
   recordRelayPin,
   rememberPeer,
+  rememberLastRoom,
   rememberRelay,
   relayPinFor,
   type PairedPeer,
@@ -78,6 +81,8 @@ export class App {
   private readonly rowEls = new Map<string, HTMLElement>()
   private active: ActiveSession | null = null
   private busy = false
+  /** Debounce for the post-turn re-read (a turn ends with several frames). */
+  private resyncTimer: ReturnType<typeof setTimeout> | undefined
 
   constructor() {
     for (const peer of listPeers()) this.peers.set(peer.epk, peer)
@@ -166,6 +171,10 @@ export class App {
       this.renderRelayList()
       client.subscribeRooms([...this.peers.keys()])
       await this.refreshRooms()
+      // Resume what the user was last driving. A reload, a recycled phone tab or
+      // a sleep should bring the transcript back, not an empty screen at the
+      // top of an empty column.
+      void this.resumeSession()
     } catch (err) {
       this.statusDot.className = "dot idle"
       this.toast(
@@ -265,6 +274,7 @@ export class App {
           this.active.epk === epk &&
           this.active.roomId === roomId
         ) {
+          forgetLastRoom(epk)
           this.toast("that session ended on the machine")
           this.title.textContent = `${this.active.name} (ended)`
         }
@@ -315,6 +325,7 @@ export class App {
       const forget = el("button", undefined, "unpair")
       forget.addEventListener("click", () => {
         forgetPeer(peer.epk)
+        forgetLastRoom(peer.epk)
         this.peers.delete(peer.epk)
         this.rooms.delete(peer.epk)
         this.renderPeerList()
@@ -384,6 +395,7 @@ export class App {
     client.setRoutingPeer(epk)
     client.setRoom(roomId)
     this.active = { epk, roomId, name, caps: [] }
+    rememberLastRoom({ epk, roomId, name })
     this.title.textContent = name
     this.sub.textContent = "syncing…"
     this.drawer.hidden = true
@@ -426,6 +438,60 @@ export class App {
     this.sub.textContent = `${name} · ${entries.length} entries`
   }
 
+  /** Re-attach the session this client was last driving. The room id is only a
+   *  hint — pi's room rotates per session — so the recorded room is honoured
+   *  when the machine is still advertising it, and otherwise the machine's
+   *  single live room is taken. Attaching nothing on purpose is right when the
+   *  machine has no live room: there is nothing to read. */
+  private async resumeSession(): Promise<void> {
+    if (this.active || !this.client) return
+    const held = lastRoom()
+    if (!held) return
+    const peer = this.peers.get(held.epk)
+    if (!peer) {
+      forgetLastRoom(held.epk)
+      return
+    }
+    const rooms = this.rooms.get(held.epk) ?? []
+    if (rooms.length === 0) return
+    const target =
+      rooms.find((room) => room.room_id === held.roomId) ??
+      (rooms.length === 1 ? rooms[0]! : undefined)
+    if (!target) {
+      this.sub.textContent = `${rooms.length} sessions on ${peer.hostname ?? peer.machineName ?? "machine"} — pick one`
+      return
+    }
+    await this.attach(
+      held.epk,
+      target.room_id,
+      target.name ?? held.name ?? target.room_id,
+    )
+  }
+
+  /** After a turn settles, pi has new entries for what just streamed. Re-read
+   *  them so the live placeholder rows are RE-KEYED to their durable entry ids
+   *  (the match loop) instead of staying `assistant#7` forever — that is what
+   *  makes the next reconnect's replay land on the rows already on screen. */
+  private scheduleResync(): void {
+    if (!this.active || !this.client) return
+    clearTimeout(this.resyncTimer)
+    this.resyncTimer = setTimeout(() => void this.resyncEntries(), 400)
+  }
+
+  private async resyncEntries(): Promise<void> {
+    const client = this.client
+    if (!client || !this.active) return
+    try {
+      const { entries, leafId } = await client.getEntries()
+      if (entries.length > 0) {
+        this.reducer.applyEntries(entries, leafId ?? null)
+        this.render()
+      }
+    } catch {
+      // Machine away or room gone: the rows on screen stay as they are.
+    }
+  }
+
   private onEnvelope(env: EnvelopeMessage): void {
     const ub = env.ub as unknown as Record<string, unknown> | undefined
     if (ub && typeof ub.type === "string") {
@@ -435,6 +501,9 @@ export class App {
       if (env.rpc === undefined && env.evt === undefined) return
     }
     this.reducer.apply(env)
+    const rpc = env.rpc as unknown as Record<string, unknown> | undefined
+    if (rpc && (rpc.type === "turn_end" || rpc.type === "agent_settled"))
+      this.scheduleResync()
     this.render()
   }
 
@@ -486,23 +555,63 @@ export class App {
   private render(): void {
     const snapshot = this.reducer.snapshot()
     for (const toast of snapshot.toasts) this.toast(toast.text)
+    // Where the reader was, BEFORE the DOM moves. Rows born by a rootward
+    // extension insert ABOVE the viewport, and a naive follow would yank the
+    // reader to the bottom (or to the top when the column empties).
+    const followTail =
+      this.transcript.scrollHeight -
+        this.transcript.scrollTop -
+        this.transcript.clientHeight <
+      220
+    const anchor = this.anchorRow()
+    const anchorTop = anchor?.getBoundingClientRect().top
+    // Renames first: a row that became a pi entry id keeps ITS element (and the
+    // reader's scroll position). Rebuilding it would leave the old element
+    // behind as a ghost row and jump the log. A re-key that only ever appeared
+    // as a remove+append is the exact bug the Swift tests call `twin rows`.
+    for (const { from, to } of snapshot.rekeys) {
+      const node = this.rowEls.get(from)
+      if (!node) continue
+      this.rowEls.delete(from)
+      this.rowEls.set(to, node)
+      node.dataset.row = to
+    }
+    const live = new Set(snapshot.items.map((item) => item.row))
     for (const item of snapshot.items) {
       const existing = this.rowEls.get(item.row)
       if (existing) this.patchItem(existing, item)
       else this.transcript.append(this.buildItem(item))
     }
+    // Rows that left the transcript (a derive reset, a truncation that dropped
+    // a branch): remove the element, or it sits there as a ghost the reducer
+    // has already forgotten.
+    for (const [row, node] of [...this.rowEls]) {
+      if (live.has(row)) continue
+      this.rowEls.delete(row)
+      node.remove()
+    }
     this.renderPanels(snapshot)
     this.renderAsks(snapshot.pendingAsks)
     this.busy = snapshot.flags.streaming
     this.stopBtn.hidden = !snapshot.flags.streaming
-    if (
-      this.transcript.scrollHeight -
-        this.transcript.scrollTop -
-        this.transcript.clientHeight <
-      220
-    ) {
+    if (followTail || !anchor || !anchor.isConnected) {
       this.transcript.scrollTop = this.transcript.scrollHeight
+      return
     }
+    // Not following the tail: hold the anchor row visually still, whatever grew
+    // or moved above it.
+    this.transcript.scrollTop += anchor.getBoundingClientRect().top - anchorTop!
+  }
+
+  /** The row at the top edge of the scroll area — the thing the reader is
+   *  looking at, and therefore what a scroll correction must preserve. */
+  private anchorRow(): HTMLElement | null {
+    const top = this.transcript.getBoundingClientRect().top
+    for (const child of this.transcript.children) {
+      const node = child as HTMLElement
+      if (node.getBoundingClientRect().bottom > top + 1) return node
+    }
+    return null
   }
 
   private buildItem(item: TranscriptItem): HTMLElement {
@@ -686,13 +795,24 @@ export class App {
   }
 
   private toast(message: string): void {
-    this.toastEl.textContent = message
+    // A STACK, not one label. One batch can carry several real problems (a
+    // refusal, a re-sync, a machine that went away) and the old code showed
+    // only the LAST of them for 4 seconds — the most important message lost to
+    // a later cosmetic one.
+    this.toastLines.push(message)
+    if (this.toastLines.length > 3) this.toastLines.shift()
+    this.toastEl.replaceChildren(
+      ...this.toastLines.map((line) => el("div", "toast-line", line)),
+    )
     this.toastEl.hidden = false
     clearTimeout(toastTimer)
     toastTimer = setTimeout(() => {
+      this.toastLines.length = 0
+      this.toastEl.replaceChildren()
       this.toastEl.hidden = true
-    }, 4_000)
+    }, 6_000)
   }
+  private readonly toastLines: string[] = []
 }
 
 function explainRooms(result: {

@@ -15,8 +15,15 @@ runs) is imported directly, aliased through Vite so three node-isms don't drag
 ```sh
 pnpm --filter web-client dev            # vite dev server, bound to all interfaces
 pnpm --filter web-client build          # dist/ (88 kB JS, 30 kB gzip)
-pnpm --filter web-client test           # 50 passing (see Conformance)
+pnpm --filter web-client preview        # serve dist/ — use THIS on a phone
+pnpm --filter web-client test           # 57 passing (see Conformance)
 ```
+
+On a phone, use `preview`, not `dev`: the dev server's HMR socket drops on a
+tailnet blip or a backgrounded tab and full-reloads the page, which looks exactly
+like the client losing the session.
+
+````
 
 Then open `http://<tailnet-host>:5173` (e.g. `http://m5max.tail5f1ece.ts.net:5173`)
 and put the relay URL in the drawer. Dev-server-only exposure; a real deployment
@@ -27,7 +34,7 @@ To exercise it without a real pi, there is a scripted machine double:
 ```sh
 relay/target/release/unbien-relay                       # UNBIEN_STATE_DIR to isolate it
 node web-client/scripts/fake-machine.ts --turn-ms 8     # prints the pairing URI
-```
+````
 
 That double is **not** a second implementation of the extension and proves
 nothing about the real one; it exists so the browser end can be driven against
@@ -76,18 +83,38 @@ Screenshot of a live turn: `/tmp/unbien-smoke/web-client-live.png`.
   `SessionState.swift` (`applyEntries` / `derivePath` /
   `renderPendingPathEntries`), `SessionState+Identify.swift` and
   `SessionState+BirthEntry.swift` — NOT `RowBoundsStore.swift`, which despite the
-  name holds measured row *heights* for windowed layout and says nothing about
+  name holds measured row _heights_ for windowed layout and says nothing about
   identity. So: entries are indexed and retained, the active path is backwalked
   from pi's leaf beacon, and rows are born only for path entries (an abandoned
   branch is data with no row). A live row is matched to its entry by
   `identify = hash(role|timestamp|contentSignature)` and re-keyed to the durable
   entry id instead of twinning.
-- **Known deviation from the reference:** the app keeps delta-built bubble text at
-  `message_end`; this fold takes pi's stored content when it holds MORE (a client
-  that joined mid-stream saw a prefix). Never loses content, never truncates.
-  Entry-born rows also append at the tail rather than inserting before the live
-  tail (`insertBeforeLiveTail`), so a reconnect that folds old entries alongside
-  live rows can float them low.
+- **One known deviation from the reference:** the app keeps delta-built bubble
+  text at `message_end`; this fold takes pi's stored content when it holds MORE
+  (a client that joined mid-stream saw a prefix). Never loses content, never
+  truncates. Everything else above matches the app's shape: entry-born rows
+  insert BEFORE the live tail (`insertBeforeLiveTail`), and a live row is
+  re-keyed to its durable entry id by a debounced `get_entries` re-read after
+  each `turn_end` — without that re-read the rows you watched stream stay
+  `assistant#7` forever and the next replay twins them.
+
+## Session continuity
+
+- **A reload resumes the session.** The attached room is stored
+  (`unbien.web.lastRoom.v1`); on connect the client re-attaches it. pi's room id
+  rotates per session, so the stored id is a hint: if the machine no longer
+  advertises it and has exactly one live room, that one is taken; with several,
+  the client says so and waits for a pick. Unpairing, or the room being reported
+  ended, drops the record so a boot does not chase a dead session.
+- **Scrolling holds still.** The row at the top edge is the anchor: a render that
+  adds rows above it (a rootward extension) or re-keys rows compensates the
+  scroll so the anchor does not move. Only when the reader was already at the
+  tail does the view follow new output — so a mid-turn extension no longer yanks
+  a reader who scrolled up, and a reload no longer dumps them at the top of an
+  empty column.
+- **Notices stack, three deep.** A batch can carry several real problems; one
+  label showed only the last, so the important one was lost to a later cosmetic
+  one.
 - No model/thinking pickers, no session list controls (fork/compact/new/navigate),
   no `session_launch` UI beyond `App.launch()`, no image rendering, no
   tool-arg/`partial` streaming detail beyond a tail.
@@ -98,17 +125,17 @@ Screenshot of a live turn: `/tmp/unbien-smoke/web-client-live.png`.
 
 ## Layout
 
-| file | job |
-| --- | --- |
-| `src/main.ts` | boot; import order is load-bearing (polyfills first) |
-| `src/derive.ts` | pi's entry tree: backwalk the leaf, derive the active path, birth only path rows |
-| `src/content-identity.ts` | `identify` — the id-less live frame to durable entry bridge |
-| `src/polyfills.ts` | `Buffer` global before anything touches the core |
-| `src/session-client.ts` | port of `unbien-cli/src/client.ts`: pairing awaited, `rooms_check` honesty, paged `get_entries`, identity pin |
-| `src/framing.ts` | outer envelope, plane stamping (`rpc`/`evt`/`ub` — an unstamped frame is silently dropped), inbound classification |
-| `src/reducer.ts` | the fold: live frames and replayed entries through one path |
-| `src/identity.ts`, `src/store.ts` | device Ed25519 key in localStorage, relay pins (TOFU), pairing records |
-| `src/invite.ts` | `unbien://pair?…` parsing + key canonicalization |
-| `src/app.ts` | DOM: drawer, transcript patching, composer, dialogs |
-| `src/shims/` | `node:crypto` (noble), `ws` (native socket), `debug_log` |
-| `scripts/fake-machine.ts` | scripted machine double for the smoke test |
+| file                              | job                                                                                                                |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `src/main.ts`                     | boot; import order is load-bearing (polyfills first)                                                               |
+| `src/derive.ts`                   | pi's entry tree: backwalk the leaf, derive the active path, birth only path rows                                   |
+| `src/content-identity.ts`         | `identify` — the id-less live frame to durable entry bridge                                                        |
+| `src/polyfills.ts`                | `Buffer` global before anything touches the core                                                                   |
+| `src/session-client.ts`           | port of `unbien-cli/src/client.ts`: pairing awaited, `rooms_check` honesty, paged `get_entries`, identity pin      |
+| `src/framing.ts`                  | outer envelope, plane stamping (`rpc`/`evt`/`ub` — an unstamped frame is silently dropped), inbound classification |
+| `src/reducer.ts`                  | the fold: live frames and replayed entries through one path                                                        |
+| `src/identity.ts`, `src/store.ts` | device Ed25519 key in localStorage, relay pins (TOFU), pairing records                                             |
+| `src/invite.ts`                   | `unbien://pair?…` parsing + key canonicalization                                                                   |
+| `src/app.ts`                      | DOM: drawer, transcript patching, composer, dialogs                                                                |
+| `src/shims/`                      | `node:crypto` (noble), `ws` (native socket), `debug_log`                                                           |
+| `scripts/fake-machine.ts`         | scripted machine double for the smoke test                                                                         |
