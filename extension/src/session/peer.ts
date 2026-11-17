@@ -71,6 +71,18 @@ export interface AckResult {
   reason?: TransportErrorReason
 }
 
+/** A broker reply to an unregistered liveness probe (broker.ts
+ *  _tryBrokerPing / _tryObserverProbe), never a register_ack. */
+function _isProbeReply(raw: unknown): boolean {
+  const env = raw as { from?: unknown; to?: unknown; body?: { type?: unknown } } | null
+  const type = env?.body?.type
+  return (
+    env?.from === "broker" &&
+    env?.to === "observer" &&
+    (type === "broker_pong" || type === "list_peers_reply")
+  )
+}
+
 export class MeshTransportError extends Error {
   constructor(
     readonly reason: TransportErrorReason,
@@ -524,6 +536,13 @@ export class SessionPeer {
         5_000,
       )
       const onceListener = (raw: unknown) => {
+        // A follower's socket comes from the leader-election probe, which
+        // asks twice (broker_ping, plus list_peers for pre-ping brokers). A
+        // current broker answers both and the probe settles on the first, so
+        // the second reply can still arrive ahead of the register_ack. Those
+        // replies are addressed to the synthetic "observer": skip them and
+        // keep waiting.
+        if (_isProbeReply(raw)) return
         clearTimeout(wait)
         // plan/38: a new broker returns `address_assigned` (canonical key) +
         // `name_assigned` (clean leaf). Read both with cross-fallback so we work
