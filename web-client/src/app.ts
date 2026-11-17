@@ -1,0 +1,753 @@
+import type { EnvelopeMessage } from "@geohar/un-bien/client"
+import { SessionClient, type RoomInfo } from "./session-client.js"
+import {
+  TranscriptReducer,
+  type AskRequest,
+  type TranscriptItem,
+} from "./reducer.js"
+import { deviceIdentity, devicePublicKey } from "./identity.js"
+import { parseInvite } from "./invite.js"
+import {
+  forgetPeer,
+  forgetRelay,
+  listPeers,
+  listRelays,
+  recordRelayPin,
+  rememberPeer,
+  rememberRelay,
+  relayPinFor,
+  type PairedPeer,
+} from "./store.js"
+
+/**
+ * The controller: relay connection, pairing, discovery, attach, transcript
+ * rendering, composer, and pi-ask dialogs. Deliberately framework-free — the
+ * hard part of this client is the wire and the fold, not the DOM, and a spike
+ * should not add a rendering dependency before the wire is proven.
+ */
+
+interface ActiveSession {
+  epk: string
+  roomId: string
+  name: string
+  caps: string[]
+  /** The pi sessionId, from `ub hello`. A new one on a stable room means a
+   *  different session reused the room. */
+  sessionId?: string
+}
+
+let toastTimer: ReturnType<typeof setTimeout> | undefined
+
+const $ = <T extends HTMLElement>(id: string): T => {
+  const node = document.getElementById(id)
+  if (!node) throw new Error(`missing #${id}`)
+  return node as T
+}
+
+function el<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  className?: string,
+  text?: string,
+): HTMLElementTagNameMap[K] {
+  const node = document.createElement(tag)
+  if (className) node.className = className
+  if (text !== undefined) node.textContent = text
+  return node
+}
+
+export class App {
+  private readonly transcript = $<HTMLElement>("transcript")
+  private readonly drawer = $<HTMLElement>("drawer")
+  private readonly statusDot = $<HTMLElement>("statusDot")
+  private readonly title = $<HTMLElement>("sessionTitle")
+  private readonly sub = $<HTMLElement>("sessionSub")
+  private readonly panels = $<HTMLElement>("panels")
+  private readonly asks = $<HTMLElement>("asks")
+  private readonly toastEl = $<HTMLElement>("toast")
+  private readonly input = $<HTMLTextAreaElement>("input")
+  private readonly stopBtn = $<HTMLButtonElement>("stopBtn")
+
+  private client: SessionClient | null = null
+  private relayUrl = ""
+  private readonly peers = new Map<string, PairedPeer>()
+  private readonly rooms = new Map<string, RoomInfo[]>()
+  private readonly reducer = new TranscriptReducer()
+  /** row key → element, so streaming updates patch in place instead of
+   *  rebuilding the list on every one of the hundreds of delta frames a turn
+   *  produces. */
+  private readonly rowEls = new Map<string, HTMLElement>()
+  private active: ActiveSession | null = null
+  private busy = false
+
+  constructor() {
+    for (const peer of listPeers()) this.peers.set(peer.epk, peer)
+    this.bindUi()
+    this.renderPeerList()
+    this.renderRelayList()
+    const remembered = listRelays()[0]
+    if (remembered) {
+      $<HTMLInputElement>("relayUrl").value = remembered.url
+      void this.connect(remembered.url)
+    }
+    this.sub.textContent = `device key ${devicePublicKey().slice(0, 12)}…`
+  }
+
+  // ── wiring ────────────────────────────────────────────────────────────────
+
+  private bindUi(): void {
+    $("drawerToggle").addEventListener("click", () => {
+      this.drawer.hidden = !this.drawer.hidden
+    })
+    $("relayConnect").addEventListener("click", () => {
+      const url = $<HTMLInputElement>("relayUrl").value.trim()
+      if (url) void this.connect(url)
+    })
+    $("pairBtn").addEventListener("click", () => void this.pair())
+    $("sendBtn").addEventListener("click", () => this.send("auto"))
+    $("queueBtn").addEventListener("click", () => this.send("queue"))
+    this.stopBtn.addEventListener("click", () => this.client?.abort())
+    this.input.addEventListener("keydown", (event: KeyboardEvent) => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault()
+        this.send("auto")
+      }
+    })
+    this.input.addEventListener("input", () => this.autogrow())
+  }
+
+  private autogrow(): void {
+    this.input.style.height = "auto"
+    this.input.style.height = `${Math.min(this.input.scrollHeight, 160)}px`
+  }
+
+  // ── connection ────────────────────────────────────────────────────────────
+
+  async connect(url: string): Promise<void> {
+    this.client?.close()
+    this.relayUrl = url
+    const pin = relayPinFor(url)
+    const client = new SessionClient(url, deviceIdentity(), {
+      expectRelayPubkey: pin,
+      onRelayIdentity: (pubkey) => recordRelayPin(url, pubkey),
+    })
+    this.client = client
+
+    client.on("status", (status) => {
+      this.statusDot.className = `dot ${status}`
+      if (status === "identity_mismatch") {
+        this.toast(
+          "relay identity mismatch — this URL is serving a different relay than the one you paired with",
+        )
+      }
+    })
+    client.on("relayControl", (frame) => this.onRelayControl(frame))
+    client.on("envelope", (env) => this.onEnvelope(env))
+    client.on("control", (frame) => {
+      if (frame.type === "pair_ok" || frame.type === "pair_error") return // pair flow awaits its own verdict
+      if (typeof frame.type === "string" && frame.type.startsWith("_")) {
+        this.toast(
+          `relay sent an unreadable frame: ${String(frame._raw ?? frame.type)}`,
+        )
+      }
+    })
+    client.on("reconnected", () => {
+      // The socket died (idle watchdog, tailnet drop, phone backgrounded).
+      // Re-subscribe, refresh discovery, and re-read from the leaf we hold —
+      // the protocol's incremental path, not a full re-dump.
+      client.subscribeRooms([...this.peers.keys()])
+      void this.refreshRooms()
+      if (this.active)
+        void this.attach(this.active.epk, this.active.roomId, this.active.name)
+    })
+
+    try {
+      await client.connect()
+      rememberRelay(url, pin)
+      this.renderRelayList()
+      client.subscribeRooms([...this.peers.keys()])
+      await this.refreshRooms()
+    } catch (err) {
+      this.statusDot.className = "dot idle"
+      this.toast(
+        `connect failed: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+  }
+
+  async pair(): Promise<void> {
+    const code = $<HTMLTextAreaElement>("pairCode").value.trim()
+    const deviceName =
+      $<HTMLInputElement>("deviceName").value.trim() || "unbien-web"
+    if (!this.client) {
+      this.toast(
+        "connect to a relay first — a pairing is only valid on one relay",
+      )
+      return
+    }
+    let invite
+    try {
+      invite = parseInvite(code)
+    } catch (err) {
+      this.toast(err instanceof Error ? err.message : String(err))
+      return
+    }
+
+    this.sub.textContent = "pairing…"
+    const verdict = await this.client.pairAwaited(invite, deviceName)
+    if (!verdict.ok) {
+      this.sub.textContent = `pairing refused: ${verdict.detail}`
+      this.toast(`pairing refused: ${verdict.detail}`)
+      return
+    }
+    const paired: PairedPeer = {
+      epk: invite.epk,
+      deviceName,
+      // pair_ok's own fields win over the invite's `n`: a machine is a machine,
+      // and the invite string is the SESSION it happened to be pairing from.
+      machineName: verdict.sessionName ?? invite.sessionName,
+      hostname: verdict.hostname,
+      harness: verdict.harness,
+      ...(verdict.capabilities ? { caps: verdict.capabilities } : {}),
+      relayUrl: this.relayUrl,
+      roomHint: verdict.roomId ?? invite.roomId,
+      pairedAt: Date.now(),
+    }
+    rememberPeer(paired)
+    this.peers.set(paired.epk, paired)
+    if (verdict.relayPubkey) recordRelayPin(this.relayUrl, verdict.relayPubkey)
+    this.sub.textContent = "paired"
+    this.client.subscribeRooms([...this.peers.keys()])
+    await this.refreshRooms()
+    this.renderPeerList()
+  }
+
+  // ── discovery ─────────────────────────────────────────────────────────────
+
+  private onRelayControl(frame: Record<string, unknown>): void {
+    switch (frame.type) {
+      case "room_announced":
+      case "room_meta_updated": {
+        const epk = String(frame.peer ?? "")
+        const room = frame as unknown as RoomInfo
+        if (!epk || !room.room_id) return
+        const list = this.rooms.get(epk) ?? []
+        const next = [...list.filter((r) => r.room_id !== room.room_id), room]
+        this.rooms.set(epk, next)
+        this.renderPeerList()
+        // A re-announcement of the room being driven means the machine came
+        // back on the same room id — pi restarted, so the history we hold is
+        // stale (new session, entries possibly replaced). The relay does not
+        // tell the device the machine dropped, so this is the signal we get.
+        // `room_meta_updated` is excluded: that fires on renames and would
+        // rebuild the transcript under the user's fingers.
+        if (
+          frame.type === "room_announced" &&
+          this.active &&
+          this.active.epk === epk &&
+          this.active.roomId === room.room_id
+        ) {
+          this.toast("machine re-announced this session — re-syncing")
+          void this.attach(epk, room.room_id, room.name ?? this.active.name)
+        }
+        break
+      }
+      case "room_ended": {
+        const epk = String(frame.peer ?? "")
+        const roomId = String(frame.room_id ?? "")
+        const list = this.rooms.get(epk) ?? []
+        this.rooms.set(
+          epk,
+          list.filter((r) => r.room_id !== roomId),
+        )
+        this.renderPeerList()
+        if (
+          this.active &&
+          this.active.epk === epk &&
+          this.active.roomId === roomId
+        ) {
+          this.toast("that session ended on the machine")
+          this.title.textContent = `${this.active.name} (ended)`
+        }
+        break
+      }
+      case "error": {
+        const code = String(frame.code ?? "error")
+        if (code === "unknown_peer") {
+          this.toast(
+            "this device is not paired on that machine — run /unbien pair again",
+          )
+        }
+        break
+      }
+      default:
+        break
+    }
+  }
+
+  async refreshRooms(): Promise<void> {
+    if (!this.client) return
+    for (const peer of this.peers.values()) {
+      const result = await this.client.listRooms(peer.epk)
+      if (result.status === "ok") this.rooms.set(peer.epk, result.rooms)
+      else this.rooms.set(peer.epk, [])
+      if (result.status !== "ok") this.sub.textContent = explainRooms(result)
+    }
+    this.renderPeerList()
+  }
+
+  private renderPeerList(): void {
+    const host = $("peerList")
+    host.replaceChildren()
+    for (const peer of this.peers.values()) {
+      const card = el("div", "card")
+      // The machine's name, not the session's: one pairing reaches every room a
+      // machine owns, and `pair_ok.session_name` is identical to the room's own
+      // name — labelling the machine with it makes the list read like a
+      // duplicate of the rooms below it.
+      card.append(
+        el("div", "name", peer.hostname ?? peer.machineName ?? "machine"),
+      )
+      const facts = [peer.epk.slice(0, 10) + "…", peer.relayUrl]
+      if (peer.harness) facts.push(peer.harness)
+      card.append(el("div", "meta", facts.join(" · ")))
+      if (peer.caps?.length)
+        card.append(el("div", "meta", `${peer.caps.length} capabilities`))
+      const forget = el("button", undefined, "unpair")
+      forget.addEventListener("click", () => {
+        forgetPeer(peer.epk)
+        this.peers.delete(peer.epk)
+        this.rooms.delete(peer.epk)
+        this.renderPeerList()
+        this.toast(
+          "unpaired locally — also revoke it on the machine with `/unbien revoke`",
+        )
+      })
+      card.append(forget)
+      const refresh = el("button", undefined, "refresh")
+      refresh.addEventListener("click", () => void this.refreshRooms())
+      card.append(refresh)
+      host.append(card)
+
+      for (const room of this.rooms.get(peer.epk) ?? []) {
+        const row = el("div", "card room")
+        row.append(el("div", "name", room.name ?? room.room_id))
+        const roomFacts = [room.cwd ?? "?"]
+        // Only say "N capabilities" here: the caps themselves are the same list
+        // the machine card already summarizes, and dumping eleven strings in a
+        // phone-width card is unreadable noise.
+        if (room.caps?.length)
+          roomFacts.push(`${room.caps.length} capabilities`)
+        if (room.sessionId) roomFacts.push(room.sessionId.slice(0, 8))
+        row.append(el("div", "meta", roomFacts.join(" · ")))
+        const open = el("button", undefined, "attach")
+        open.addEventListener(
+          "click",
+          () =>
+            void this.attach(peer.epk, room.room_id, room.name ?? room.room_id),
+        )
+        row.append(open)
+        host.append(row)
+      }
+    }
+  }
+
+  private renderRelayList(): void {
+    const host = $("relayList")
+    host.replaceChildren()
+    for (const relay of listRelays()) {
+      const card = el("div", "card")
+      card.append(el("div", "name", relay.url))
+      card.append(
+        el(
+          "div",
+          "meta",
+          relay.pubkey
+            ? `pinned ${relay.pubkey.slice(0, 12)}…`
+            : "no pin recorded",
+        ),
+      )
+      const forget = el("button", undefined, "forget")
+      forget.addEventListener("click", () => {
+        forgetRelay(relay.url)
+        this.renderRelayList()
+      })
+      card.append(forget)
+      host.append(card)
+    }
+  }
+
+  // ── attach + transcript ───────────────────────────────────────────────────
+
+  async attach(epk: string, roomId: string, name: string): Promise<void> {
+    const client = this.client
+    if (!client) return
+    client.setRoutingPeer(epk)
+    client.setRoom(roomId)
+    this.active = { epk, roomId, name, caps: [] }
+    this.title.textContent = name
+    this.sub.textContent = "syncing…"
+    this.drawer.hidden = true
+
+    // A full replay on every (re)attach, not an incremental read. Rebuilding
+    // from pi's entries gives every row a stable identity (the entry id); an
+    // incremental read would add entry-id rows on top of the placeholder rows
+    // the live stream created, and this fold has no entry-content-hash dedup
+    // (pi's RowBoundsStore) to recognise them as the same block. Cheap and
+    // obviously right beats clever and duplicated — see README's gap list.
+    this.reducer.reset()
+    this.rowEls.clear()
+    this.transcript.replaceChildren()
+
+    // The first frame to a trusted peer is what triggers the extension's
+    // attach; session_sync asks for panels + pending dialogs. The transcript
+    // itself comes from pi's own paged `get_entries`.
+    client.requestSync()
+    const { entries, leafId } = await client.getEntries()
+    this.reducer.applyEntries(entries)
+    if (leafId) this.reducer.setLeaf(leafId)
+    // Turn state comes from pi, not from guessing at the history: a completed
+    // entry may still contain tool calls. `get_state.isStreaming` is the same
+    // signal the iOS app gates its send/steer button on. Skipped when nothing
+    // came back — the machine is away, and a second 15s timeout on top of the
+    // first is a 30s dead spinner for no information.
+    if (entries.length > 0) {
+      const piState = await client
+        .request<Record<string, unknown>>("get_state")
+        .catch(() => undefined)
+      this.reducer.setTurnStreaming(Boolean(piState?.isStreaming))
+    } else {
+      this.sub.textContent = `${name} · machine not answering — is it connected?`
+    }
+    client.requestSync()
+    this.render()
+    this.sub.textContent = `${name} · ${entries.length} entries`
+  }
+
+  private onEnvelope(env: EnvelopeMessage): void {
+    const ub = env.ub as unknown as Record<string, unknown> | undefined
+    if (ub && typeof ub.type === "string") {
+      // `ub` frames are protocol (handshake, sync terminator, launch result),
+      // not transcript content.
+      this.onUb(ub)
+      if (env.rpc === undefined && env.evt === undefined) return
+    }
+    this.reducer.apply(env)
+    this.render()
+  }
+
+  private onUb(ub: Record<string, unknown>): void {
+    switch (ub.type) {
+      case "hello": {
+        const caps = Array.isArray(ub.caps) ? (ub.caps as string[]) : []
+        if (this.active) {
+          // A NEW sessionId on a stable room means a different session reused
+          // the room — the transcript must not carry the old one over.
+          if (this.active.caps.length === 0) {
+            this.active.caps = caps
+          } else if (ub.sessionId && this.active.sessionId !== ub.sessionId) {
+            this.reducer.reset()
+            this.rowEls.clear()
+            this.transcript.replaceChildren()
+          }
+          this.active.caps = caps
+          this.active.sessionId =
+            typeof ub.sessionId === "string" ? ub.sessionId : undefined
+        }
+        break
+      }
+      case "session_sync_end": {
+        const name =
+          typeof ub.session_name === "string" ? ub.session_name : undefined
+        if (name && this.active) {
+          this.active.name = name
+          this.title.textContent = name
+        }
+        this.sub.textContent = `${this.active?.name ?? "session"} · synced`
+        break
+      }
+      case "session_launch_result": {
+        this.toast(
+          ub.ok === true
+            ? `launched (${String(ub.backend ?? "?")})`
+            : `launch failed: ${String(ub.code ?? ub.message ?? "unknown")}`,
+        )
+        break
+      }
+      default:
+        break
+    }
+  }
+
+  /** Patch rows in place; append the ones that are new. Order never changes,
+   *  because rows are appended in fold order. */
+  private render(): void {
+    const snapshot = this.reducer.snapshot()
+    for (const toast of snapshot.toasts) this.toast(toast.text)
+    for (const item of snapshot.items) {
+      const existing = this.rowEls.get(item.row)
+      if (existing) this.patchItem(existing, item)
+      else this.transcript.append(this.buildItem(item))
+    }
+    this.renderPanels(snapshot)
+    this.renderAsks(snapshot.pendingAsks)
+    this.busy = snapshot.flags.streaming
+    this.stopBtn.hidden = !snapshot.flags.streaming
+    if (
+      this.transcript.scrollHeight -
+        this.transcript.scrollTop -
+        this.transcript.clientHeight <
+      220
+    ) {
+      this.transcript.scrollTop = this.transcript.scrollHeight
+    }
+  }
+
+  private buildItem(item: TranscriptItem): HTMLElement {
+    const node = el("div", `item ${item.kind}`)
+    node.dataset.row = item.row
+    if (item.kind === "tool") {
+      const details = el("details", "tool-inner")
+      const summary = el("summary")
+      summary.append(el("span", "who", `tool · ${item.tool ?? "?"}`))
+      summary.append(el("span", "state", item.state ?? "running"))
+      details.append(summary)
+      const body = el("div", "collapsed")
+      details.append(body)
+      node.append(details)
+    } else {
+      node.append(el("div", "who", item.kind))
+      node.append(el("div", "body", item.text))
+    }
+    this.rowEls.set(item.row, node)
+    this.patchItem(node, item)
+    return node
+  }
+
+  private patchItem(node: HTMLElement, item: TranscriptItem): void {
+    node.classList.toggle("streaming", item.streaming)
+    if (item.kind !== "tool") {
+      const body = node.querySelector(".body")
+      if (body && body.textContent !== item.text) body.textContent = item.text
+      return
+    }
+    const state = node.querySelector<HTMLElement>(".state")
+    if (state) {
+      state.textContent = item.state ?? "running"
+      state.className = `state ${item.state ?? "running"}`
+    }
+    const body = node.querySelector<HTMLElement>(".collapsed")
+    if (!body) return
+    const want = renderToolBody(item)
+    if (body.dataset.sig !== want.sig) {
+      body.dataset.sig = want.sig
+      body.replaceChildren(...want.nodes)
+    }
+  }
+
+  private renderPanels(
+    snapshot: ReturnType<TranscriptReducer["snapshot"]>,
+  ): void {
+    const bits: string[] = []
+    if (snapshot.plan)
+      bits.push(
+        `plan: ${snapshot.plan.project ?? "plan"} (${snapshot.plan.itemCount})`,
+      )
+    for (const row of snapshot.subagents)
+      bits.push(`subagent ${row.status}: ${row.description ?? row.id}`)
+    if (bits.length === 0) {
+      this.panels.hidden = true
+      return
+    }
+    this.panels.hidden = false
+    this.panels.replaceChildren(...bits.map((bit) => el("div", undefined, bit)))
+  }
+
+  private renderAsks(asks: AskRequest[]): void {
+    const seen = new Set(asks.map((ask) => ask.id))
+    for (const node of [...this.asks.children]) {
+      if (!seen.has(node.getAttribute("data-ask") ?? "")) node.remove()
+    }
+    for (const ask of asks) {
+      if (this.asks.querySelector(`[data-ask=\"${ask.id}\"]`)) continue
+      this.asks.append(this.buildAsk(ask))
+    }
+  }
+
+  private buildAsk(ask: AskRequest): HTMLElement {
+    const box = el("div", "ask")
+    box.setAttribute("data-ask", ask.id)
+    box.append(
+      el("h3", undefined, ask.title ?? ask.message ?? "the session is asking"),
+    )
+    const opts = el("div", "opts")
+    const respond = (build: () => void): void => {
+      build()
+      this.reducer.resolveAsk(ask.id)
+      box.remove()
+    }
+    if (ask.method === "confirm") {
+      const yes = el("button", undefined, "yes")
+      yes.addEventListener("click", () =>
+        respond(() =>
+          this.client?.answerUi({
+            type: "extension_ui_response",
+            id: ask.id,
+            confirmed: true,
+          }),
+        ),
+      )
+      const no = el("button", undefined, "no")
+      no.addEventListener("click", () =>
+        respond(() =>
+          this.client?.answerUi({
+            type: "extension_ui_response",
+            id: ask.id,
+            confirmed: false,
+          }),
+        ),
+      )
+      opts.append(yes, no)
+    } else if (ask.method === "input" || ask.method === "editor") {
+      const field = el(
+        ask.method === "editor" ? "textarea" : "input",
+      ) as HTMLInputElement
+      field.placeholder = ask.placeholder ?? ""
+      const submit = el("button", undefined, "submit")
+      submit.addEventListener("click", () =>
+        respond(() =>
+          this.client?.answerUi({
+            type: "extension_ui_response",
+            id: ask.id,
+            value: field.value,
+          }),
+        ),
+      )
+      opts.append(field, submit)
+    } else {
+      for (const option of ask.options ?? []) {
+        const button = el("button", undefined, option)
+        button.addEventListener("click", () =>
+          respond(() =>
+            this.client?.answerUi({
+              type: "extension_ui_response",
+              id: ask.id,
+              value: option,
+            }),
+          ),
+        )
+        opts.append(button)
+      }
+    }
+    const cancel = el("button", undefined, "cancel")
+    cancel.addEventListener("click", () =>
+      respond(() =>
+        this.client?.answerUi({
+          type: "extension_ui_response",
+          id: ask.id,
+          cancelled: true,
+        }),
+      ),
+    )
+    opts.append(cancel)
+    box.append(opts)
+    return box
+  }
+
+  // ── composer ──────────────────────────────────────────────────────────────
+
+  private send(mode: "auto" | "queue"): void {
+    const text = this.input.value.trim()
+    if (!text || !this.client || !this.active) {
+      if (!this.active)
+        this.toast("no session attached — pick one from the machines panel")
+      return
+    }
+    // `auto` mirrors the app's two-button rule: a message while the agent is
+    // working STEERS it; otherwise it is a fresh prompt. Slash text is sent as
+    // an ordinary prompt — pi expands it on the machine (the iOS app's richer
+    // command registry + refusal toasts are not implemented here yet).
+    if (mode === "queue") this.client.queue(text)
+    else if (this.busy) this.client.steer(text)
+    else this.client.prompt(text)
+    this.input.value = ""
+    this.autogrow()
+  }
+
+  /** Remote launch: ask the machine's launcher daemon for a new session. */
+  launch(cwd: string, name?: string): void {
+    this.client?.sendUb("session_launch", {
+      mode: "new",
+      cwd,
+      ...(name ? { name } : {}),
+    })
+  }
+
+  private toast(message: string): void {
+    this.toastEl.textContent = message
+    this.toastEl.hidden = false
+    clearTimeout(toastTimer)
+    toastTimer = setTimeout(() => {
+      this.toastEl.hidden = true
+    }, 4_000)
+  }
+}
+
+function explainRooms(result: {
+  status: string
+  detail?: string
+  peer?: string
+}): string {
+  switch (result.status) {
+    case "unknown_peer":
+      return "not paired on that machine — run /unbien pair again"
+    case "refused":
+      return `relay refused the listing (${result.detail ?? "?"})`
+    case "timeout":
+      return "relay did not answer the session listing — is it reachable?"
+    default:
+      return ""
+  }
+}
+
+function renderToolBody(item: TranscriptItem): { sig: string; nodes: Node[] } {
+  const nodes: Node[] = []
+  const sig = `${item.state ?? ""}|${item.text.length}|${item.partial?.length ?? 0}|${item.hunks?.length ?? 0}`
+  if (item.partial) {
+    const pre = el("pre", "partial", item.partial)
+    nodes.push(pre)
+  }
+  for (const hunk of item.hunks ?? []) {
+    nodes.push(renderHunk(hunk))
+  }
+  if (item.text) nodes.push(el("pre", undefined, item.text.slice(0, 20_000)))
+  return { sig, nodes }
+}
+
+function renderHunk(hunk: unknown): HTMLElement {
+  const record = (hunk ?? {}) as Record<string, unknown>
+  const lines = Array.isArray(record.lines) ? (record.lines as unknown[]) : null
+  const box = el("div", "diff")
+  if (lines) {
+    for (const raw of lines) {
+      const line = (raw ?? {}) as Record<string, unknown>
+      const kind = typeof line.kind === "string" ? line.kind : "context"
+      const text =
+        typeof line.text === "string" ? line.text : JSON.stringify(line)
+      const prefix = kind === "add" ? "+" : kind === "del" ? "-" : " "
+      box.append(
+        el(
+          "div",
+          kind === "add" ? "add" : kind === "del" ? "del" : undefined,
+          `${prefix}${text}`,
+        ),
+      )
+    }
+    return box
+  }
+  const diff =
+    typeof record.diff === "string"
+      ? record.diff
+      : JSON.stringify(record, null, 1)
+  box.append(el("div", undefined, diff))
+  return box
+}

@@ -1,0 +1,19 @@
+{
+  "name": "un-bien",
+  "short_name": "un-bien",
+  "description": "Drive Pi coding-agent sessions over an un-bien relay",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#101014",
+  "theme_color": "#101014",
+  "icons": [
+    {
+      "src": "/icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

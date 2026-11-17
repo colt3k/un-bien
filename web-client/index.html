@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#101014" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icon.png" type="image/png" />
+    <title>un-bien</title>
+  </head>
+  <body>
+    <div id="app">
+      <header class="bar">
+        <button id="drawerToggle" class="icon" aria-label="Machines">☰</button>
+        <div class="titles">
+          <div id="sessionTitle" class="title">not connected</div>
+          <div id="sessionSub" class="sub">add a relay to start</div>
+        </div>
+        <span id="statusDot" class="dot idle" title="relay status"></span>
+      </header>
+
+      <aside id="drawer" hidden>
+        <section>
+          <h2>Relay</h2>
+          <div class="row">
+            <input
+              id="relayUrl"
+              placeholder="http://m5max.tail5f1ece.ts.net:3000"
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <button id="relayConnect">connect</button>
+          </div>
+          <div id="relayList" class="list"></div>
+        </section>
+
+        <section>
+          <h2>Pair a machine</h2>
+          <p class="hint">
+            Run <code>/unbien pair</code> in a Pi session, then paste the
+            <em>pairing code</em> it prints.
+          </p>
+          <div class="row">
+            <input
+              id="deviceName"
+              placeholder="pixel-8-pro"
+              autocomplete="off"
+            />
+            <button id="pairBtn">pair</button>
+          </div>
+          <textarea
+            id="pairCode"
+            rows="3"
+            placeholder="unbien://pair?t=…&epk=…&n=…&rm=…"
+          ></textarea>
+        </section>
+
+        <section>
+          <h2>Machines</h2>
+          <div id="peerList" class="list"></div>
+        </section>
+      </aside>
+
+      <main id="transcript" class="transcript" aria-live="polite"></main>
+
+      <div id="panels" class="panels" hidden></div>
+      <div id="asks" class="asks"></div>
+
+      <footer class="composer">
+        <textarea
+          id="input"
+          rows="1"
+          placeholder="message the session…"
+        ></textarea>
+        <button id="queueBtn" class="icon" title="queue for after this turn">
+          ⏱
+        </button>
+        <button id="sendBtn" title="send / steer">send</button>
+        <button id="stopBtn" class="icon danger" title="stop the turn" hidden>
+          ■
+        </button>
+      </footer>
+
+      <div id="toast" class="toast" hidden></div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
