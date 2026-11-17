@@ -10,8 +10,8 @@
  * The item vocabulary follows `contracts/conformance/vocab.md` (kind, row, text,
  * streaming, tool/state, blocks, images; flags, subagents, plan, pendingAsks,
  * leafId) so the corpus under `contracts/conformance/scenarios/` is meaningful
- * here. See test/corpus.test.ts for what is currently asserted: item KINDS and
- * counts, not yet the full normalized projection (blocks/rows/leafId).
+ * here. test/corpus.test.ts asserts that whole projection, in render order,
+ * with no scenarios skipped.
  */
 import type { EnvelopeMessage } from "@geohar/un-bien/client"
 import { EntryTree, type PathPlan } from "./derive.js"
@@ -21,6 +21,11 @@ import {
   joinedText,
   stableHash,
 } from "./content-identity.js"
+import {
+  projectionBlocks,
+  resolveToolResult,
+  type ToolFace,
+} from "./tool-faces.js"
 
 export type ItemKind =
   "user" | "assistant" | "reasoning" | "tool" | "notice" | "compaction"
@@ -36,10 +41,24 @@ export interface TranscriptItem {
   streaming: boolean
   tool?: string
   state?: "running" | "ok" | "failed"
-  /** Derived render blocks ("diff", "hunks", "code", "image"). */
+  /** The card's RESULT FACE (`terminal`, `file`, `diff`, `lines`, `markdown`,
+   *  `error`, `text`, `pending`, …) plus "hunks" when it carries a diff. This is
+   *  the corpus's `blocks` field, and it comes from `tool-faces.ts` — not from
+   *  sniffing the text. */
   blocks: string[]
+  /** The resolved face, kept so the renderer draws a terminal, a file, a diff or
+   *  prose the way the face says instead of guessing from the text. */
+  face?: ToolFace
+  /** Severity notices the face carries (bash truncation, read continuation,
+   *  grep limit), shown apart from the output itself. */
+  notices?: string[]
   images: number
   toolCallId?: string
+  /** The call's args and canonical `{content, details?}` result, kept so the
+   *  face can be re-resolved when either arrives late (a replayed toolCall block
+   *  carries args the live frame may not have). */
+  args?: unknown
+  result?: unknown
   /** True when this row's key IS a pi entry id (born from an entry, or re-keyed
    *  to one). The boundary between replayed history and the live tail is
    *  defined by this, and that boundary is where late entry births insert. */
@@ -432,6 +451,7 @@ export class TranscriptReducer {
         this.startTool(
           String(rpc.toolCallId ?? ""),
           String(rpc.toolName ?? "?"),
+          asFrame(rpc.args) ?? undefined,
           Array.isArray(env.aux?.hunks)
             ? (env.aux?.hunks as unknown[])
             : undefined,
@@ -444,18 +464,20 @@ export class TranscriptReducer {
         const partial = asFrame(rpc.partialResult)
         const preview = partial ? summarizeResult(partial.content) : ""
         if (preview) card.partial = preview.slice(0, 2_000)
+        // The running face comes from the partial output, as in the reference:
+        // shell output is already terminal text, anything else (an agent's
+        // progress) stays plain text until the call settles.
+        this.applyToolView(card, "running", partial ?? undefined)
         break
       }
       case "tool_execution_end": {
         const card = this.toolsById.get(String(rpc.toolCallId ?? ""))
         if (!card) break
         const result = asFrame(rpc.result)
-        card.state = rpc.isError === true ? "failed" : "ok"
-        card.text = result ? summarizeResult(result.content) : ""
-        card.blocks = blocksFor(result, env.aux?.hunks)
         if (!card.hunks && Array.isArray(env.aux?.hunks))
           card.hunks = env.aux?.hunks as unknown[]
         card.images = countImages(result?.content)
+        this.applyToolView(card, rpc.isError === true ? "failed" : "ok", result)
         break
       }
       case "response": {
@@ -741,6 +763,7 @@ export class TranscriptReducer {
       this.startTool(
         String(call.id ?? ""),
         String(call.name ?? "?"),
+        asFrame(call.arguments) ?? undefined,
         undefined,
         fromEntry,
       )
@@ -750,21 +773,62 @@ export class TranscriptReducer {
   private finishTool(toolCallId: string, message: Frame): void {
     const card = this.toolsById.get(toolCallId)
     if (!card) return
-    card.state = message.isError === true ? "failed" : "ok"
-    card.text = summarizeResult(message.content)
-    card.blocks = blocksFor({ content: message.content }, message.details)
     card.images = countImages(message.content)
+    // pi's canonical result shape, so replay resolves the SAME face the live
+    // `tool_execution_end` produced.
+    this.applyToolView(card, message.isError === true ? "failed" : "ok", {
+      content: message.content,
+      details: message.details,
+    })
+  }
+
+  /** Resolve and store a card's result view. One place because the face is a
+   *  function of (tool name, args, canonical result, state), and the same card
+   *  passes through it running → settled, live and replay alike. */
+  private applyToolView(
+    card: TranscriptItem,
+    state: "running" | "ok" | "failed",
+    result: unknown,
+  ): void {
+    card.state = state
+    if (result !== undefined) card.result = result
+    const view = resolveToolResult({
+      tool: card.tool ?? "?",
+      args: (card.args ?? {}) as Record<string, unknown>,
+      result: card.result,
+      state,
+    })
+    card.face = view.face
+    card.blocks = projectionBlocks(view, card.hunks)
+    card.notices = view.diagnostics.length > 0 ? view.diagnostics : undefined
+    const face = view.face
+    card.text =
+      face.kind === "pending"
+        ? ""
+        : face.kind === "diff"
+          ? (face.confirmation ?? "")
+          : face.kind === "script"
+            ? face.output
+            : "text" in face
+              ? face.text
+              : ""
   }
 
   private startTool(
     toolCallId: string,
     toolName: string,
-    hunks: unknown[] | undefined,
+    args?: Frame,
+    hunks?: unknown[],
     fromEntry = false,
   ): void {
     if (!toolCallId) return
     const existing = this.toolsById.get(toolCallId)
-    if (existing) return
+    if (existing) {
+      // A replayed toolCall block can carry args the live frame did not, and the
+      // face resolution needs them. A settled card is never re-opened.
+      if (!existing.args && args) existing.args = args
+      return
+    }
     const item: TranscriptItem = {
       kind: "tool",
       // pi's toolCall ids are identical live and in replay, so they are the
@@ -774,13 +838,15 @@ export class TranscriptReducer {
       streaming: false,
       tool: toolName,
       state: "running",
-      blocks: hunks && hunks.length > 0 ? ["diff", "hunks"] : [],
+      blocks: [],
       images: 0,
       toolCallId,
       replayStable: fromEntry,
+      ...(args ? { args } : {}),
       ...(hunks ? { hunks } : {}),
     }
     this.toolsById.set(toolCallId, item)
+    this.applyToolView(item, "running", undefined)
     if (fromEntry) this.insertBeforeLiveTail(item)
     else this.push(item)
   }

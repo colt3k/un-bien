@@ -127,8 +127,11 @@ Screenshot of a live turn: `/tmp/unbien-smoke/web-client-live.png`.
   label showed only the last, so the important one was lost to a later cosmetic
   one.
 - No model/thinking pickers, no session list controls (fork/compact/new/navigate),
-  no `session_launch` UI beyond `App.launch()`, no image rendering, no
-  tool-arg/`partial` streaming detail beyond a tail.
+  no `session_launch` UI beyond `App.launch()`, no image rendering (image blocks
+  are counted, not drawn), no syntax highlighting (the file face records its
+  language and nothing paints it), and the call's ARGUMENTS are not shown — only
+  the face chip and the result. Partial output streams as the running face
+  (terminal text for a shell, plain text otherwise).
 - No service worker: "Add to Home screen" works, offline does not.
 - Slash commands are sent as ordinary prompts (pi expands them on the machine).
   The iOS app's command registry and its refusal toasts for TUI-only commands are
@@ -141,6 +144,7 @@ Screenshot of a live turn: `/tmp/unbien-smoke/web-client-live.png`.
 | `src/main.ts`                     | boot; import order is load-bearing (polyfills first)                                                               |
 | `src/derive.ts`                   | pi's entry tree: backwalk the leaf, derive the active path, birth only path rows                                   |
 | `src/content-identity.ts`         | `identify` — the id-less live frame to durable entry bridge                                                        |
+| `src/tool-faces.ts`               | a tool card's RESULT face, resolved from the tool's declared spec — the corpus's `blocks`                          |
 | `src/polyfills.ts`                | `Buffer` global before anything touches the core                                                                   |
 | `src/session-client.ts`           | port of `unbien-cli/src/client.ts`: pairing awaited, `rooms_check` honesty, paged `get_entries`, identity pin      |
 | `src/framing.ts`                  | outer envelope, plane stamping (`rpc`/`evt`/`ub` — an unstamped frame is silently dropped), inbound classification |

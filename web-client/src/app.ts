@@ -635,6 +635,10 @@ export class App {
       const details = el("details", "tool-inner")
       const summary = el("summary")
       summary.append(el("span", "who", `tool · ${item.tool ?? "?"}`))
+      // The face is shown because it is the honest label: "bash · terminal" or
+      // "read · file" says what the card will contain, and "text" says the
+      // result did not match a declared spec.
+      if (item.face) summary.append(el("span", "face", item.face.kind))
       summary.append(el("span", "state", item.state ?? "running"))
       details.append(summary)
       const body = el("div", "collapsed")
@@ -660,6 +664,18 @@ export class App {
     if (state) {
       state.textContent = item.state ?? "running"
       state.className = `state ${item.state ?? "running"}`
+    }
+    // The face label must follow the card: it goes pending → terminal / file /
+    // diff as the result settles. Written once at build time it would freeze at
+    // "pending" for the card's whole life.
+    let faceChip = node.querySelector<HTMLElement>(".face")
+    if (item.face) {
+      if (!faceChip && state?.parentElement) {
+        faceChip = el("span", "face", item.face.kind)
+        state.parentElement.insertBefore(faceChip, state)
+      } else if (faceChip) faceChip.textContent = item.face.kind
+    } else {
+      faceChip?.remove()
     }
     const body = node.querySelector<HTMLElement>(".collapsed")
     if (!body) return
@@ -848,45 +864,145 @@ function explainRooms(result: {
   }
 }
 
+/** Draw a tool card the way its RESOLVED FACE says — a terminal as terminal
+ *  output, a read as a file, an edit as a diff, a search as lines, an agent's
+ *  report as prose — rather than dumping whatever text came back. The face came
+ *  from the tool's declared result spec (src/tool-faces.ts), so "it is a diff"
+ *  is a fact about the result, not a guess from its shape. */
 function renderToolBody(item: TranscriptItem): { sig: string; nodes: Node[] } {
+  const face = item.face
   const nodes: Node[] = []
-  const sig = `${item.state ?? ""}|${item.text.length}|${item.partial?.length ?? 0}|${item.hunks?.length ?? 0}`
-  if (item.partial) {
-    const pre = el("pre", "partial", item.partial)
-    nodes.push(pre)
+  const sig = [
+    item.state ?? "",
+    face?.kind ?? "none",
+    item.text.length,
+    item.partial?.length ?? 0,
+    item.hunks?.length ?? 0,
+    item.notices?.length ?? 0,
+  ].join("|")
+
+  // Notices (bash truncation, read continuation, a search hitting its limit)
+  // belong apart from the output: they are about the output, not part of it.
+  const notices =
+    face && "notices" in face
+      ? ((face as { notices?: string[] }).notices ?? [])
+      : []
+  for (const notice of notices) nodes.push(el("div", "face-notice", notice))
+
+  switch (face?.kind) {
+    case "pending":
+      if (item.partial) nodes.push(el("pre", "partial", item.partial))
+      break
+    case "terminal":
+      if (face.diff) nodes.push(...renderHunks(face.diff.hunks))
+      else nodes.push(el("pre", "face-term", face.text))
+      break
+    case "file": {
+      const pre = el("pre", "face-file", face.text)
+      if (face.lang) pre.dataset.lang = face.lang
+      nodes.push(pre)
+      break
+    }
+    case "lines": {
+      const list = el("ul", "face-lines")
+      for (const line of face.text.split("\n"))
+        list.append(el("li", undefined, line))
+      nodes.push(list)
+      break
+    }
+    case "diff": {
+      // pi's own patch hunks first; a running card may only have the extension's
+      // pre-rendered sidecar hunks.
+      nodes.push(
+        ...renderHunks(
+          face.hunks ?? (item.hunks as unknown[] | undefined) ?? [],
+        ),
+      )
+      if (face.confirmation)
+        nodes.push(el("div", "face-confirm", face.confirmation))
+      break
+    }
+    case "confirmation":
+      nodes.push(el("div", "face-confirm", face.text))
+      break
+    case "script":
+      if (face.calls.length > 0) {
+        const list = el("ul", "face-calls")
+        for (const call of face.calls)
+          list.append(
+            el(
+              "li",
+              undefined,
+              `${call.name}(${call.args}) · ${call.status}${call.durationMs !== undefined ? ` ${call.durationMs}ms` : ""}${call.error ? ` — ${call.error}` : ""}`,
+            ),
+          )
+        nodes.push(list)
+      }
+      nodes.push(el("pre", "face-term", face.output))
+      break
+    case "error":
+      nodes.push(el("pre", "face-error", face.text))
+      break
+    case "markdown":
+      nodes.push(el("div", "face-prose", face.text))
+      break
+    case "text":
+    default:
+      if (item.partial) nodes.push(el("pre", "partial", item.partial))
+      if (item.text)
+        nodes.push(el("pre", undefined, item.text.slice(0, 20_000)))
+      for (const hunk of (item.hunks as unknown[] | undefined) ?? [])
+        nodes.push(...renderHunks([hunk]))
+      break
   }
-  for (const hunk of item.hunks ?? []) {
-    nodes.push(renderHunk(hunk))
-  }
-  if (item.text) nodes.push(el("pre", undefined, item.text.slice(0, 20_000)))
   return { sig, nodes }
 }
 
-function renderHunk(hunk: unknown): HTMLElement {
-  const record = (hunk ?? {}) as Record<string, unknown>
-  const lines = Array.isArray(record.lines) ? (record.lines as unknown[]) : null
-  const box = el("div", "diff")
-  if (lines) {
-    for (const raw of lines) {
-      const line = (raw ?? {}) as Record<string, unknown>
-      const kind = typeof line.kind === "string" ? line.kind : "context"
-      const text =
-        typeof line.text === "string" ? line.text : JSON.stringify(line)
-      const prefix = kind === "add" ? "+" : kind === "del" ? "-" : " "
-      box.append(
-        el(
-          "div",
-          kind === "add" ? "add" : kind === "del" ? "del" : undefined,
-          `${prefix}${text}`,
-        ),
-      )
+type DiffLineView = {
+  kind: "add" | "remove" | "context"
+  text: string
+  oldLine?: number
+  newLine?: number
+}
+
+/** Render diff hunks. Two shapes arrive: this client's parsed patch
+ *  (`{kind, text, oldLine, newLine}`) and the extension's pre-rendered sidecar
+ *  hunks (`{type: "+" | "-" | " ", text}`), so both are normalized here. */
+function renderHunks(hunks: unknown[]): Node[] {
+  const nodes: Node[] = []
+  for (const raw of hunks) {
+    const lines = (raw as { lines?: unknown[] })?.lines ?? []
+    const box = el("div", "hunk")
+    for (const rawLine of lines) {
+      const line = normalizeDiffLine(rawLine)
+      if (!line) continue
+      const row = el("div", `diff-line ${line.kind}`, line.text)
+      const number =
+        line.kind === "remove" ? line.oldLine : (line.newLine ?? line.oldLine)
+      if (number !== undefined) row.dataset.line = String(number)
+      box.append(row)
     }
-    return box
+    nodes.push(box)
   }
-  const diff =
-    typeof record.diff === "string"
-      ? record.diff
-      : JSON.stringify(record, null, 1)
-  box.append(el("div", undefined, diff))
-  return box
+  return nodes
+}
+
+function normalizeDiffLine(raw: unknown): DiffLineView | undefined {
+  const value = raw as Record<string, unknown>
+  if (!value) return undefined
+  const text = typeof value.text === "string" ? value.text : ""
+  const oldLine = typeof value.oldLine === "number" ? value.oldLine : undefined
+  const newLine = typeof value.newLine === "number" ? value.newLine : undefined
+  if (
+    value.kind === "add" ||
+    value.kind === "remove" ||
+    value.kind === "context"
+  )
+    return { kind: value.kind, text, oldLine, newLine }
+  const marker = value.type ?? value.marker
+  if (marker === "+") return { kind: "add", text, newLine }
+  if (marker === "-") return { kind: "remove", text, oldLine }
+  if (marker === " " || marker === "context")
+    return { kind: "context", text, oldLine, newLine }
+  return undefined
 }

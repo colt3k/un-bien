@@ -246,6 +246,77 @@ textarea {
 .tool .diff .del {
   color: var(--danger);
 }
+
+/* The result face, named in the card header: "bash · terminal", "read · file".
+   It is the honest label — "text" means the result did not match a declared
+   spec, and saying so beats dressing up unknown output as something structured. */
+.tool .face {
+  font-size: 11px;
+  color: var(--muted);
+  font-family: var(--mono);
+}
+.tool .face-notice {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: italic;
+  margin-top: 4px;
+}
+.tool .face-error {
+  color: var(--danger);
+}
+.tool .face-confirm {
+  color: var(--ok);
+  font-size: 13px;
+}
+.tool .face-prose {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.tool .face-lines,
+.tool .face-calls {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+.tool .face-lines li,
+.tool .face-calls li {
+  border-bottom: 1px solid var(--line);
+  padding: 2px 0;
+  word-break: break-all;
+}
+.tool .hunk {
+  font-family: var(--mono);
+  font-size: 12px;
+  margin: 6px 0;
+  border-left: 2px solid var(--line);
+}
+.tool .diff-line {
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 0 6px;
+}
+.tool .diff-line::before {
+  content: " ";
+}
+.tool .diff-line.add {
+  color: var(--ok);
+  background: rgba(48, 164, 108, 0.12);
+}
+.tool .diff-line.add::before {
+  content: "+";
+}
+.tool .diff-line.remove {
+  color: var(--danger);
+  background: rgba(229, 72, 77, 0.12);
+}
+.tool .diff-line.remove::before {
+  content: "-";
+}
+.tool .diff-line.context {
+  color: var(--muted);
+}
 .collapsed {
   display: none;
 }

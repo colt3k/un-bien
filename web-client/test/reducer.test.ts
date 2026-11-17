@@ -183,19 +183,37 @@ describe("tool cards", () => {
   })
 
   it("picks up the edit-family diff hunks riding in env.aux", () => {
-    const snapshot = fold([
-      {
-        rpc: {
-          type: "tool_execution_start",
-          toolCallId: "e1",
-          toolName: "edit",
-          args: {},
-        },
-        aux: { hunks: [{ lines: [{ kind: "add", text: "+hi" }] }] },
+    const reducer = new TranscriptReducer()
+    reducer.apply({
+      rpc: {
+        type: "tool_execution_start",
+        toolCallId: "e1",
+        toolName: "edit",
+        args: { path: "a.ts", old_string: "x", new_string: "y" },
       },
-    ]).snapshot()
-    expect(snapshot.items[0]?.blocks).toEqual(["diff", "hunks"])
-    expect(snapshot.items[0]?.hunks).toHaveLength(1)
+      aux: { hunks: [{ lines: [{ kind: "add", text: "+hi" }] }] },
+    } as never)
+    // `blocks` names the card's RESULT face. While the call runs there is no
+    // result, so the face is `pending` — and the diff still renders, from the
+    // sidecar hunks, which is exactly why the projection lists "hunks" next to
+    // it. The old expectation ("diff" while running) was the spike inventing a
+    // rule the reference does not have.
+    expect(reducer.snapshot().items[0]?.blocks).toEqual(["pending", "hunks"])
+    expect(reducer.snapshot().items[0]?.hunks).toHaveLength(1)
+
+    reducer.apply({
+      rpc: {
+        type: "tool_execution_end",
+        toolCallId: "e1",
+        result: {
+          content: [{ type: "text", text: "Edited a.ts: 1 line added" }],
+        },
+      },
+    } as never)
+    expect(reducer.snapshot().items[0]?.blocks).toEqual(["diff", "hunks"])
+    expect(reducer.snapshot().items[0]?.text).toBe(
+      "Edited a.ts: 1 line added",
+    )
   })
 
   it("marks a failed tool failed", () => {

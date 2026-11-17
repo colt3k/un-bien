@@ -20,11 +20,12 @@ import type { TranscriptItem } from "../src/reducer.js"
  * below is the mechanism for skipping one honestly; it is deliberately empty.
  *
  * STILL NOT COMPARED — do not read 10/10 as conformance:
- *   - `blocks`: the tool card's RESULT FACE (`ToolFaceResolver.resolve` in the
- *     app — terminal / file / diff / lines / script / markdown / error / text,
- *     plus "hunks" when an edit-family card carries a diff). This client renders
- *     tool output as text and does not resolve faces yet.
- *   - `plan` (only scenario 006 exercises it) and the panel projections.
+ *   - `plan` (only scenario 006 exercises it) and the panel projections, and no
+ *     scenario's expected item declares `images` non-zero, so image counting is
+ *     only weakly covered here.
+ *   - The face FIELDS beyond their name (a terminal face's notices, a diff's
+ *     hunks, a script's calls) — `blocks` names the face; the corpus does not
+ *     project what is inside it, so `test/tool-faces.test.ts` carries that.
  *   - `replay` mode: every scenario declares `modes: ["live"]` — the corpus has
  *     no recorded paging fixture, so the paging contract is covered only by
  *     test/derive.test.ts, not here.
@@ -34,7 +35,9 @@ import type { TranscriptItem } from "../src/reducer.js"
  * Everything else the reference projects — `text` (prefix, because the corpus
  * scrubs long strings and escapes their newlines), `streaming`, `images`,
  * `state`, `tool`, `flags`, `leafId`, `subagents`, `pendingAsks` — is compared,
- * and that is what caught the phantom-dialog bug (8 `setStatus`/`notify` frames
+ * `blocks` is compared against the resolved result face (tool-faces.ts).
+ *
+ * Widening the comparison is what caught the phantom-dialog bug (8 `setStatus`/`notify` frames
  * folded as 8 blocking asks), the "session ended after every turn" bug
  * (`turn_end` setting `ended`), a subagent panel stuck at "started" (the status
  * is the CHANNEL name, not a payload field), and inferring "a turn is in
@@ -123,8 +126,16 @@ function itemProblems(
         if (got.tool !== expected)
           problems.push(`tool ${got.tool} != ${expected}`)
         break
-      case "blocks":
-        break // result faces not ported — recorded, not silently passed
+      case "blocks": {
+        // The card's result face, resolved by tool-faces.ts. Compared as a set
+        // in declared order — the projection's own shape.
+        const wantBlocks = Array.isArray(expected) ? expected : []
+        if (JSON.stringify(got.blocks) !== JSON.stringify(wantBlocks))
+          problems.push(
+            `blocks ${JSON.stringify(got.blocks)} != ${JSON.stringify(wantBlocks)}`,
+          )
+        break
+      }
       default:
         problems.push(`expected key this client does not project: ${key}`)
     }
