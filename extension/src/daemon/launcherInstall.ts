@@ -1,5 +1,7 @@
 /**
- * Launcher package install — `npm install -g @geohar/un-bien-launcher`.
+ * Launcher package install — `npm install -g @geohar/un-bien-launcher`, or
+ * the equivalent for the package manager in pi's `npmCommand` setting (see
+ * packageManager.ts).
  *
  * The launcher daemon's wrapper is its own npm package, separate from the
  * extension — and nothing else ever updated it (observed live: the daemon
@@ -7,7 +9,7 @@
  * package). `/unbien install launcher` (and `all`) installs/UPGRADES it
  * globally so the daemon runs current code, mirroring the CLI install.
  *
- * Idempotent: npm install -g over an existing install upgrades to latest.
+ * Idempotent: a global install over an existing one upgrades to latest.
  * We verify the bin afterwards via `unbien-launcher --version` and report
  * what landed.
  */
@@ -17,6 +19,7 @@ import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { join } from "node:path"
 import { promisify } from "node:util"
+import { globalBinHint, runGlobalInstall } from "./packageManager.js"
 
 const execFileAsync = promisify(execFile)
 
@@ -58,29 +61,9 @@ export async function installLauncherPackage(
     onLog?.(l)
   }
 
-  // npm is a sibling of node everywhere node is installed; resolve npm-cli.js
-  // from process.execPath's tree so we don't depend on `npm` being on a
-  // possibly-sparse PATH (same reasoning as findNodeBinary in install.ts).
-  const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm"
-  push(`npm install -g ${spec}${dev ? "  (dev channel — matches this dev extension)" : ""} …`)
-
-  const { stdout, stderr } = await execFileAsync(
-    npmCmd,
-    ["install", "-g", spec],
-    { timeout: 5 * 60_000, maxBuffer: 4 * 1024 * 1024 },
-  ).catch((err) => {
-    const detail =
-      (err as { stderr?: string; message?: string }).stderr ??
-      (err as { message?: string }).message ??
-      String(err)
-    throw new Error(
-      `npm install -g ${LAUNCHER_PACKAGE} failed: ${detail}\n` +
-        "  If npm isn't found, install Node from https://nodejs.org and retry.",
-    )
+  const { manager } = await runGlobalInstall(spec, push, {
+    note: dev ? "  (dev channel — matches this dev extension)" : "",
   })
-  for (const line of `${stdout}\n${stderr}`.split("\n")) {
-    if (line.trim()) push(line.trim())
-  }
 
   // Verify: `unbien-launcher --version` (win32: npm writes unbien.cmd shims).
   let version: string | null = null
@@ -104,13 +87,13 @@ export async function installLauncherPackage(
     push(
       `verified: unbien-launcher ${version ?? "?"} — ${landed} channel` +
         (dev && landed !== "dev"
-          ? " ⚠️ requested DEV but the landed binary is NOT a dev build — check npm"
+          ? ` ⚠️ requested DEV but the landed binary is NOT a dev build — check ${manager}`
           : "") +
         ` (requested: ${channel})`,
     )
   } catch {
     push(
-      "⚠ installed, but `unbien-launcher --version` failed — the npm global bin dir " +
+      `⚠ installed, but \`unbien-launcher --version\` failed — ${globalBinHint(manager)} ` +
         "may not be on $PATH. Open a new terminal and run `unbien-launcher --version`.",
     )
   }

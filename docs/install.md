@@ -386,8 +386,18 @@ snapshot the daemons would fall back to defaults your shell doesn't use. If
 you change your relay URL, state dir, or agent config location, re-run the
 install to refresh the snapshot.
 
-**The CLI needs a fresh terminal.** `unbien` lands in the npm global bin dir;
-a terminal opened before the install won't have it on `$PATH` yet.
+**The CLI needs a fresh terminal.** `unbien` lands in the package manager's
+global bin dir; a terminal opened before the install won't have it on `$PATH`
+yet.
+
+**The launcher and CLI packages follow pi's `npmCommand`.** `/unbien install
+launcher|cli` installs `@geohar/un-bien-launcher` / `@geohar/unbien-cli`
+globally with the package manager pi itself uses: `npm install -g` when
+`npmCommand` is unset, `bun add -g` for `["bun"]`, `pnpm add -g` for
+`["pnpm"]`, and wrappers like `["mise", "exec", "--", "bun"]` keep their
+prefix. Only the global `settings.json` counts, not a project's. If you switch
+managers, uninstall the old global copy, or whichever bin dir comes first on
+`PATH` decides which version runs.
 
 **Startup order doesn't matter.** Both daemons reconnect on their own: the
 launcher retries the relay every 3 seconds (single in-flight chain), and the

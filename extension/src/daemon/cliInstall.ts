@@ -1,11 +1,13 @@
 /**
- * CLI package install — `npm install -g @geohar/unbien-cli`.
+ * CLI package install — `npm install -g @geohar/unbien-cli`, or the
+ * equivalent for the package manager in pi's `npmCommand` setting (see
+ * packageManager.ts).
  *
  * The terminal client (`unbien`) is its own npm package, separate from the
  * extension. `/unbien install cli` (and `all`) installs it globally so the
  * user gets the `unbien` bin on $PATH.
  *
- * Idempotent: npm install -g over an existing install upgrades to latest.
+ * Idempotent: a global install over an existing one upgrades to latest.
  * We verify the bin afterwards via `unbien --version` and report what landed.
  */
 
@@ -14,6 +16,7 @@ import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { join } from "node:path"
 import { promisify } from "node:util"
+import { globalBinHint, runGlobalInstall } from "./packageManager.js"
 
 const execFileAsync = promisify(execFile)
 
@@ -55,29 +58,9 @@ export async function installCliPackage(
     onLog?.(l)
   }
 
-  // npm is a sibling of node everywhere node is installed; resolve npm-cli.js
-  // from process.execPath's tree so we don't depend on `npm` being on a
-  // possibly-sparse PATH (same reasoning as findNodeBinary in install.ts).
-  const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm"
-  push(`npm install -g ${spec}${dev ? "  (dev channel — matches this dev extension)" : ""} …`)
-
-  const { stdout, stderr } = await execFileAsync(
-    npmCmd,
-    ["install", "-g", spec],
-    { timeout: 5 * 60_000, maxBuffer: 4 * 1024 * 1024 },
-  ).catch((err) => {
-    const detail =
-      (err as { stderr?: string; message?: string }).stderr ??
-      (err as { message?: string }).message ??
-      String(err)
-    throw new Error(
-      `npm install -g ${CLI_PACKAGE} failed: ${detail}\n` +
-        "  If npm isn't found, install Node from https://nodejs.org and retry.",
-    )
+  const { manager } = await runGlobalInstall(spec, push, {
+    note: dev ? "  (dev channel — matches this dev extension)" : "",
   })
-  for (const line of `${stdout}\n${stderr}`.split("\n")) {
-    if (line.trim()) push(line.trim())
-  }
 
   // Verify: `unbien --version` (win32: npm writes unbien.cmd shims).
   let version: string | null = null
@@ -101,13 +84,13 @@ export async function installCliPackage(
     push(
       `verified: unbien ${version ?? "?"} — ${landed} channel` +
         (dev && landed !== "dev"
-          ? " ⚠️ requested DEV but the landed binary is NOT a dev build — check npm"
+          ? ` ⚠️ requested DEV but the landed binary is NOT a dev build — check ${manager}`
           : "") +
         ` (requested: ${channel})`,
     )
   } catch {
     push(
-      "⚠ installed, but `unbien --version` failed — the npm global bin dir " +
+      `⚠ installed, but \`unbien --version\` failed — ${globalBinHint(manager)} ` +
         "may not be on $PATH. Open a new terminal and run `unbien --version`.",
     )
   }
