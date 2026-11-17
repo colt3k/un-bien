@@ -211,9 +211,7 @@ describe("tool cards", () => {
       },
     } as never)
     expect(reducer.snapshot().items[0]?.blocks).toEqual(["diff", "hunks"])
-    expect(reducer.snapshot().items[0]?.text).toBe(
-      "Edited a.ts: 1 line added",
-    )
+    expect(reducer.snapshot().items[0]?.text).toBe("Edited a.ts: 1 line added")
   })
 
   it("marks a failed tool failed", () => {
@@ -552,5 +550,57 @@ describe("history vs the live tail", () => {
       "e6",
       "assistant#2",
     ])
+  })
+})
+
+describe("image blocks", () => {
+  it("counts them for the projection and keeps the payload for the view", () => {
+    const reducer = new TranscriptReducer()
+    reducer.applyEntries(
+      [
+        {
+          id: "e1",
+          parentId: null,
+          type: "message",
+          message: {
+            role: "assistant",
+            timestamp: 10,
+            content: [
+              { type: "text", text: "screenshot" },
+              { type: "image", mimeType: "image/png", data: "AAAA" },
+            ],
+          },
+        },
+      ],
+      "e1",
+    )
+    const item = reducer.snapshot().items[0]!
+    // `images` is the corpus's COUNT; the bytes are kept separately so the view
+    // can actually draw what pi sent inline.
+    expect(item.images).toBe(1)
+    expect(item.imageParts).toEqual([{ data: "AAAA", mime: "image/png" }])
+  })
+
+  it("caps how many a row holds without lying about the count", () => {
+    const content = Array.from({ length: 12 }, (_, i) => ({
+      type: "image",
+      mimeType: "image/png",
+      data: `img${i}`,
+    }))
+    const reducer = new TranscriptReducer()
+    reducer.applyEntries(
+      [
+        {
+          id: "e1",
+          parentId: null,
+          type: "message",
+          message: { role: "user", timestamp: 10, content },
+        },
+      ],
+      "e1",
+    )
+    const item = reducer.snapshot().items[0]!
+    expect(item.images).toBe(12)
+    expect(item.imageParts).toHaveLength(8)
   })
 })

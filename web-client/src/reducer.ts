@@ -53,6 +53,10 @@ export interface TranscriptItem {
    *  grep limit), shown apart from the output itself. */
   notices?: string[]
   images: number
+  /** The image blocks themselves, for rendering. `images` (the corpus's field)
+   *  stays the COUNT; the payloads live here because the wire puts base64 inline
+   *  and there is nothing else to fetch. Capped per row — see `MAX_IMAGE_PARTS`. */
+  imageParts?: { data: string; mime: string }[]
   toolCallId?: string
   /** The call's args and canonical `{content, details?}` result, kept so the
    *  face can be re-resolved when either arrives late (a replayed toolCall block
@@ -229,6 +233,10 @@ export function toEnvelope(line: unknown): EnvelopeMessage | null {
 /** Blocking dialogs — the only `extension_ui_request` methods that become a
  *  pending ask. Mirrors the reference reducer's case list. */
 const ASK_METHODS = new Set(["select", "confirm", "input", "editor"])
+/** Images per row, kept for display. pi rides base64 inline, so a screenshot
+ *  session can carry megabytes per entry; the count the corpus checks is
+ *  unaffected, only the view trims. */
+const MAX_IMAGE_PARTS = 8
 /** Panel statuses the `subagents:*` channels name. */
 const SUBAGENT_STATUSES = new Set(["started", "steered", "completed", "failed"])
 
@@ -477,6 +485,11 @@ export class TranscriptReducer {
         if (!card.hunks && Array.isArray(env.aux?.hunks))
           card.hunks = env.aux?.hunks as unknown[]
         card.images = countImages(result?.content)
+        if (card.images > 0)
+          card.imageParts = imagesFromContent(result?.content).slice(
+            0,
+            MAX_IMAGE_PARTS,
+          )
         this.applyToolView(card, rpc.isError === true ? "failed" : "ok", result)
         break
       }
@@ -629,6 +642,14 @@ export class TranscriptReducer {
    *  placeholder row that the match loop re-keys when the entry lands; an
    *  ENTRY-born frame (from the tree) matches first and births only on a miss.
    *  Port of `applyRPCMessageEnd` + the match loop in `birthEntry`. */
+  /** Copy the image payloads onto a row, capped, so the view can draw them. */
+  private attachImages(item: TranscriptItem, content: unknown): void {
+    const parts = imagesFromContent(content)
+    item.images = parts.length
+    if (parts.length === 0) return
+    item.imageParts = parts.slice(0, MAX_IMAGE_PARTS)
+  }
+
   private applyMessageEnd(message: Frame | null, entryId?: string): void {
     if (!message) return
     const role = String(message.role ?? "")
@@ -700,7 +721,7 @@ export class TranscriptReducer {
         this.reconstructCards(calls, true)
         return
       }
-      this.insertBeforeLiveTail({
+      const born: TranscriptItem = {
         kind,
         row: entryId,
         text,
@@ -708,7 +729,9 @@ export class TranscriptReducer {
         blocks: [],
         images,
         replayStable: true,
-      })
+      }
+      this.attachImages(born, message.content)
+      this.insertBeforeLiveTail(born)
       this.identifyIndex.set(key, entryId)
       this.reconstructCards(calls, true)
       return
@@ -727,7 +750,7 @@ export class TranscriptReducer {
       const item = this.touch(kind, this.openAssistant)
       item.streaming = false
       if (text.length > item.text.length) item.text = text
-      if (images > 0) item.images = images
+      this.attachImages(item, message.content)
       this.identifyIndex.set(key, this.openAssistant)
       this.pendingRows.add(this.openAssistant)
       this.openAssistant = null
@@ -737,7 +760,7 @@ export class TranscriptReducer {
         return
       }
       const row = this.row(kind)
-      this.push({
+      const born: TranscriptItem = {
         kind,
         row,
         text,
@@ -745,7 +768,9 @@ export class TranscriptReducer {
         blocks: [],
         images,
         replayStable: false,
-      })
+      }
+      this.attachImages(born, message.content)
+      this.push(born)
       this.identifyIndex.set(key, row)
       this.pendingRows.add(row)
     }
@@ -774,6 +799,11 @@ export class TranscriptReducer {
     const card = this.toolsById.get(toolCallId)
     if (!card) return
     card.images = countImages(message.content)
+    if (card.images > 0)
+      card.imageParts = imagesFromContent(message.content).slice(
+        0,
+        MAX_IMAGE_PARTS,
+      )
     // pi's canonical result shape, so replay resolves the SAME face the live
     // `tool_execution_end` produced.
     this.applyToolView(card, message.isError === true ? "failed" : "ok", {

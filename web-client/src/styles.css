@@ -317,6 +317,17 @@ textarea {
 .tool .diff-line.context {
   color: var(--muted);
 }
+
+/* pi rides images inline as base64 content blocks, so there is nothing to load
+   lazily from a server — the bytes are already here. */
+#transcript img.attachment {
+  display: block;
+  max-width: 100%;
+  max-height: 320px;
+  margin-top: 6px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+}
 .collapsed {
   display: none;
 }

@@ -26,6 +26,9 @@ const ROOM_ID = "aB12cD34eF56"
 /** Slow the scripted turn down so a human (or a test) can send a second message
  *  while it is still running — that is the steer/queue paths, not the prompt one. */
 const TURN_MS = Number(arg("--turn-ms") ?? 1) // real rooms are 12-char base64url, cwd-derived
+/** A valid 1x1 transparent PNG, for the inline image blocks the double sends. */
+const TINY_PNG =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
 const SESSION_ID = "smoke-session-1"
 /** Distinct on purpose: `pair_ok.hostname` is the MACHINE, `session_name` /
  *  `room_meta.name` is the SESSION. Same field names the real extension sends
@@ -325,6 +328,7 @@ async function runTurn(
         type: "text",
         text: "Test Files  3 passed (3)\nTests  27 passed | 4 skipped (31)",
       },
+      { type: "image", mimeType: "image/png", data: TINY_PNG },
     ],
     isError: false,
   })

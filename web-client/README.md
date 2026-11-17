@@ -16,7 +16,7 @@ runs) is imported directly, aliased through Vite so three node-isms don't drag
 pnpm --filter web-client dev            # vite dev server, bound to all interfaces
 pnpm --filter web-client build          # dist/ (88 kB JS, 30 kB gzip)
 pnpm --filter web-client preview        # serve dist/ — use THIS on a phone
-pnpm --filter web-client test           # 74 passing (see Conformance)
+pnpm --filter web-client test           # 76 passing (see Conformance)
 ```
 
 On a phone, use `preview`, not `dev`: the dev server's HMR socket drops on a
@@ -132,11 +132,15 @@ Screenshot of a live turn: `/tmp/unbien-smoke/web-client-live.png`.
   label showed only the last, so the important one was lost to a later cosmetic
   one.
 - No model/thinking pickers, no session list controls (fork/compact/new/navigate),
-  no `session_launch` UI beyond `App.launch()`, no image rendering (image blocks
-  are counted, not drawn), no syntax highlighting (the file face records its
-  language and nothing paints it), and the call's ARGUMENTS are not shown — only
-  the face chip and the result. Partial output streams as the running face
-  (terminal text for a shell, plain text otherwise).
+  no `session_launch` UI beyond `App.launch()`, no syntax highlighting (the file
+  face records its language and nothing paints it), and the call's ARGUMENTS are
+  not shown — only the face chip and the result. Partial output streams as the
+  running face (terminal text for a shell, plain text otherwise).
+- **Images are drawn, and they cost memory.** pi rides image content blocks
+  inline as base64, so a screenshot session carries the bytes in the transcript
+  for as long as the tab lives. The view caps a row at 8 images (the projected
+  count stays honest); there is no disk cache and no eviction of old ones. A
+  long image-heavy session on a phone is the case to watch.
 - No service worker: "Add to Home screen" works, offline does not.
 - Slash commands are sent as ordinary prompts (pi expands them on the machine).
   The iOS app's command registry and its refusal toasts for TUI-only commands are

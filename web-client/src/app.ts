@@ -677,6 +677,7 @@ export class App {
     if (item.kind !== "tool") {
       const body = node.querySelector(".body")
       if (body && body.textContent !== item.text) body.textContent = item.text
+      this.syncImages(node, item)
       return
     }
     const state = node.querySelector<HTMLElement>(".state")
@@ -702,6 +703,23 @@ export class App {
     if (body.dataset.sig !== want.sig) {
       body.dataset.sig = want.sig
       body.replaceChildren(...want.nodes)
+      this.syncImages(body, item)
+    }
+  }
+
+  /** Draw the image blocks pi rides inline (base64 in the content array). Added
+   *  incrementally so a live row gaining an attachment does not rebuild the row,
+   *  and never re-added: the fold caps how many a row carries. */
+  private syncImages(host: HTMLElement, item: TranscriptItem): void {
+    const parts = item.imageParts ?? []
+    const drawn = host.querySelectorAll("img.attachment").length
+    for (let i = drawn; i < parts.length; i++) {
+      const part = parts[i]!
+      const img = el("img", "attachment")
+      img.src = `data:${part.mime};base64,${part.data}`
+      img.loading = "lazy"
+      img.alt = `image from ${item.tool ?? item.kind}`
+      host.append(img)
     }
   }
 
@@ -898,6 +916,7 @@ function renderToolBody(item: TranscriptItem): { sig: string; nodes: Node[] } {
     item.partial?.length ?? 0,
     item.hunks?.length ?? 0,
     item.notices?.length ?? 0,
+    item.imageParts?.length ?? 0,
   ].join("|")
 
   // Notices (bash truncation, read continuation, a search hitting its limit)
