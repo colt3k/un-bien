@@ -20,9 +20,8 @@ import type { TranscriptItem } from "../src/reducer.js"
  * below is the mechanism for skipping one honestly; it is deliberately empty.
  *
  * STILL NOT COMPARED — do not read 10/10 as conformance:
- *   - `plan` (only scenario 006 exercises it) and the panel projections, and no
- *     scenario's expected item declares `images` non-zero, so image counting is
- *     only weakly covered here.
+ *   - No scenario's expected item declares `images` non-zero, so image counting
+ *     is only weakly covered here.
  *   - The face FIELDS beyond their name (a terminal face's notices, a diff's
  *     hunks, a script's calls) — `blocks` names the face; the corpus does not
  *     project what is inside it, so `test/tool-faces.test.ts` carries that.
@@ -272,6 +271,24 @@ describe("conformance corpus (kind + row)", () => {
               }
             }
           })
+        }
+
+        // The plan panel: which project's plan, and how many items. Compared
+        // field-wise, not by serialized JSON — key order in a fixture is not
+        // part of the contract.
+        if ("plan" in expected) {
+          const wantPlan = expected.plan as Record<string, unknown> | null
+          if (wantPlan === null) {
+            if (got.plan !== null)
+              problems.push(`plan ${JSON.stringify(got.plan)} != null`)
+          } else if (got.plan === null) {
+            problems.push(`plan null != ${JSON.stringify(wantPlan)}`)
+          } else {
+            const mine = got.plan as unknown as Record<string, unknown>
+            for (const key of Object.keys(wantPlan))
+              if (mine[key] !== wantPlan[key])
+                problems.push(`plan.${key} ${mine[key]} != ${wantPlan[key]}`)
+          }
         }
 
         expect(problems).toEqual([])

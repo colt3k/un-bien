@@ -12,6 +12,9 @@ const PEERS_KEY = "unbien.web.peers.v1"
  *  sleep should resume the transcript, not dump the user back on an empty
  *  screen at the top — and nothing else in storage says WHICH room that was. */
 const LAST_ROOM_KEY = "unbien.web.lastRoom.v1"
+/** Viewer preferences. Named after the app's (`hideReasoning`) so a preference
+ *  means the same thing on both devices. */
+const PREFS_KEY = "unbien.web.prefs.v1"
 const ALLOW_VERSION_KEY = "unbien.web.allow-version"
 
 export interface RememberedRelay {
@@ -131,4 +134,18 @@ export function forgetLastRoom(epk?: string): void {
   }
   const held = lastRoom()
   if (held && held.epk === epk) kv.remove(LAST_ROOM_KEY)
+}
+
+interface Prefs {
+  hideReasoning?: boolean
+}
+
+/** Thinking visibility. Like the app's, this is a VIEW preference: reasoning is
+ *  always folded, so flipping it back mid-session shows what already arrived. */
+export function hideReasoning(): boolean {
+  return readJson<Prefs>(PREFS_KEY)?.hideReasoning === true
+}
+
+export function setHideReasoning(hide: boolean): void {
+  writeJson(PREFS_KEY, { ...readJson<Prefs>(PREFS_KEY), hideReasoning: hide })
 }

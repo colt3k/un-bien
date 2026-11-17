@@ -11,6 +11,7 @@ import {
   forgetPeer,
   forgetLastRoom,
   forgetRelay,
+  hideReasoning,
   lastRoom,
   listPeers,
   listRelays,
@@ -19,6 +20,7 @@ import {
   rememberLastRoom,
   rememberRelay,
   relayPinFor,
+  setHideReasoning,
   type PairedPeer,
 } from "./store.js"
 
@@ -70,6 +72,8 @@ export class App {
   private readonly input = $<HTMLTextAreaElement>("input")
   private readonly stopBtn = $<HTMLButtonElement>("stopBtn")
   private readonly sendBtn = $<HTMLButtonElement>("sendBtn")
+  /** Reasoning rows are folded always and hidden here — see `render`. */
+  private reasoningHidden = hideReasoning()
 
   private client: SessionClient | null = null
   private relayUrl = ""
@@ -119,6 +123,15 @@ export class App {
       }
     })
     this.input.addEventListener("input", () => this.autogrow())
+    const hideBox = $<HTMLInputElement>("hideReasoning")
+    hideBox.checked = this.reasoningHidden
+    hideBox.addEventListener("change", () => {
+      this.reasoningHidden = hideBox.checked
+      setHideReasoning(this.reasoningHidden)
+      // Re-render: hidden rows leave the DOM, shown rows come back with their
+      // keys, because the reducer kept folding them the whole time.
+      this.render()
+    })
   }
 
   private autogrow(): void {
@@ -563,6 +576,12 @@ export class App {
   private render(): void {
     const snapshot = this.reducer.snapshot()
     for (const toast of snapshot.toasts) this.toast(toast.text)
+    // "Hide thinking" is a VIEW preference: the reducer still folds every
+    // thinking delta, so flipping it back mid-session shows what already
+    // arrived. Hiding also stops reasoning pinning the reader to the tail.
+    const items = this.reasoningHidden
+      ? snapshot.items.filter((item) => item.kind !== "reasoning")
+      : snapshot.items
     // Where the reader was, BEFORE the DOM moves. Rows born by a rootward
     // extension insert ABOVE the viewport, and a naive follow would yank the
     // reader to the bottom (or to the top when the column empties).
@@ -584,8 +603,8 @@ export class App {
       this.rowEls.set(to, node)
       node.dataset.row = to
     }
-    const live = new Set(snapshot.items.map((item) => item.row))
-    for (const item of snapshot.items) {
+    const live = new Set(items.map((item) => item.row))
+    for (const item of items) {
       const existing = this.rowEls.get(item.row)
       if (existing) this.patchItem(existing, item)
       else this.transcript.append(this.buildItem(item))

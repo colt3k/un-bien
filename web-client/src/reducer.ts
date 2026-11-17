@@ -937,15 +937,15 @@ export class TranscriptReducer {
       ]
       return
     }
-    if (channel.startsWith("plan")) {
+    if (channel === "plan:snapshot" || channel === "plan:update") {
+      // The count is the ITEM ARRAY's length, not a `itemCount` field: that is
+      // what the reference projects, and a panel that counts a field the
+      // machine never sends shows zero forever.
       const items = Array.isArray(payload.items) ? payload.items : []
       this.plan = {
         project:
           typeof payload.project === "string" ? payload.project : undefined,
-        itemCount:
-          typeof payload.itemCount === "number"
-            ? payload.itemCount
-            : items.length,
+        itemCount: items.length,
       }
     }
   }

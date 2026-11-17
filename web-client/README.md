@@ -16,7 +16,7 @@ runs) is imported directly, aliased through Vite so three node-isms don't drag
 pnpm --filter web-client dev            # vite dev server, bound to all interfaces
 pnpm --filter web-client build          # dist/ (88 kB JS, 30 kB gzip)
 pnpm --filter web-client preview        # serve dist/ — use THIS on a phone
-pnpm --filter web-client test           # 58 passing (see Conformance)
+pnpm --filter web-client test           # 74 passing (see Conformance)
 ```
 
 On a phone, use `preview`, not `dev`: the dev server's HMR socket drops on a
@@ -123,6 +123,11 @@ Screenshot of a live turn: `/tmp/unbien-smoke/web-client-live.png`.
   tail does the view follow new output — so a mid-turn extension no longer yanks
   a reader who scrolled up, and a reload no longer dumps them at the top of an
   empty column.
+- **Thinking can be hidden.** The drawer's "Hide thinking" toggles reasoning
+  rows, named after the app's `hideReasoning` so the preference means the same
+  thing on both devices. Like the app's, it is a VIEW preference: the fold keeps
+  every thinking delta, so flipping it back mid-session shows what already
+  arrived — and hidden rows stop pinning a reader to the tail.
 - **Notices stack, three deep.** A batch can carry several real problems; one
   label showed only the last, so the important one was lost to a later cosmetic
   one.
