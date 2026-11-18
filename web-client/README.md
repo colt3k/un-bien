@@ -149,6 +149,13 @@ Screenshot of a live turn: `/tmp/unbien-smoke/web-client-live.png`.
   before it counts: undecodable filler makes BOTH sides report `images: 0`, and
   the scenario then silently tests the decoder's rejection instead of the fold. I
   built it that way first and it was vacuously green.
+- **Same fixture's second card is a `read` of an image FILE** — content
+  `[text, image]`, the OPPOSITE order (pi's caption
+  `Read image file [image/jpeg]…` first), `details` absent. Reference projects
+  face `file` with `images: 1`: the caption is the face, the picture is a count
+  on the card, and block order is not something a client may assume. (The pair is
+  captured, not authored — at entry 2060 of a harnager session — but re-parented
+  onto this chain, which `meta.json` says.)
 - **A pasted screenshot is not an image on the wire.** Pasting one at pi's prompt
   writes a user message with one `text` block holding a temp path
   (`/var/folders/…/pasted-image-20261117-203807-….png`) — no base64, no image
