@@ -373,18 +373,44 @@ QR.
 `/unbien install` bakes the installing shell's environment into the service
 units. Three consequences worth knowing:
 
-**Node upgrades orphan the launcher.** The launcher unit pins the exact node
-binary that ran the install (`process.execPath`), so the service never depends
-on `PATH` resolution at boot. When you upgrade node (nvm, Homebrew, system),
-the pinned path can disappear — re-run `unbien-admin install` (idempotent) to
-re-pin. Same after moving the extension or the unbien-cli install.
+**The runtime is pinned.** The launcher unit names an absolute runtime
+binary, so the service never depends on `PATH` resolution at boot. By default
+it's the one that ran the install (`process.execPath`); `service.runtime` in
+`un-bien.json` picks `"node"`, `"bun"` or an absolute path instead (a name is
+resolved on `PATH` when installing, and an install fails if it can't be
+found). When that binary moves (an nvm, Homebrew or bun change), re-run
+`unbien-admin install` (idempotent) to re-pin. Same after moving the
+extension or the unbien-cli install.
 
-**Env changes need a re-run.** `PATH`, `PI_CODING_AGENT_DIR`, and every
-`UNBIEN_*` variable present at install time are snapshotted into the unit —
+**Env changes need a re-run.** `PATH`, `PI_CODING_AGENT_DIR`,
+`PI_CODING_AGENT_SESSION_DIR`, every `UNBIEN_*` variable, and the names in
+`service.env` present at install time are snapshotted into the unit —
 deliberately: launchd/systemd run with a sparse environment, and without the
-snapshot the daemons would fall back to defaults your shell doesn't use. If
-you change your relay URL, state dir, or agent config location, re-run the
-install to refresh the snapshot.
+snapshot the daemons would fall back to defaults your shell doesn't use.
+`service.env` defaults to `XDG_CONFIG_HOME`, `XDG_DATA_HOME`,
+`XDG_STATE_HOME`, `XDG_CACHE_HOME`, `BUN_INSTALL` and `BUN_INSTALL_CACHE_DIR`
+(only the ones set are written); `UNBIEN_SERVICE_ENV` (comma separated) adds
+more. If you change your relay URL, state dir, agent config location or any of
+those variables, re-run the install from a shell that has them.
+
+**Which copy runs, and which package manager.** Set `package_manager`
+(`"npm"`, `"bun"` or `"pnpm"`) in `un-bien.json` to install un-bien's global
+packages with it (`npm install -g`, `bun add -g`, `pnpm add -g`). With it set,
+installs always run from that package manager's global copy of
+`@geohar/un-bien`: `/unbien install` inside pi installs this version there,
+then runs that copy's `unbien-admin install`, so the service never runs pi's
+own copy of the extension (which moves on every extension update and only
+resolves its host packages inside pi). The package manager links
+`unbien-admin`; un-bien doesn't, and never replaces one a package manager
+installed. Without `package_manager`, `/unbien install` runs from pi's copy
+and links `unbien-admin` into `~/.local/bin`, as before.
+
+```json
+{
+  "package_manager": "bun",
+  "service": { "runtime": "bun" }
+}
+```
 
 **The CLI needs a fresh terminal.** `unbien` lands in the npm global bin dir;
 a terminal opened before the install won't have it on `$PATH` yet.

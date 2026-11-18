@@ -106,8 +106,10 @@ describe("package manager global tree", () => {
     expect(packageManagerConfigured({})).toBe(false)
     expect(packageManagerConfigured({ package_manager: "bun" })).toBe(true)
   })
-  test("bun's global packages live under BUN_INSTALL", () => {
-    expect(globalPackageRoot("bun", { BUN_INSTALL: "/b" })).toBe("/b/install/global/node_modules")
+  test("bun's global dir comes from bun (bunfig globalDir), else BUN_INSTALL", () => {
+    const told = () => "/g/custom node_modules (12 installed)"
+    expect(globalPackageRoot("bun", {}, told)).toBe("/g/custom/node_modules")
+    expect(globalPackageRoot("bun", { BUN_INSTALL: "/b" }, () => null)).toBe("/b/install/global/node_modules")
   })
 })
 

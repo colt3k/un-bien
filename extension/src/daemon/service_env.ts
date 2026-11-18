@@ -134,11 +134,25 @@ function _ask(cmd: string, args: string[]): string | null {
   }
 }
 
+/** The global directory `bun pm -g ls` reports on its first line
+ *  (`<dir> node_modules (N installed)`), which honours a bunfig globalDir. */
+export function _bunGlobalDirFrom(firstLine: string | null): string | null {
+  const m = firstLine?.match(/^(.+?) node_modules \(/)
+  return m?.[1] ? join(m[1], "node_modules") : null
+}
+
 /** The package manager's global `node_modules` (where `add -g` / `install
- *  -g` puts packages), or null when it cannot be determined. Bun has no
- *  query for it: it is `$BUN_INSTALL/install/global/node_modules`. */
-export function globalPackageRoot(pm: PackageManager, env: NodeJS.ProcessEnv = process.env): string | null {
+ *  -g` puts packages), or null when it cannot be determined. Bun is asked
+ *  (`bun pm -g ls`, which follows bunfig's globalDir); only if that fails is
+ *  it taken to be `$BUN_INSTALL/install/global/node_modules`. */
+export function globalPackageRoot(
+  pm: PackageManager,
+  env: NodeJS.ProcessEnv = process.env,
+  ask: (cmd: string, args: string[]) => string | null = _ask,
+): string | null {
   if (pm === "bun") {
+    const reported = _bunGlobalDirFrom(ask("bun", ["pm", "-g", "ls"]))
+    if (reported) return reported
     const base = env["BUN_INSTALL"] || join(homedir(), ".bun")
     return join(base, "install", "global", "node_modules")
   }

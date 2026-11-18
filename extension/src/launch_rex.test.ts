@@ -45,6 +45,10 @@ case "$1" in
   window)
     if [ "$2" = new ]; then echo '{"window_id":"window:w2","block_ids":["block:b2"],"revision":2}'; else echo '{}'; fi ;;
   wait)
+    # Only the bounded early-exit wait (--for) reports an exit. The
+    # unbounded wait a still-running pi gets outlives its test, and must not
+    # pick up a later test's FAKE_REX_EXIT and close that test's window.
+    case " $* " in *" --for "*) ;; *) exit 1 ;; esac
     if [ -n "$FAKE_REX_EXIT" ]; then echo "{\\"exit_code\\":$FAKE_REX_EXIT,\\"error\\":\\"exit status $FAKE_REX_EXIT\\"}"; exit "$FAKE_REX_EXIT"; fi
     echo 'Error: wait timed out after 20s: context deadline exceeded' >&2; exit 1 ;;
   capture) printf 'starting pi\\nError: no API key for provider anthropic\\n' ;;
