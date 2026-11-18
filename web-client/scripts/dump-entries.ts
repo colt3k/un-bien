@@ -202,10 +202,56 @@ async function main(): Promise<number> {
 
   client.setRoutingPeer(machineEpk)
   client.setRoom(room.room_id)
+  // The launcher daemon advertises a control room (`is_daemon`) that answers
+  // `session_launch` and friends but NOT `get_entries` — a dump aimed at it just
+  // hangs until the rpc times out, which reads like an empty session. Say so.
+  if ((room.caps ?? []).includes("is_daemon") && !flag("force")) {
+    console.error(
+      `room ${room.room_id} is the launcher's control room (cap is_daemon): it ` +
+        "serves session_launch, not get_entries. Pick a pi session's room " +
+        "(--room <id> from the list above), or pass --force to try anyway.",
+    )
+    client.close()
+    return 1
+  }
+
   // The first frame to a trusted peer is what triggers the extension's attach.
   client.requestSync()
 
-  const { entries, leafId } = await client.getEntries(undefined, maxPages)
+  // Paged by hand rather than through `getEntries()`, which swallows a failed
+  // page: a machine that never answers then looks like a session with no
+  // history, when the honest reading is "the rpc timed out".
+  const entries: unknown[] = []
+  let cursor: string | undefined
+  let leafId: string | undefined
+  for (let page = 0; page < maxPages; page++) {
+    let data: { entries?: unknown[]; leafId?: string } | undefined
+    try {
+      data = await client.request<{ entries?: unknown[]; leafId?: string }>(
+        "get_entries",
+        cursor ? { since: cursor } : {},
+        20_000,
+      )
+    } catch (err) {
+      if (page === 0) {
+        console.error(
+          `get_entries failed on the first page: ${(err as Error).message} — ` +
+            "this room's machine is not answering the rpc (a daemon control room, " +
+            "or an extension that is connected but wedged)",
+        )
+        client.close()
+        return 1
+      }
+      console.log(`walk stopped at page ${page}: ${(err as Error).message}`)
+      break
+    }
+    const pageEntries = data?.entries ?? []
+    leafId = data?.leafId
+    if (pageEntries.length === 0 || !leafId) break
+    entries.push(...pageEntries)
+    if (leafId === cursor) break // the walk is spinning on one leaf
+    cursor = leafId
+  }
   console.log(`walked ${entries.length} entries (leaf ${leafId ?? "none"})`)
 
   const state = await client
