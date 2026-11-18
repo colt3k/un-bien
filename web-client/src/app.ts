@@ -435,12 +435,15 @@ export class App {
     // attach; session_sync asks for panels + pending dialogs. The transcript
     // itself comes from pi's own paged `get_entries`.
     client.requestSync()
-    const { entries, leafId } = await client.getEntries()
+    const { entries, leafId, complete } = await client.getEntries()
     // The beacon (pi's leaf entry id) is what makes the fold render: the entry
     // tree backwalks from it to derive the active path, and rows are born only
     // for entries on that path. Entries without a beacon are indexed and stay
-    // invisible — that is the membership gate, not a bug.
-    this.reducer.applyEntries(entries, leafId ?? null)
+    // invisible — that is the membership gate, not a bug. `complete` says
+    // whether the paging walk finished: a walk that timed out mid-way holds a
+    // real leaf id and a too-short entry set, and folding that as authoritative
+    // would let a divergence reset the transcript to a partial path.
+    this.reducer.applyEntries(entries, leafId ?? null, complete)
     // Turn state comes from pi, not from guessing at the history: a completed
     // entry may still contain tool calls. `get_state.isStreaming` is the same
     // signal the iOS app gates its send/steer button on. Skipped when nothing
@@ -503,9 +506,9 @@ export class App {
     const client = this.client
     if (!client || !this.active) return
     try {
-      const { entries, leafId } = await client.getEntries()
+      const { entries, leafId, complete } = await client.getEntries()
       if (entries.length > 0) {
-        this.reducer.applyEntries(entries, leafId ?? null)
+        this.reducer.applyEntries(entries, leafId ?? null, complete)
         this.render()
       }
     } catch {

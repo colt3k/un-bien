@@ -461,9 +461,16 @@ export class SessionClient {
   async getEntries(
     since?: string,
     maxPages = 200,
-  ): Promise<{ entries: unknown[]; leafId?: string }> {
+  ): Promise<{ entries: unknown[]; leafId?: string; complete: boolean }> {
     const all: unknown[] = []
     let cursor: string | undefined = since
+    // Whether the walk reached the end. A timeout mid-walk leaves an entry SET
+    // that is too short while the leaf id is still the session's real leaf, and
+    // the fold cannot tell the difference from the payload alone — so say it:
+    // `complete` is what `EntryTree.applyEntries`'s `authoritative` means, and
+    // folding a truncated set as authoritative lets a divergence reset the
+    // transcript down to a partial path.
+    let complete = false
     for (let page = 0; page < maxPages; page++) {
       let data: { entries?: unknown[]; leafId?: string } | undefined
       try {
@@ -476,12 +483,15 @@ export class SessionClient {
       }
       const entries = data?.entries ?? []
       const leaf = data?.leafId
-      if (entries.length === 0 || !leaf) break
+      if (entries.length === 0 || !leaf) {
+        complete = true
+        break
+      }
       all.push(...entries)
       if (leaf === cursor) break // leaf did not advance — the walk is spinning
       cursor = leaf
     }
-    return { entries: all, leafId: cursor }
+    return { entries: all, leafId: cursor, complete }
   }
 
   /** Issue a pi rpc verb and await its correlated `response`. */

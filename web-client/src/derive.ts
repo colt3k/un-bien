@@ -148,11 +148,18 @@ export class EntryTree {
   /** Fold one page of raw pi entries. `leafId` is the ACTIVE-LEAF BEACON only
    *  when trusted: a partial page's `leafId` is just a resume cursor, and
    *  deriving from it builds a partial path. `turnOpen` = a turn is in flight
-   *  (a live bubble is open), which defers a destructive reset. */
+   *  (a live bubble is open), which defers a destructive reset.
+   *
+   *  `authoritative` has NO default on purpose (audit, 2026-11-18): the choice
+   *  is the difference between a destructive `reset` and keep-truncated, so a
+   *  default is behaviour, not convenience. The wrapper on the reducer side
+   *  defaults it to true because a `get_entries` page that came back without a
+   *  leaf finished the walk; callers that have not thought about it should go
+   *  through that wrapper rather than guess. */
   applyEntries(
     entries: readonly unknown[],
-    leafId?: string | null,
-    authoritative = false,
+    leafId: string | null | undefined,
+    authoritative: boolean,
     turnOpen = false,
   ): PathPlan {
     for (const raw of entries) {

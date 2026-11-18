@@ -295,7 +295,11 @@ export class TranscriptReducer {
   /** Fold a page of pi entries. `leafId` is the ACTIVE-LEAF BEACON, and is only
    *  one when the page COMPLETED the walk (came back empty) — a partial page's
    *  `leafId` is a resume cursor, and deriving from it builds a partial path
-   *  that can strand the transcript empty. */
+   *  that can strand the transcript empty. Defaults to authoritative because
+   *  both app-side callers pass the result of `SessionClient.getEntries()`,
+   *  which pages to the end and now reports whether it finished; a caller
+   *  holding one page at a time must pass `false` (the tree itself takes the
+   *  flag with no default, precisely so this choice is never implicit). */
   applyEntries(
     entries: readonly unknown[],
     leafId?: string | null,
