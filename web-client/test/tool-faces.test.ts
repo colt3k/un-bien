@@ -5,6 +5,7 @@ import {
   projectionBlocks,
   resolveToolResult,
   toolCategory,
+  type ToolFace,
 } from "../src/tool-faces.js"
 
 /**
@@ -18,6 +19,16 @@ const ok = (
   result: unknown,
   args: Record<string, unknown> = {},
 ) => resolveToolResult({ tool, args, result, state: "ok" })
+
+/** Narrow the face union before a direct property read: asserts the kind first,
+ *  so a face that changed shape fails as an assertion rather than a cast. */
+function face<K extends ToolFace["kind"]>(
+  view: ReturnType<typeof resolveToolResult>,
+  kind: K,
+): Extract<ToolFace, { kind: K }> {
+  expect(view.face.kind).toBe(kind)
+  return view.face as Extract<ToolFace, { kind: K }>
+}
 
 describe("tool categories", () => {
   it("names families by whole name or `_` suffix, never by bare prefix", () => {
@@ -103,9 +114,9 @@ describe("settled faces", () => {
       "usage: df [-g | -h | -k | -m] [-a | -s | -d depth] " +
       "[-B blocksize] [-I mask] [-t threshold] [file ...]"
     const view = ok("bash", { content: [{ type: "text", text }], details: {} })
-    expect(view.face.kind).toBe("terminal")
-    expect(view.face.notices).toEqual([])
-    expect(view.face.text).toBe(text)
+    const terminal = face(view, "terminal")
+    expect(terminal.notices).toEqual([])
+    expect(terminal.text).toBe(text)
   })
 
   it("a read truncated mid-file reports its offset from the TEXT alone", () => {
@@ -120,11 +131,11 @@ describe("settled faces", () => {
         },
       ],
     })
-    expect(view.face.kind).toBe("file")
-    expect(view.face.notices).toEqual([
+    const file = face(view, "file")
+    expect(file.notices).toEqual([
       "965 more lines in file. Use offset=201 to continue.",
     ])
-    expect(view.face.text).toBe("1\timport x\n2\tfoo")
+    expect(file.text).toBe("1\timport x\n2\tfoo")
   })
 
   it("a shell command whose output IS a diff becomes terminal-diff", () => {
@@ -138,7 +149,11 @@ describe("settled faces", () => {
       details: {},
     })
     expect(view.faceName).toBe("terminal-diff")
-    expect(projectionBlocks(view)).toEqual(["terminal-diff", "hunks"])
+    // The face parsed a diff out of the output, but the projection says
+    // "hunks" only for a card the `aux` sidecar fed — see the real edit case
+    // below, which shows the same split on machine data.
+    expect(face(view, "terminal").diff?.hunks.length).toBe(1)
+    expect(projectionBlocks(view)).toEqual(["terminal-diff"])
   })
 
   it("read is a file face, highlighted by its path, notice by template", () => {
@@ -181,8 +196,45 @@ describe("settled faces", () => {
       },
     })
     expect(view.faceName).toBe("diff")
-    expect(projectionBlocks(view)).toEqual(["diff", "hunks"])
+    expect(projectionBlocks(view)).toEqual(["diff"])
     expect(view.face).toMatchObject({ confirmation: "Edited src/x.swift" })
+  })
+
+  it("an edit captured from a live session: patch is parsed, `diff` is not", () => {
+    // Verbatim from corpus scenario 012. pi sends TWO diff-shaped fields in
+    // different formats: `diff` is line-number prefixed (`-1 # Heading A`),
+    // `patch` is a unified diff. The face parses `patch` — the reference does
+    // the same (`ToolFace.swift:193`) — and a resolver that reached for the
+    // shorter `diff` name would render line numbers as content.
+    const view = ok("edit", {
+      content: [
+        { type: "text", text: "Successfully replaced 2 block(s) in «path»." },
+      ],
+      details: {
+        diff:
+          "-1 # Heading A\n+1 # Heading B\n 2 \n 3 body line\n" +
+          "-4 old tail\n+4 new tail",
+        patch:
+          "--- «path»\n+++ «path»\n@@ -1,4 +1,4 @@\n-# Heading A\n+# Heading B\n" +
+          " \n body line\n-old tail\n+new tail",
+        firstChangedLine: 1,
+      },
+    })
+    expect(view.faceName).toBe("diff")
+    const hunks = face(view, "diff").hunks ?? []
+    expect(hunks.length).toBe(1)
+    expect(hunks[0]?.lines.slice(0, 2)).toEqual([
+      { kind: "remove", oldLine: 1, text: "# Heading A" },
+      { kind: "add", newLine: 1, text: "# Heading B" },
+    ])
+    // Replay plane: no `aux` sidecar, so the projection stays at ["diff"] even
+    // though the card visibly holds a diff.
+    expect(projectionBlocks(view)).toEqual(["diff"])
+    // Live plane: the sidecar attaches raw hunks to the card, which IS reported.
+    expect(projectionBlocks(view, [{ header: "@@ -1,4 +1,4 @@" }])).toEqual([
+      "diff",
+      "hunks",
+    ])
   })
 
   it("write is just a confirmation line", () => {

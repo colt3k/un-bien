@@ -653,19 +653,15 @@ export function resolveToolResult(options: {
 }
 
 /** The conformance projection for a card: the face, plus "hunks" when the card
- *  carries a diff — from its own patch or from the `aux` sidecar the extension
- *  rides on the envelope (the corpus's edit scenario has only that). */
+ *  itself carries a hunks payload — the `aux` sidecar the extension rides on the
+ *  envelope (reference `SessionState+Transcript`: `card.hunks != nil`). It is
+ *  NOT "a diff is visible": an edit replayed from its `details.patch` shows a
+ *  diff face and still projects `["diff"]`, because no sidecar rode along. That
+ *  distinction is real in the app too — sidecar hunks are pre-rendered raw from
+ *  the envelope, face hunks are parsed from the patch text. */
 export function projectionBlocks(
   view: ToolResultView,
   cardHunks?: unknown[],
 ): string[] {
-  const fromFace =
-    view.face.kind === "diff"
-      ? (view.face.hunks?.length ?? 0) > 0
-      : view.face.kind === "terminal"
-        ? (view.face.diff?.hunks.length ?? 0) > 0
-        : false
-  return fromFace || (cardHunks?.length ?? 0) > 0
-    ? [view.faceName, "hunks"]
-    : [view.faceName]
+  return cardHunks === undefined ? [view.faceName] : [view.faceName, "hunks"]
 }

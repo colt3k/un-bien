@@ -16,7 +16,7 @@ runs) is imported directly, aliased through Vite so three node-isms don't drag
 pnpm --filter web-client dev            # vite dev server, bound to all interfaces
 pnpm --filter web-client build          # dist/ (88 kB JS, 30 kB gzip)
 pnpm --filter web-client preview        # serve dist/ — use THIS on a phone
-pnpm --filter web-client test           # 80 passing (see Conformance)
+pnpm --filter web-client test           # 81 passing (see Conformance)
 ```
 
 On a phone, use `preview`, not `dev`: the dev server's HMR socket drops on a
@@ -100,15 +100,26 @@ Screenshot of a live turn: `/tmp/unbien-smoke/web-client-live.png`.
   `toolResult` entries with no `details` (still a terminal face), `custom`
   entries with entry-level `data` (no row), and a trailing assistant whose
   toolCall has no result yet (`pending`).
-- **`012` is the same session driven to 68 entries**, and it says plainly that
-  the replay plane sends **no `details` on any `toolResult`** — faces resolve from
-  the empty-details path, and a diff face can never come from replay (the app's
-  edit cards take their hunks from the `aux` sidecar). A `read` truncation notice
-  rides the TEXT (`[965 more lines in file. Use offset=201 to continue.]`) with no
-  payload to corroborate it, while a `bash` result ending in `[file ...]` proves
-  the split must key on pi's `\n\n[` seam and not on "ends in a bracket".
-  Reference projection: 22 items (18 tool cards — 15 terminal, 3 file — 2 user,
-  2 assistant), leaf `1c1b9b78`, no notices.
+- **`012` is the same session driven to 100 entries**, and it corrected
+  something I had asserted a commit earlier. `read`/`bash` results carry **no
+  `details` at all** — faces resolve from the empty-details path; a `read`
+  truncation notice rides the TEXT
+  (`[965 more lines in file. Use offset=201 to continue.]`) with no payload to
+  corroborate it; and a `bash` result ending in `[file ...]` proves the split must
+  key on pi's `\n\n[` seam, not on "ends in a bracket". But `edit` results DO
+  carry `details: {diff, patch, firstChangedLine}`, and the two diff fields are
+  **different formats** — `diff` is line-number prefixed (`-1 # Heading A`),
+  `patch` is a unified diff. The face parses `patch` (reference
+  `ToolFace.swift:193`); reaching for the shorter `diff` name renders line numbers
+  as content.
+- **What `blocks` reports, narrowed by the same capture.** `"hunks"` means the
+  card has the `aux` sidecar's raw hunks attached, NOT "a diff is visible" —
+  reference `ConformanceProjection.swift:89` checks `card.hunks != nil` alone. So
+  a replayed edit projects `["diff"]` while a live one with a sidecar projects
+  `["diff", "hunks"]`, both showing the same diff. My rule had folded the two
+  together (face-derived hunks counted too) and 012 caught it. Reference
+  projection for 012: 34 items — 26 tool cards (21 terminal, 4 file, 1 diff),
+  4 user, 4 assistant — leaf `c8dde2c8`.
 
 ## What is not here
 
