@@ -1,0 +1,31 @@
+{
+  "flags" : {
+    "ended" : false,
+    "streaming" : false
+  },
+  "items" : [
+    {
+      "images" : 0,
+      "kind" : "user",
+      "row" : "user#1",
+      "text" : "summarize the log"
+    },
+    {
+      "images" : 0,
+      "kind" : "assistant",
+      "row" : "assistant#1",
+      "streaming" : false,
+      "text" : "Here is the summary."
+    },
+    {
+      "kind" : "compaction",
+      "row" : "1",
+      "text" : "Context compacted"
+    }
+  ],
+  "leafId" : null,
+  "subagents" : [
+
+  ],
+  "version" : 1
+}

@@ -251,6 +251,25 @@ toolCall]`, `tool_execution_start`/`_end` for a `read`, the toolResult
   the app's own budget (32 000 chars, `markdownBudget` at
   `TranscriptRowViews.swift:284`) text is shown as-is.
 
+- **The compaction caption prints a token count only if the wire sent one.**
+  "Context compacted (213920 tokens)" is a measurement; `(0 tokens)` is a lie the
+  client tells itself, because both folds used to default a missing
+  `tokensBefore` to zero (`SessionState+BirthEntry.swift:23`, and the same in
+  this client). Every real compaction entry on this machine carries the field —
+  73 of them across `~/.pi/agent/sessions/`, none zero — so the 0 was never
+  observed, only invented. The field is now optional on both sides and the
+  parenthetical appears only when a number arrived; scenario `017` is an authored
+  fixture for the absent case, precisely because today's wire never produces it
+  and only a fixture stops a client from re-inventing the default. Scenario 013
+  is the paired case with real numbers and its golden is unchanged.
+
+- **A live compaction marker's row id is a bare number.** `compaction_end`
+  without an `entryId` is a live-born marker and takes
+  `SyntheticID.compaction(seq:)` — the sequence number alone, so the projection
+  row reads `compaction@1`, not `compaction@compaction#1`. Every scenario before
+  017 replayed compaction *entries*, which carry pi's entry id, so this client's
+  `kind#n` key sat wrong in a case the corpus could not see.
+
 - **Long bodies are clamped behind a control, not suppressed.** `/unbien pair`
   sends its QR as a custom message with `display: true`
   (`extension/src/commands/pairing.ts:124`), so it arrives as an ordinary notice

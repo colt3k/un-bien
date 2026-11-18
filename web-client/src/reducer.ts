@@ -157,9 +157,13 @@ type Frame = Record<string, unknown>
 /** The compaction row's label — mirrors core `CompactionMarker.caption`
  *  (`TranscriptItem.swift`). It lives in the fold rather than in the view
  *  because the conformance projection compares it: the wording is a contract
- *  between clients, not each client's choice. */
-export function compactionCaption(tokensBefore: number): string {
-  return `Context compacted (${tokensBefore} tokens)`
+ *  between clients, not each client's choice. The token count is printed only
+ *  when the wire carried one — defaulting it to 0 states a fact the machine
+ *  never sent, and "(0 tokens)" reads like a compaction that compacted nothing. */
+export function compactionCaption(tokensBefore?: number): string {
+  return tokensBefore === undefined
+    ? "Context compacted"
+    : `Context compacted (${tokensBefore} tokens)`
 }
 
 function asFrame(value: unknown): Frame | null {
@@ -404,14 +408,16 @@ export class TranscriptReducer {
         // `compaction_end` frame; a replayed `compaction` ENTRY is reduced by
         // synthesizing that frame with the entry id (reference
         // `SessionState+BirthEntry.swift:18`), so the entry and the frame that
-        // streamed it land on one row instead of duplicating it.
+        // streamed it land on one row instead of duplicating it. `tokensBefore`
+        // is passed through only when the entry carries it — synthesising 0
+        // would invent a count the machine never reported.
+        const replayedResult: Frame = { summary: entry.summary ?? "" }
+        if (typeof entry.tokensBefore === "number")
+          replayedResult.tokensBefore = entry.tokensBefore
         this.apply({
           rpc: {
             type: "compaction_end",
-            result: {
-              summary: entry.summary ?? "",
-              tokensBefore: entry.tokensBefore ?? 0,
-            },
+            result: replayedResult,
             entryId,
           },
         })
@@ -603,10 +609,18 @@ export class TranscriptReducer {
         const entryId =
           typeof rpc.entryId === "string" ? rpc.entryId : undefined
         const tokens =
-          typeof result.tokensBefore === "number" ? result.tokensBefore : 0
+          typeof result.tokensBefore === "number"
+            ? result.tokensBefore
+            : undefined
         const item: TranscriptItem = {
           kind: "compaction",
-          row: entryId ?? this.row("compaction", rowHint),
+          // Reference `SyntheticID.compaction(seq:)` (TranscriptItem.swift:36): a
+          // live marker's id is the BARE compaction sequence number, not a
+          // `kind#n` row key — the projection prints the id itself for these rows,
+          // so a client that synthesises a `compaction#1`-style key diverges the
+          // moment a machine compacts live (013 only ever replayed entries, which
+          // carry pi's entry id, so this stayed hidden until 017).
+          row: entryId ?? this.nextCompactionId(),
           text: compactionCaption(tokens),
           streaming: false,
           blocks: [],
@@ -1132,6 +1146,8 @@ export class TranscriptReducer {
   /** Which message is currently being folded (fold bookkeeping; row identity no
    *  longer depends on it — there is one open row per kind per message). */
   private messageSeq = 0
+  /** Live-born compaction markers, counted the way core counts them. */
+  private compactionSeq = 0
   /** Full-frame dedup for streaming deltas; see `applyMessageUpdate`. */ private lastDelta:
     string | undefined
 
@@ -1140,6 +1156,16 @@ export class TranscriptReducer {
     if (rowHint) return rowHint
     this.seq[kind] += 1
     return `${kind}#${this.seq[kind]}`
+  }
+
+  /** A live compaction marker's id is the BARE sequence number — reference
+   *  `SyntheticID.compaction(seq:)` (`TranscriptItem.swift:37`), whose projection
+   *  row is the id itself, not a `kind#n` key. Only live markers advance the
+   *  count: entry-born ones key on pi's entry id and skip it
+   *  (`SessionState.compactionSeq`). */
+  private nextCompactionId(): string {
+    this.compactionSeq += 1
+    return String(this.compactionSeq)
   }
 
   private touch(kind: ItemKind, row: string): TranscriptItem {
@@ -1255,6 +1281,7 @@ export class TranscriptReducer {
     this.peerBusy = false
     this.ended = false
     this.messageSeq = 0
+    this.compactionSeq = 0
     this.pendingToasts = []
   }
 

@@ -1,0 +1,9 @@
+{
+  "origin": "authored",
+  "source": "Hand-built frame, NOT a capture. The shape is taken from the producer side: the extension remaps pi's `session_compact` into an rpc `compaction_end` and copies `tokensBefore` from the compaction entry only if it is there (`extension/src/session/rpc_envelope.ts:340-345`), so a fork or an older pi that omits the field produces exactly this frame.",
+  "captured": "2026-11-18",
+  "modes": ["live"],
+  "scrub": "Nothing to scrub — the content is invented and short.",
+  "description": "Pins what a compaction row says when the wire carries NO token count. The caption is core's (`CompactionMarker.caption`, compared through the projection) and it must read `Context compacted` — the parenthetical appears ONLY when a number arrived. Both clients previously defaulted the missing field to 0 and printed `Context compacted (0 tokens)`, which states a measurement the machine never made: a reader is meant to conclude the compaction saved nothing. Scenario 013 is the paired case, where `tokensBefore` is present (213920, 115425) and the parenthetical is correct; its golden is unchanged by this rule.",
+  "note": "The field is not theoretical: every real compaction entry on this machine carries it — 73 entries across `~/.pi/agent/sessions/`, none of them 0 — so the 0 was always a client-side invention rather than something observed. That is why the fix is `nil`-able rather than a copy tweak, and why the case needs a fixture: nothing on today's wire produces it, so only a fixture keeps a client from re-inventing the default."
+}

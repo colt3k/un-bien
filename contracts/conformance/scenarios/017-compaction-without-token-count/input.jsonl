@@ -1,0 +1,8 @@
+{"rpc":{"type":"turn_start"},"type":"rpc","ts":1795100000000,"sessionId":"01a20000-0000-7000-8000-000000000000"}
+{"rpc":{"type":"message_start","message":{"role":"user","content":[{"type":"text","text":"summarize the log"}],"timestamp":1795100000100}},"type":"rpc","ts":1795100000101,"sessionId":"01a20000-0000-7000-8000-000000000000"}
+{"rpc":{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"summarize the log"}],"timestamp":1795100000100}},"type":"rpc","ts":1795100000110,"sessionId":"01a20000-0000-7000-8000-000000000000"}
+{"rpc":{"type":"message_start","message":{"role":"assistant","content":[{"type":"text","text":"Here is the summary."}],"timestamp":1795100000200}},"type":"rpc","ts":1795100000201,"sessionId":"01a20000-0000-7000-8000-000000000000"}
+{"rpc":{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"Here is the summary."}],"timestamp":1795100000200}},"type":"rpc","ts":1795100000300,"sessionId":"01a20000-0000-7000-8000-000000000000"}
+{"rpc":{"type":"turn_end","message":{"role":"assistant","content":[{"type":"text","text":"Here is the summary."}],"stopReason":"stop"}},"type":"rpc","ts":1795100000310,"sessionId":"01a20000-0000-7000-8000-000000000000"}
+{"rpc":{"type":"compaction_end","result":{"summary":"## Goal\nCondense the log"}},"type":"rpc","ts":1795100000400,"sessionId":"01a20000-0000-7000-8000-000000000000"}
+{"rpc":{"type":"agent_settled"},"type":"rpc","ts":1795100000410,"sessionId":"01a20000-0000-7000-8000-000000000000"}

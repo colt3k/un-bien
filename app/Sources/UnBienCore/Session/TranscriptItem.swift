@@ -202,8 +202,8 @@ public struct ToolCard: Equatable, Sendable {
 public struct CompactionMarker: Equatable, Sendable {
     public let id: String
     public let summary: String
-    public let tokensBefore: Int
-    public init(id: String, summary: String, tokensBefore: Int) {
+    public let tokensBefore: Int?
+    public init(id: String, summary: String, tokensBefore: Int?) {
         self.id = id
         self.summary = summary
         self.tokensBefore = tokensBefore
@@ -213,7 +213,16 @@ public struct CompactionMarker: Equatable, Sendable {
     /// copy was SwiftUI-local, duplicated by every other client with nothing
     /// comparing it. The conformance projection now emits it, so a client that
     /// rewords or drops the caption fails the corpus instead of drifting.
-    public var caption: String { "Context compacted (\(tokensBefore) tokens)" }
+    ///
+    /// The token count is printed ONLY when the wire carried one. pi's
+    /// compaction entries do carry `tokensBefore` (all 73 entries in this
+    /// machine's session logs, none of them 0), but a client that defaults the
+    /// field to zero invents a number, and "(0 tokens)" then reads like a fact
+    /// about a compaction that compacted nothing.
+    public var caption: String {
+        guard let tokensBefore else { return "Context compacted" }
+        return "Context compacted (\(tokensBefore) tokens)"
+    }
 }
 
 extension Array where Element == TranscriptItem {

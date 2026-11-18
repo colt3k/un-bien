@@ -398,7 +398,7 @@ public struct SessionState: Equatable, Sendable {
     }
 
     @discardableResult
-    private mutating func appendCompaction(summary: String, tokensBefore: Int,
+    private mutating func appendCompaction(summary: String, tokensBefore: Int?,
                                             entryID: String? = nil) -> Bool {
         // Entry-born markers key on the entry id (replay dedup — a replayed
         // live marker used to DUPLICATE the row); live ones keep the seq id.
@@ -484,7 +484,7 @@ public struct SessionState: Equatable, Sendable {
         case "compaction_end":
             if let result = frame["result"], result != .null {
                 if appendCompaction(summary: result["summary"]?.stringValue ?? "",
-                                    tokensBefore: result["tokensBefore"]?.intValue ?? 0,
+                                    tokensBefore: result["tokensBefore"]?.intValue,
                                     entryID: frame["entryId"]?.stringValue) {
                     liveArrivals += 1
                 }

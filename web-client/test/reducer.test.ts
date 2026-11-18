@@ -650,7 +650,11 @@ describe("compaction", () => {
       },
     })
     const item = reducer.snapshot().items.find((i) => i.kind === "compaction")
-    expect(item?.row).toBe("compaction#1")
+    // A live marker's id is the bare compaction sequence number, not a
+    // `kind#n` key (SyntheticID.compaction, TranscriptItem.swift:37). The
+    // corpus could not see this until scenario 017 compacted while connected —
+    // 013 only replayed entries, which carry pi's entry id.
+    expect(item?.row).toBe("1")
     expect(item?.tokensBefore).toBe(213920)
     expect(item?.replayStable).toBe(false)
   })

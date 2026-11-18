@@ -17,10 +17,13 @@ extension SessionState {
         switch entry["type"]?.stringValue {
         case "compaction":
             // Entry-born markers key on the entry id (dedup — a replayed
-            // live marker used to duplicate the row).
+            // live marker used to duplicate the row). `tokensBefore` is passed
+            // through only when the entry has it: synthesising `0` here would
+            // turn a missing field into a claim about the compaction.
+            var result: [String: JSONValue] = ["summary": entry["summary"] ?? .string("")]
+            if let before = entry["tokensBefore"] { result["tokensBefore"] = before }
             applyRPC(.object(["type": .string("compaction_end"),
-                              "result": .object(["summary": entry["summary"] ?? .string(""),
-                                                 "tokensBefore": entry["tokensBefore"] ?? .number(0)]),
+                              "result": .object(result),
                               "entryId": entry["id"] ?? .null]))
         case "custom_message":
             // pi's dedicated entry type for custom-role messages — the shape
