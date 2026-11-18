@@ -26,11 +26,61 @@
  *    text, tool output, file paths. Treat the output file as containing your
  *    session; keep it out of the repo (`/tmp` by default is deliberate).
  */
-import { mkdirSync, writeFileSync } from "node:fs"
-import { dirname, resolve } from "node:path"
-import { deviceIdentity } from "../src/identity.js"
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs"
+import { homedir } from "node:os"
+import { dirname, join, resolve } from "node:path"
+import {
+  canonicalizeEd25519PublicKey,
+  ed25519KeypairFromSeed,
+  encodeEd25519PublicKey,
+  generateEd25519Keypair,
+  type Ed25519Keypair,
+} from "@geohar/un-bien/client"
 import { parseInvite } from "../src/invite.js"
 import { SessionClient, type RelayRoomList } from "../src/session-client.js"
+
+/**
+ * A STANDING device identity, kept on disk like the CLI's
+ * `~/.local/state/un-bien/proxy-identity.json`. Without it every run is a brand
+ * new device needing a fresh single-use pairing code; with it the machine
+ * already trusts this device (its peers.json), so re-dumping any room is one
+ * command and no human in the loop.
+ *
+ * Plaintext on disk, same honest caveat as the browser's localStorage copy: the
+ * file is readable to anything with your user, which is why it is chmod 600 and
+ * why `/unbien revoke` has to stay easy to reach.
+ */
+function nodeIdentity(path: string): {
+  keypair: Ed25519Keypair
+  created: boolean
+} {
+  if (existsSync(path)) {
+    const stored = JSON.parse(readFileSync(path, "utf8")) as { seed?: string }
+    if (!stored.seed) throw new Error(`${path} holds no seed`)
+    return {
+      keypair: ed25519KeypairFromSeed(Buffer.from(stored.seed, "base64")),
+      created: false,
+    }
+  }
+  const keypair = generateEd25519Keypair()
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(
+    path,
+    JSON.stringify({
+      seed: Buffer.from(keypair.secretKey).toString("base64"),
+      publicKey: encodeEd25519PublicKey(keypair.publicKey),
+    }),
+    { mode: 0o600 },
+  )
+  chmodSync(path, 0o600)
+  return { keypair, created: true }
+}
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`)
@@ -56,44 +106,91 @@ function describeRooms(epk: string, rooms: RelayRoomList): string {
 async function main(): Promise<number> {
   const relay = arg("relay")
   const pairCode = arg("pair")
-  if (!relay || !pairCode) {
+  const peerArg = arg("peer")
+  if (!relay || (!pairCode && !peerArg)) {
     console.error(
-      "usage: dump-entries --relay http://host:3000 --pair unbien://pair?… " +
-        "[--room <id>] [--out <path>] [--max-pages N] [--include-panels]",
+      "usage: dump-entries --relay http://host:3000 (--pair unbien://pair?… | " +
+        "--peer <machine epk>) [--room <id>] [--out <path>] [--max-pages N] " +
+        "[--identity <path>] [--include-panels]\n" +
+        "  --pair pairs (and needs a fresh code, valid 60s unless " +
+        "`/unbien pair --ttl 600`); --peer reuses the stored device identity.",
     )
     return 2
   }
   const out = resolve(arg("out") ?? "/tmp/unbien-fixture.json")
   const maxPages = Number(arg("max-pages") ?? 200)
+  const identityPath = resolve(
+    arg("identity") ??
+      join(homedir(), ".local", "state", "un-bien", "web-dump-identity.json"),
+  )
 
-  const invite = parseInvite(pairCode)
-  const client = new SessionClient(relay, deviceIdentity(), {
+  const { keypair, created } = nodeIdentity(identityPath)
+  console.log(
+    `device ${encodeEd25519PublicKey(keypair.publicKey)} (${identityPath}${created ? ", new" : ", reused"})`,
+  )
+
+  const invite = pairCode ? parseInvite(pairCode) : undefined
+  // The same base64 trap the invite guards against: a pasted epk is usually the
+  // base64URL form from the pairing URI (`-`/`_`), while the relay keys its
+  // allow-lists by the canonical padded form. Pass it through verbatim and
+  // `rooms_check` answers `unknown_peer` for a machine that is paired.
+  const machineEpk =
+    invite?.epk ?? canonicalizeEd25519PublicKey(peerArg!) ?? peerArg!
+  const client = new SessionClient(relay, keypair, {
     onRelayIdentity: (pubkey) => console.log(`relay identity: ${pubkey}`),
   })
 
   console.log(`connecting to ${relay} …`)
   await client.connect()
 
-  console.log(`pairing as a one-off device (${invite.epk.slice(0, 8)}…) …`)
-  const verdict = await client.pairAwaited(invite, "web-client fixture dump")
-  if (!verdict.ok) {
-    console.error(
-      `pairing refused: ${verdict.detail} — the code is single-use, run ` +
-        "/unbien pair again",
+  // The machine's own report from `pair_ok` (harness version, caps…). Absent on
+  // a re-run that skipped pairing — the room list carries what matters then.
+  let machineInfo: unknown
+  if (invite) {
+    console.log(`pairing (${machineEpk.slice(0, 8)}…) …`)
+    const verdict = await client.pairAwaited(
+      invite,
+      arg("name") ?? "web-client fixture dump",
     )
-    client.close()
-    return 1
+    if (!verdict.ok) {
+      console.error(
+        `pairing refused: ${verdict.detail} — the code is single-use and short-` +
+          "lived; run `/unbien pair --ttl 600` and paste it at once",
+      )
+      client.close()
+      return 1
+    }
+    machineInfo = verdict.machine
+  } else {
+    // No code needed: pairing is per-machine and persists, so a device already
+    // in the machine's peers.json can address it directly.
+    client.setRoutingPeer(machineEpk)
   }
 
-  const rooms = await client.listRooms(invite.epk)
-  console.log(describeRooms(invite.epk, rooms))
+  // `unknown_peer` here is usually a RACE, not a refusal: the extension sends
+  // `pair_ok` right after `addPeer`, but the signed allow-list re-push that
+  // makes `rooms_check` pass is fire-and-forget (`refreshPairingsCache()` →
+  // `listPeers().then(push)`, extension/src/index.ts). A script fast enough to
+  // ask for rooms in the same tick gets refused; a browser, with a human click
+  // in the way, never notices. Retry briefly rather than declaring failure —
+  // and if it STILL says unknown_peer, this device really is not in the list.
+  let rooms = await client.listRooms(machineEpk)
+  for (let attempt = 1; rooms.status !== "ok" && attempt <= 8; attempt++) {
+    if (rooms.status !== "unknown_peer") break
+    console.log(`rooms_check: unknown_peer — retrying (${attempt}/8)…`)
+    await new Promise((r) => setTimeout(r, 400))
+    rooms = await client.listRooms(machineEpk)
+  }
+  console.log(describeRooms(machineEpk, rooms))
   if (rooms.status !== "ok") {
     console.error(`cannot list rooms: ${rooms.status}`)
     client.close()
     return 1
   }
 
-  const wanted = arg("room") ?? invite.roomId
+  // The invite's `rm` is the room pi announced at pair time; with no invite the
+  // caller names it, and a single-room machine needs no name.
+  const wanted = arg("room") ?? invite?.roomId ?? rooms.rooms[0]?.room_id ?? ""
   const room = rooms.rooms.find((candidate) => candidate.room_id === wanted)
   if (!room) {
     console.error(
@@ -103,7 +200,7 @@ async function main(): Promise<number> {
     return 1
   }
 
-  client.setRoutingPeer(invite.epk)
+  client.setRoutingPeer(machineEpk)
   client.setRoom(room.room_id)
   // The first frame to a trusted peer is what triggers the extension's attach.
   client.requestSync()
@@ -118,7 +215,7 @@ async function main(): Promise<number> {
   const fixture = {
     fetchedAt: new Date().toISOString(),
     relay,
-    peer: invite.epk,
+    peer: machineEpk,
     room: {
       roomId: room.room_id,
       name: room.name,
@@ -128,7 +225,7 @@ async function main(): Promise<number> {
     },
     // The machine's caps matter for reading a fixture later: a machine without
     // `images` never sent image blocks, so their absence proves nothing.
-    machine: verdict.machine,
+    machine: machineInfo ?? { rooms: rooms.rooms },
     state,
     leafId,
     entries,

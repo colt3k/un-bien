@@ -36,18 +36,22 @@ const SESSION_ID = "smoke-session-1"
 const HOSTNAME = "m5max-fake"
 const SESSION_NAME = "un-bien \u00b7 fake session"
 const STATE = "/tmp/unbien-smoke/machine.json"
+// NOT rpc verbs — capabilities. The authoritative list is
+// extension/src/session/capabilities.ts (BASE_CAPABILITIES + the config-gated
+// remote_launch / remote_terminate), and a real session's dump confirms it.
+// Advertising invented names here would silently mislead any cap-gated control
+// built against this double later.
 const CAPS = [
-  "session_sync",
-  "session_resume",
-  "remote_terminate",
-  "session_fork",
-  "session_new",
-  "session_nav",
-  "session_compact",
-  "list_models",
-  "model_set",
-  "thinking_set",
+  "thinking",
+  "models",
+  "cancel",
+  "queued_messages",
+  "images",
+  "tool_result_images",
+  "panels",
+  "rpc_envelope",
   "remote_launch",
+  "remote_terminate",
 ]
 
 interface Persisted {
@@ -154,7 +158,14 @@ addEntry({
 // ── allow-list ───────────────────────────────────────────────────────────────
 
 function pushAllowList(): void {
-  state.allowVersion += 1
+  // The relay keeps a MONOTONIC floor per machine, persisted across restarts
+  // (`set_signed` rejects `version <= current`, relay/src/peers/pairing.rs). A
+  // double that restarts would otherwise re-push v1, v2, v3… below the stored
+  // floor and be silently dropped as a replay — every fresh socket then gets
+  // `unknown_peer` even though it paired moments ago (the pair exchange itself
+  // grants; the pushed list does not). So the version is wall-clock, like a real
+  // machine's ever-increasing counter.
+  state.allowVersion = Date.now()
   const blobObject = {
     machine_pk: machinePk,
     owners: state.paired,
