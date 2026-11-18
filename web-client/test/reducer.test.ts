@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import {
   TranscriptReducer,
@@ -780,5 +781,53 @@ describe("a tool result's live shape", () => {
     expect(cards).toHaveLength(1)
     expect(cards[0]!.images).toBe(1)
     expect(cards[0]!.state).toBe("ok")
+  })
+})
+
+describe("the panel transport a real machine sends", () => {
+  // Scenario 016's captured frames. `{evt:{channel:"panel", data:<panel_update>}}`
+  // is the ONLY panel form the shipped extension produces
+  // (extension/src/routing.ts:120, session/relay_lifecycle.ts:246) — the
+  // `subagents:*` / `plan:snapshot` channels the reference reducer folds appear
+  // in no capture, so a client implementing only those shows empty panels
+  // against a real machine.
+  const frames = readFileSync(
+    new URL(
+      "../../contracts/conformance/scenarios/016-real-panels-and-faces/input.jsonl",
+      import.meta.url,
+    ),
+    "utf8",
+  )
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as EnvelopeMessage)
+
+  it("folds panel_update snapshots and replaces each source whole", () => {
+    const panels = fold(frames).snapshot().panels
+    expect(panels.map((panel) => panel.key)).toEqual(["subagents", "plan"])
+    const agents = panels.find((panel) => panel.key === "subagents")!
+    expect(agents.title).toBe("Agents")
+    expect(agents.icon).toBe("person.2")
+    // 12 frames across 2 sources, the same snapshot re-sent unchanged many times
+    // (the bridge coalesces one frame per source per tick): replacing the set is
+    // what keeps this at two items instead of growing forever.
+    expect(agents.items.map((item) => item.status)).toEqual([
+      "in_progress",
+      "done",
+    ])
+    const plan = panels.find((panel) => panel.key === "plan")!
+    expect(plan.items.map((item) => item.status)).toEqual([
+      "done",
+      "in_progress",
+      "pending",
+    ])
+  })
+
+  it("leaves the legacy channel state empty on the real transport", () => {
+    // Asserting the emptiness on purpose: it is the finding, not an oversight.
+    const snapshot = fold(frames).snapshot()
+    expect(snapshot.subagents).toEqual([])
+    expect(snapshot.plan).toBeNull()
+    expect(snapshot.panels.length).toBe(2)
   })
 })

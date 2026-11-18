@@ -736,14 +736,32 @@ export class App {
     snapshot: ReturnType<TranscriptReducer["snapshot"]>,
   ): void {
     const bits: string[] = []
-    if (snapshot.plan)
-      bits.push(
-        `plan: ${snapshot.plan.project ?? "plan"} (${snapshot.plan.itemCount})`,
-      )
-    for (const row of snapshot.subagents)
-      bits.push(
-        `subagent ${row.status}${row.type ? ` · ${row.type}` : ""}: ${row.description ?? row.id}`,
-      )
+    if (snapshot.panels.length > 0) {
+      // The transport a real machine sends: one line per source, items drawn
+      // from the snapshot's own fields (`title`/`name`/`id`, `status`).
+      for (const panel of snapshot.panels) {
+        const items = panel.items
+          .map((item) => {
+            const title = String(item.title ?? item.name ?? item.id ?? "?")
+            const status =
+              typeof item.status === "string" ? ` (${item.status})` : ""
+            return `${title}${status}`
+          })
+          .join(", ")
+        bits.push(`${panel.title ?? panel.key}${items ? `: ${items}` : ""}`)
+      }
+    } else {
+      // Legacy channels only: no shipped producer sends them (scenario 016), so
+      // this branch survives for forks that do and for the corpus's 002.
+      if (snapshot.plan)
+        bits.push(
+          `plan: ${snapshot.plan.project ?? "plan"} (${snapshot.plan.itemCount})`,
+        )
+      for (const row of snapshot.subagents)
+        bits.push(
+          `subagent ${row.status}${row.type ? ` · ${row.type}` : ""}: ${row.description ?? row.id}`,
+        )
+    }
     if (bits.length === 0) {
       this.panels.hidden = true
       return

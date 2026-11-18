@@ -202,6 +202,25 @@ toolCall]`, `tool_execution_start`/`_end` for a `read`, the toolResult
     closes the bubble; `agent_end` has no case at all. I was clearing it at
     `turn_end`, which for a chained agent means the transcript stops looking live
     between turns.
+- **`016` is the panel capture, and it says the panel plane the corpus pinned is
+  fiction.** First capture with `evt` frames: 12 of them, all
+  `{evt:{channel:"panel", data:{type:"panel_update", key, title, icon,
+  data:{items}}}}` — coalesced **full snapshots**, one per source per 60 ms tick,
+  the same payload re-sent many times. The shipped extension has no other panel
+  producer (`routing.ts:120`, `session/relay_lifecycle.ts:246`). The app folds
+  that form in its UI layer (`AppModel+Inbound.swift:569` re-routes the inner
+  `panel_update` as a stock `ServerMessage`); core's `EnvelopeReducer` — what the
+  harness runs — and this client both folded the granular `subagents:*` /
+  `plan:snapshot` channels that **no producer emits**, so 016 passed with both
+  sides showing an empty panel. This client now folds the real transport (replace
+  the source's whole set; `snapshot().panels`) and renders it, with a test that
+  reads 016's captured frames and pins 2 agent rows (`in_progress`, `done`) and 3
+  plan rows (`done`, `in_progress`, `pending`) — and pins the legacy state being
+  empty, because that emptiness is the finding. Still unpinned: panels are not in
+  the reference projection at all (its `subagents`/`plan` come from the legacy
+  path), so panel state is compared by this client's tests only. Corpus
+  comparison would mean moving the app's panel store into core — an app-side
+  call, and 002's `meta.json` now says so.
 - **A `read` of an image file is transcoded on the way in.** `docs/images/
 01-welcome.png` is `PNG image data, 1206 x 2622`; what reached the log was
   `mimeType: "image/jpeg"` with a caption saying `original 1206x2622, displayed
@@ -218,7 +237,7 @@ at 920x2000. Multiply coordinates by 1.31…`. pi re-encodes and downscales, and
 ## What is not here
 
 - **Conformance covers the projection, not the pixels.** `test/corpus.test.ts`
-  runs all fifteen `contracts/conformance/` scenarios with no skips and compares,
+  runs all sixteen `contracts/conformance/` scenarios with no skips and compares,
   in **render order**: `(kind, row)`, `text` (prefix — the corpus scrubs long
   strings and escapes their newlines), `streaming`, `images`, `state`, `tool`,
   `blocks` (the tool card's result face, `src/tool-faces.ts`), `flags`, `leafId`,

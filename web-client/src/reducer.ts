@@ -108,6 +108,20 @@ export interface PlanSnapshot {
   itemCount: number
 }
 
+/** A panel exactly as the shipped extension delivers it: one coalesced snapshot
+ *  per source, replaced whole (`extension/src/panel_bridge.ts`, broadcast at
+ *  `routing.ts:120` and `session/relay_lifecycle.ts:246`). This is the ONLY
+ *  panel transport a real machine sends — scenario 016 is the capture that
+ *  proves it. The `subagents:*` / `plan:snapshot` channels this client also
+ *  handles are the reference reducer's legacy path; no shipped producer emits
+ *  them, so a client that implements only those shows empty panels forever. */
+export interface PanelSnapshot {
+  key: string
+  title?: string
+  icon?: string
+  items: Record<string, unknown>[]
+}
+
 /** A live-only notice: the app toasts it; it never becomes a transcript row. */
 export interface Toast {
   id: string
@@ -120,6 +134,7 @@ export interface ReducerSnapshot {
   flags: { streaming: boolean; ended: boolean }
   subagents: SubagentRecord[]
   plan: PlanSnapshot | null
+  panels: PanelSnapshot[]
   /** Dialogs the app can still answer — a live overlay, not a transcript row. */
   pendingAsks: AskRequest[]
   /** Non-coded `notify`s, drained on read so each is shown once. The corpus's
@@ -276,6 +291,8 @@ export class TranscriptReducer {
   private openReasoning: string | null = null
   private subagents: SubagentRecord[] = []
   private plan: PlanSnapshot | null = null
+  /** source key → its latest full snapshot (`subagents`, `plan`, …). */
+  private readonly panels = new Map<string, PanelSnapshot>()
   private readonly asks = new Map<string, AskRequest>()
   private pendingToasts: Toast[] = []
   /** Row renames awaiting the next render — see `ReducerSnapshot.rekeys`. */
@@ -1006,6 +1023,27 @@ export class TranscriptReducer {
 
   private applyEvt(channel: string, data: unknown): void {
     const payload = asFrame(data) ?? {}
+    if (channel === "panel") {
+      // THE transport the shipped extension uses: `{evt:{channel:"panel",
+      // data:<panel_update>}}`, coalesced so a burst of bus events yields one
+      // frame per source per tick. Replace the source's WHOLE set: the same
+      // snapshot is re-sent repeatedly with an unchanged payload (12 frames for
+      // 2 sources in the 016 capture), so appending or merging per item grows
+      // the panel forever.
+      if (payload.type !== "panel_update") return
+      const key = typeof payload.key === "string" ? payload.key : ""
+      if (!key) return
+      const inner = asFrame(payload.data) ?? {}
+      this.panels.set(key, {
+        key,
+        title: typeof payload.title === "string" ? payload.title : undefined,
+        icon: typeof payload.icon === "string" ? payload.icon : undefined,
+        items: Array.isArray(inner.items)
+          ? (inner.items as Record<string, unknown>[])
+          : [],
+      })
+      return
+    }
     if (channel.startsWith("subagents:")) {
       // The STATUS IS THE CHANNEL NAME: `subagents:started`, `:steered`,
       // `:completed`, `:failed`. A payload-level `status` is the exception, and
@@ -1186,6 +1224,7 @@ export class TranscriptReducer {
     this.asks.clear()
     this.subagents = []
     this.plan = null
+    this.panels.clear()
     this.leafId = null
     this.streaming = false
     this.ended = false
@@ -1199,6 +1238,7 @@ export class TranscriptReducer {
       flags: { streaming: this.streaming, ended: this.ended },
       subagents: this.subagents.slice(),
       plan: this.plan,
+      panels: [...this.panels.values()],
       pendingAsks: [...this.asks.values()],
       toasts: this.drainToasts(),
       rekeys: this.drainRekeys(),
