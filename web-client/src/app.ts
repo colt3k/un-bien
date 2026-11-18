@@ -6,6 +6,12 @@ import {
   type TranscriptItem,
 } from "./reducer.js"
 import { deviceIdentity, devicePublicKey } from "./identity.js"
+import {
+  MARKDOWN_BUDGET,
+  parseMarkdown,
+  type Block,
+  type Inline,
+} from "./markdown.js"
 import { parseInvite } from "./invite.js"
 import {
   forgetPeer,
@@ -58,6 +64,104 @@ function el<K extends keyof HTMLElementTagNameMap>(
   if (className) node.className = className
   if (text !== undefined) node.textContent = text
   return node
+}
+
+/** Which rows get markdown. The app renders user, assistant and notice text as
+ *  markdown and leaves reasoning and the compaction caption plain
+ *  (TranscriptRowViews.swift:67, 112, 138); past the same budget the text is
+ *  shown as-is, because parsing a 100 KB paste on every delta of a live stream
+ *  is a re-layout per keystroke. */
+function wantsMarkdown(item: TranscriptItem): boolean {
+  return (
+    item.kind !== "tool" &&
+    item.kind !== "reasoning" &&
+    item.kind !== "compaction" &&
+    item.text.length <= MARKDOWN_BUDGET
+  )
+}
+
+function inlineNodes(tokens: Inline[]): Node[] {
+  const nodes: Node[] = []
+  for (const token of tokens) {
+    switch (token.type) {
+      case "text":
+        // Newlines inside a paragraph keep rendering as line breaks, which is
+        // what the plain-text path did before.
+        token.text.split("\n").forEach((part, i) => {
+          if (i > 0) nodes.push(document.createElement("br"))
+          nodes.push(document.createTextNode(part))
+        })
+        break
+      case "code":
+        nodes.push(el("code", undefined, token.text))
+        break
+      case "bold":
+        nodes.push(el("strong", undefined, token.text))
+        break
+      case "em":
+        nodes.push(el("em", undefined, token.text))
+        break
+      case "link": {
+        const a = document.createElement("a")
+        a.href = token.href
+        a.rel = "noopener noreferrer"
+        a.textContent = token.text
+        nodes.push(a)
+        break
+      }
+    }
+  }
+  return nodes
+}
+
+function blockNodes(blocks: Block[]): Node[] {
+  const nodes: Node[] = []
+  for (const block of blocks) {
+    switch (block.type) {
+      case "code": {
+        const pre = el("pre", "md-code")
+        pre.append(el("code", undefined, block.text))
+        nodes.push(pre)
+        break
+      }
+      case "heading": {
+        const level = Math.min(6, Math.max(1, block.level))
+        const h = document.createElement(
+          `h${level}` as keyof HTMLElementTagNameMap,
+        )
+        h.className = "md-heading"
+        h.append(...inlineNodes(block.inline))
+        nodes.push(h)
+        break
+      }
+      case "list": {
+        const list = document.createElement(block.ordered ? "ol" : "ul")
+        for (const item of block.items) {
+          const li = el("li")
+          li.append(...inlineNodes(item))
+          list.append(li)
+        }
+        nodes.push(list)
+        break
+      }
+      case "quote": {
+        const quote = el("blockquote")
+        quote.append(...inlineNodes(block.inline))
+        nodes.push(quote)
+        break
+      }
+      case "rule":
+        nodes.push(el("hr"))
+        break
+      case "para": {
+        const p = el("p", "md-p")
+        p.append(...inlineNodes(block.inline))
+        nodes.push(p)
+        break
+      }
+    }
+  }
+  return nodes
 }
 
 export class App {
@@ -704,11 +808,31 @@ export class App {
     return node
   }
 
+  /** Body text of a non-tool row. A row that is still streaming is set as plain
+   *  text — parsing markdown per delta re-lays the row out mid-stream — and the
+   *  app defers the same way (its markdown is budgeted and landed async). Once a
+   *  row settles it is parsed, and a body whose text has not changed is left
+   *  alone so the scroll position does not jitter. */
+  private setBody(node: HTMLElement, item: TranscriptItem): void {
+    const body = node.querySelector<HTMLElement>(".body")
+    if (!body) return
+    const holder = body as HTMLElement & { renderedSource?: string }
+    if (!wantsMarkdown(item) || item.streaming) {
+      if (holder.renderedSource !== item.text) {
+        holder.renderedSource = item.text
+        body.textContent = item.text
+      }
+      return
+    }
+    if (holder.renderedSource === item.text) return
+    holder.renderedSource = item.text
+    body.replaceChildren(...blockNodes(parseMarkdown(item.text)))
+  }
+
   private patchItem(node: HTMLElement, item: TranscriptItem): void {
     node.classList.toggle("streaming", item.streaming)
     if (item.kind !== "tool") {
-      const body = node.querySelector(".body")
-      if (body && body.textContent !== item.text) body.textContent = item.text
+      this.setBody(node, item)
       this.syncImages(node, item)
       return
     }

@@ -237,6 +237,20 @@ toolCall]`, `tool_execution_start`/`_end` for a `read`, the toolResult
   Checked rather than assumed — it brackets *compaction*
   (`extension/src/index.ts:1830`, `:1836`), not a turn, so folding it as busy
   would be wrong.
+- **Markdown is rendered, on purpose, in a deliberately small subset.** The app
+  renders user, assistant and notice text as markdown
+  (`TranscriptRowViews.swift:67, 112, 138`), so the browser client does too
+  (`src/markdown.ts`): fenced code, headings, lists, blockquotes, rules,
+  paragraphs, and inline code / bold / emphasis / links — nothing else, because
+  a transcript is a log, not a document. Safety is structural rather than
+  filtered: the parser returns **data**, the view builds elements with text
+  nodes, so raw `<script>` in a transcript stays text forever and a
+  `[x](javascript:…)` link keeps its label and loses its destination (scheme
+  allowlist). A row that is still streaming is set as **plain text** and parsed
+  once it settles — parsing per delta re-lays the row out mid-stream — and past
+  the app's own budget (32 000 chars, `markdownBudget` at
+  `TranscriptRowViews.swift:284`) text is shown as-is.
+
 - **A `read` of an image file is transcoded on the way in.** `docs/images/
 01-welcome.png` is `PNG image data, 1206 x 2622`; what reached the log was
   `mimeType: "image/jpeg"` with a caption saying `original 1206x2622, displayed
