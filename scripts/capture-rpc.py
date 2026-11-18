@@ -135,7 +135,7 @@ def main() -> None:
             if o.get("type") == "agent_settled":
                 settled = True
         except queue.Empty:
-            pass
+            pass  # no frame within the poll interval: fall through to the post step
         if settled and not post_sent:
             for c in post:
                 send(c)

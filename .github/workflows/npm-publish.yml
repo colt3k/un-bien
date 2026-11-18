@@ -16,17 +16,13 @@ jobs:
     runs-on: ubuntu-latest
     environment: npm
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: "24.x"
-          cache: pnpm
-          # Workspace root lockfile (the per-package
-          # extension/pnpm-lock.yaml was retired for the workspace).
-          cache-dependency-path: pnpm-lock.yaml
           # No registry-url: it writes an .npmrc expecting
           # NODE_AUTH_TOKEN, shadowing OIDC (publish would 404).
 
