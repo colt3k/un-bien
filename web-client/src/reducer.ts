@@ -76,6 +76,15 @@ export interface TranscriptItem {
   /** Edit-family diff hunks the extension rides in `env.aux` alongside the
    *  byte-faithful rpc frame. Not part of the corpus vocabulary. */
   hunks?: unknown[]
+  /** A custom-role message's `customType` (`un-bien:pair-code`,
+   *  `un-bien:mesh-message`, …): what the machine sent, so a view does not have
+   *  to pattern-match the display text it was told to show. */
+  customType?: string
+  /** The same message's structured `details`, carried as sent. pi's
+   *  `sendMessage` documents details as the payload for RPC clients — "render
+   *  your own QR from `uri` + show the expiry, without scraping the display
+   *  string" — so dropping it here forces every client back to scraping. */
+  details?: Record<string, unknown>
   /** Live tail of a running tool's output; not part of the corpus vocabulary. */
   partial?: string
 }
@@ -426,17 +435,24 @@ export class TranscriptReducer {
         // pi's custom-role entry: content + display are TOP-LEVEL here (no
         // `message` object). Extension bookkeeping rides display:false and must
         // stay invisible; mesh agent messages ride display:true.
+        //
+        // Route it through the SAME funnel the live plane uses: the reference
+        // synthesizes a custom `message_end` for the entry
+        // (`SessionState+BirthEntry.swift:28`), so there is ONE row-id rule for
+        // these rows. Keying the entry path differently (`notice@<hash>` against
+        // the live path's `cust<hash>`) shows a mesh or pairing notice twice —
+        // once from the live frame, once when the entry comes back in a refetch.
         if (entry.display === false) return
-        this.insertBeforeLiveTail({
-          kind: "notice",
-          row: `notice@${stableHash(joinedText(entry.content))}`,
-          text: joinedText(entry.content),
-          streaming: false,
-          blocks: [],
-          images: 0,
-          code: "custom",
-          replayStable: true,
-        })
+        const message: Frame = {
+          role: "custom",
+          timestamp: 0,
+          display: true,
+          content: entry.content ?? "",
+        }
+        if (typeof entry.customType === "string")
+          message.customType = entry.customType
+        if (entry.details !== undefined) message.details = entry.details
+        this.apply({ rpc: { type: "message_end", message } }, entryId)
         return
       }
       case "message": {
@@ -781,6 +797,11 @@ export class TranscriptReducer {
         images: 0,
         code: "custom",
         replayStable: false,
+        customType:
+          typeof message.customType === "string"
+            ? message.customType
+            : undefined,
+        details: asFrame(message.details) ?? undefined,
       })
       return
     }

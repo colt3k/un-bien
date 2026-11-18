@@ -289,7 +289,11 @@ textarea {
 .item.expanded .body {
   max-height: none;
 }
-button.clamp {
+/* A structured body discloses itself; never clamp it. */
+.item .body:has(.pair-card) {
+  max-height: none;
+}
+.pill {
   margin-top: 6px;
   padding: 2px 10px;
   font-size: 11px;
@@ -299,8 +303,37 @@ button.clamp {
   border-radius: 999px;
   cursor: pointer;
 }
-button.clamp:hover {
+.pill:hover {
   color: var(--fg);
+}
+/* The pairing notice, rendered from `details` instead of the QR wall. */
+.pair-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pair-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+}
+.pair-where,
+.pair-when {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.pair-when.expired {
+  color: var(--danger);
+}
+.pair-secret {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pair-qr {
+  font-size: 7px;
+  line-height: 1;
 }
 .item.streaming .body::after {
   content: "▌";

@@ -114,6 +114,95 @@ function inlineNodes(tokens: Inline[]): Node[] {
   return nodes
 }
 
+type PairingDetails = {
+  uri: string
+  expiresAt?: number
+  room?: string
+  name?: string
+}
+
+/** The structured payload of a `un-bien:pair-code` message, taken from the fold.
+ *  Reading it here rather than scraping the display text is what the producer
+ *  asks for: `extension/src/commands/pairing.ts:124-136` sends `details` as the
+ *  "structured payload for RPC clients: render their own QR from `uri` + show
+ *  the expiry, without scraping the display string". */
+function pairingDetails(item: TranscriptItem): PairingDetails | null {
+  const source = item.details
+  if (item.customType !== "un-bien:pair-code" || !source) return null
+  const uri = typeof source.uri === "string" ? source.uri : ""
+  if (!uri) return null
+  return {
+    uri,
+    expiresAt:
+      typeof source.expiresAt === "number" ? source.expiresAt : undefined,
+    room: typeof source.roomId === "string" ? source.roomId : undefined,
+    name: typeof source.name === "string" ? source.name : undefined,
+  }
+}
+
+/** The pairing notice as a card: what it is, which room, how long it lasts, and
+ *  the code/QR behind a deliberate reveal. Two things this is fixing at once: a
+ *  ~30-line QR wall dominating the transcript of every attached client, and a
+ *  live credential sitting on screen by default. The ASCII the machine sent
+ *  stays reachable — hiding it outright would take away the one thing a second
+ *  monitor gives you. */
+function pairingCard(
+  item: TranscriptItem,
+  details: PairingDetails,
+): HTMLElement {
+  const card = el("div", "pair-card")
+  const head = el("div", "pair-head")
+  head.append(el("strong", undefined, "Pair a device"))
+  const where = [details.name, details.room].filter(Boolean).join(" · ")
+  if (where) head.append(el("span", "pair-where", where))
+  const expired =
+    details.expiresAt !== undefined && details.expiresAt < Date.now()
+  head.append(
+    el(
+      "span",
+      expired ? "pair-when expired" : "pair-when",
+      details.expiresAt === undefined
+        ? "no expiry reported"
+        : expired
+          ? `expired ${new Date(details.expiresAt).toLocaleTimeString()}`
+          : `valid until ${new Date(details.expiresAt).toLocaleTimeString()}`,
+    ),
+  )
+  card.append(head)
+
+  const secret = el("div", "pair-secret collapsed")
+  const uri = el("pre", "md-code")
+  uri.append(el("code", undefined, details.uri))
+  secret.append(uri)
+
+  const copy = el("button", "pill")
+  copy.type = "button"
+  copy.textContent = "copy pairing code"
+  copy.addEventListener("click", () => {
+    navigator.clipboard
+      ?.writeText(details.uri)
+      .then(() => (copy.textContent = "copied"))
+      .catch(() => (copy.textContent = "copy failed"))
+  })
+  secret.append(copy)
+
+  if (item.text.trim() !== "") {
+    const qr = el("pre", "md-code pair-qr")
+    qr.append(el("code", undefined, item.text))
+    secret.append(qr)
+  }
+
+  const reveal = el("button", "pill")
+  reveal.type = "button"
+  reveal.textContent = "show pairing code"
+  reveal.addEventListener("click", () => {
+    const collapsed = secret.classList.toggle("collapsed")
+    reveal.textContent = collapsed ? "show pairing code" : "hide pairing code"
+  })
+  card.append(reveal, secret)
+  return card
+}
+
 function blockNodes(blocks: Block[]): Node[] {
   const nodes: Node[] = []
   for (const block of blocks) {
@@ -817,6 +906,16 @@ export class App {
     const body = node.querySelector<HTMLElement>(".body")
     if (!body) return
     const holder = body as HTMLElement & { renderedSource?: string }
+    // A pairing notice renders from its payload, not from the text it was told
+    // to display.
+    const pairing = item.kind === "notice" ? pairingDetails(item) : null
+    const key = pairing ? `pair:${pairing.uri}|${item.text.length}` : item.text
+    if (holder.renderedSource === key) return
+    if (pairing) {
+      holder.renderedSource = key
+      body.replaceChildren(pairingCard(item, pairing))
+      return
+    }
     if (!wantsMarkdown(item) || item.streaming) {
       if (holder.renderedSource !== item.text) {
         holder.renderedSource = item.text
@@ -824,7 +923,6 @@ export class App {
       }
       return
     }
-    if (holder.renderedSource === item.text) return
     holder.renderedSource = item.text
     body.replaceChildren(...blockNodes(parseMarkdown(item.text)))
   }
@@ -840,6 +938,13 @@ export class App {
     const body = node.querySelector<HTMLElement>(".body")
     if (!body) return
     const toggle = node.querySelector<HTMLElement>("button.clamp")
+    // A structured body (the pairing card) manages its own disclosure; clamping
+    // it would fight the card's own reveal control.
+    if (body.querySelector(".pair-card")) {
+      node.classList.remove("expanded")
+      toggle?.remove()
+      return
+    }
     const needsClamp = body.scrollHeight > body.clientHeight + 24
     if (!needsClamp) {
       node.classList.remove("expanded")
@@ -847,7 +952,7 @@ export class App {
       return
     }
     if (toggle) return
-    const button = el("button", "clamp")
+    const button = el("button", "pill clamp")
     button.type = "button"
     button.textContent = "show more"
     button.addEventListener("click", () => {

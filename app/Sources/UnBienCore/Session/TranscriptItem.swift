@@ -84,10 +84,23 @@ public struct NoticeItem: Equatable, Sendable {
     public let id: String
     public let code: String
     public let message: String
-    public init(id: String, code: String, message: String) {
+    /// A custom-role message's `customType` (e.g. `un-bien:pair-code`), kept so
+    /// a client can tell WHAT the machine sent instead of pattern-matching its
+    /// own display text. Nil for notices the fold produced itself.
+    public let customType: String?
+    /// The message's structured `details`, carried as sent. pi's
+    /// `sendMessage({customType, content, details, display})` documents details
+    /// as the payload for RPC clients ("render your own QR from `uri` + show the
+    /// expiry, without scraping the display string"), so a fold that drops it
+    /// forces every client back to scraping.
+    public let details: JSONValue?
+    public init(id: String, code: String, message: String,
+                customType: String? = nil, details: JSONValue? = nil) {
         self.id = id
         self.code = code
         self.message = message
+        self.customType = customType
+        self.details = details
     }
 }
 

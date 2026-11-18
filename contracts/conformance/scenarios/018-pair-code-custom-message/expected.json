@@ -1,0 +1,36 @@
+{
+  "flags" : {
+    "ended" : false,
+    "streaming" : false
+  },
+  "items" : [
+    {
+      "images" : 0,
+      "kind" : "user",
+      "row" : "user#1",
+      "text" : "/unbien pair"
+    },
+    {
+      "code" : "custom",
+      "customType" : "un-bien:pair-code",
+      "details" : {
+        "expiresAt" : 1795200060000,
+        "name" : "un-bien#1",
+        "roomId" : "SYNTH-ROOM-1",
+        "token" : "SYNTHETIC-TOKEN-000000",
+        "uri" : "unbien://pair?t=SYNTHETIC-TOKEN-000000&epk=SYNTH…"
+      },
+      "kind" : "notice",
+      "row" : "cust4oqj1t79vy30",
+      "text" : "📱 Scan to pair:\\n\\n█▀▀▀▀▀█\\n█ ▄▄▄ ▀█\\n█▀▀▀▀▀█"
+    }
+  ],
+  "leafId" : null,
+  "panels" : [
+
+  ],
+  "subagents" : [
+
+  ],
+  "version" : 3
+}

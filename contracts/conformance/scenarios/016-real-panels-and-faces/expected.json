@@ -454,8 +454,76 @@
     }
   ],
   "leafId" : null,
+  "panels" : [
+    {
+      "icon" : "person.2",
+      "items" : [
+        {
+          "deps" : [
+
+          ],
+          "id" : "agent:sa1",
+          "kind" : "agent",
+          "meta" : {
+            "agentType" : "«7»",
+            "startedAt" : 1795028956788
+          },
+          "status" : "in_progress",
+          "title" : "Explore the codebase"
+        },
+        {
+          "deps" : [
+
+          ],
+          "id" : "agent:sa2",
+          "kind" : "agent",
+          "meta" : {
+            "agentType" : "«4»"
+          },
+          "status" : "done",
+          "title" : "Draft an implementation plan"
+        }
+      ],
+      "key" : "subagents",
+      "title" : "Agents"
+    },
+    {
+      "icon" : "checklist",
+      "items" : [
+        {
+          "deps" : [
+
+          ],
+          "id" : "t1",
+          "kind" : "plan",
+          "status" : "done",
+          "title" : "Design the thing"
+        },
+        {
+          "deps" : [
+            "«2»"
+          ],
+          "id" : "t2",
+          "kind" : "plan",
+          "status" : "in_progress",
+          "title" : "Build the thing"
+        },
+        {
+          "deps" : [
+            "«2»"
+          ],
+          "id" : "t3",
+          "kind" : "plan",
+          "status" : "pending",
+          "title" : "Test the thing"
+        }
+      ],
+      "key" : "plan",
+      "title" : "Plan"
+    }
+  ],
   "subagents" : [
 
   ],
-  "version" : 1
+  "version" : 3
 }

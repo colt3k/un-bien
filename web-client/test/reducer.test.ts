@@ -5,6 +5,7 @@ import {
   entriesToEnvelopes,
   toEnvelope,
 } from "../src/reducer.js"
+import { stableHash } from "../src/content-identity.js"
 import type { EnvelopeMessage } from "@geohar/un-bien/client"
 
 function fold(frames: EnvelopeMessage[]): TranscriptReducer {
@@ -899,5 +900,103 @@ describe("busy state reconciled from pi's own get_state", () => {
     expect(reducer.snapshot().items.map((item) => item.streaming)).toEqual([
       true,
     ])
+  })
+})
+
+describe("a custom message that arrives live and is later replayed as an entry", () => {
+  // Both paths key these rows on the CONTENT hash (`cust` + hash, reference
+  // `SessionState.swift:653`), because the fold funnels the entry through the
+  // same `message_end` shape the live plane uses. A client that keys the entry
+  // path differently shows the same mesh or pairing notice twice: once from the
+  // live frame, once when the entry comes back in a refetch. Nothing in the
+  // corpus can catch this today — no scenario feeds entries (the harness's
+  // replay wiring is not built), so the rule lives here.
+  const text = "📱 Scan to pair:\n\n▄▄▄"
+  const details = {
+    uri: "unbien://pair?t=x",
+    token: "x",
+    expiresAt: 1795040007382,
+    roomId: "WF-jI-uORO6x",
+    name: "un-bien#2",
+  }
+  const liveFrame = {
+    rpc: {
+      type: "message_end",
+      message: {
+        role: "custom",
+        content: [{ type: "text", text }],
+        customType: "un-bien:pair-code",
+        details,
+        display: true,
+        timestamp: 1795040000000,
+      },
+    },
+  }
+  const entry = (id: string, parentId: string | null) => ({
+    type: "custom_message",
+    id,
+    parentId,
+    timestamp: 1795040000000,
+    content: [{ type: "text", text }],
+    customType: "un-bien:pair-code",
+    details,
+    display: true,
+  })
+  const prompt = (id: string, parentId: string | null) => ({
+    type: "message",
+    id,
+    parentId,
+    message: {
+      role: "user",
+      timestamp: 1,
+      content: [{ type: "text", text: "pair please" }],
+    },
+  })
+
+  it("is ONE row after the entry replay, with the live row's id", () => {
+    const reducer = new TranscriptReducer()
+    reducer.apply(liveFrame as never)
+    expect(reducer.snapshot().items.map((i) => i.row)).toEqual([
+      `cust${stableHash(text)}`,
+    ])
+    reducer.applyEntries([prompt("e1", null), entry("c1", "e1")], "c1")
+    const notices = reducer.snapshot().items.filter((i) => i.kind === "notice")
+    expect(notices.map((i) => i.row)).toEqual([`cust${stableHash(text)}`])
+  })
+
+  it("carries customType and details from either path", () => {
+    const live = new TranscriptReducer()
+    live.apply(liveFrame as never)
+    const liveNotice = live.snapshot().items[0]
+    expect(liveNotice?.customType).toBe("un-bien:pair-code")
+    expect(liveNotice?.details?.expiresAt).toBe(1795040007382)
+
+    const replay = new TranscriptReducer()
+    replay.applyEntries([prompt("e1", null), entry("c1", "e1")], "c1")
+    const replayNotices = replay
+      .snapshot()
+      .items.filter((i) => i.kind === "notice")
+    expect(replayNotices).toHaveLength(1)
+    expect(replayNotices[0]?.customType).toBe("un-bien:pair-code")
+    expect(replayNotices[0]?.details?.uri).toBe("unbien://pair?t=x")
+  })
+
+  it("keeps display:false bookkeeping invisible on BOTH paths", () => {
+    const reducer = new TranscriptReducer()
+    reducer.apply({
+      rpc: {
+        type: "message_end",
+        message: { role: "custom", content: "relay state", display: false },
+      },
+    } as never)
+    reducer.applyEntries(
+      [
+        prompt("e1", null),
+        { ...entry("c1", "e1"), content: "relay state", display: false },
+      ],
+      "c1",
+    )
+    // The prompt entry is a row; only the invisible bookkeeping must not be.
+    expect(reducer.snapshot().items.map((i) => i.kind)).toEqual(["user"])
   })
 })

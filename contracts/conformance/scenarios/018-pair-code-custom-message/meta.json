@@ -1,0 +1,9 @@
+{
+  "origin": "authored",
+  "source": "Frame hand-built. The PAYLOAD is not invented: real durable `custom_message` entries in ~/.pi/agent/sessions carry exactly `customType` + `details:{uri, token, expiresAt, roomId, name}` with `display: true` for customType `un-bien:pair-code` (2 such entries found), and the producer documents the intent — `extension/src/commands/pairing.ts:124-136` sends `details` as the \"structured payload for RPC clients: render their own QR from `uri` + show the expiry, without scraping the display string\". The token, epk, room id and name here are SYNTHETIC (a real pairing credential does not belong in a fixture, even though the projection scrubs strings to a length marker anyway).",
+  "captured": "2026-11-18",
+  "modes": ["live"],
+  "scrub": "Invented content; the pairing values are synthetic by construction.",
+  "description": "Pins that a custom-role message keeps WHAT the machine sent, not just its display text: the notice row carries `customType` and `details` (deep-scrubbed, structure intact — same rule as panel items). Both folds used to drop both fields, which left a client two choices only: render the QR ASCII it was handed, or scrape the pairing URI back out of the display string the producer explicitly offered `details` to avoid. Vocabulary version 3.",
+  "note": "What is NOT pinned here: the live frame's existence. No capture contains a custom-role `message_end` (0 of 2272 frames in 016) — in the wild these messages reach clients as durable entries after a refetch, and no scenario feeds entries yet (the harness's replay wiring is not built). So the frame shape is authored while the payload shape is copied from real entries; the entry path is covered by web-client unit tests instead, including the shared row-id rule (`cust` + content hash) that keeps a live notice and its later entry replay ONE row."
+}

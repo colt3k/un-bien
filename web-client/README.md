@@ -266,6 +266,31 @@ toolCall]`, `tool_execution_start`/`_end` for a `read`, the toolResult
   reference now folds panels in two places (core's `panels`, the app's
   `PanelState`) and rewiring the app to read core's is the follow-up.
 
+- **A pairing notice renders from its payload, not from its display text.**
+  Conformance vocabulary **version 3** keeps `customType` and `details` on a
+  custom-role notice (deep-scrubbed, structure intact — same rule as panel
+  items), because the producer says so in its own comment: `details` is the
+  "structured payload for RPC clients: render their own QR from `uri` + show the
+  expiry, without scraping the display string"
+  (`extension/src/commands/pairing.ts:124-136`). With that in the fold the view
+  draws a card — which room, valid until when, and the code + ASCII QR behind a
+  *show pairing code* reveal — instead of 30 lines of blocks with a live
+  credential on screen by default. Verified live against the real entry that
+  session had already written: "Pair a device · un-bien#2 · WF-jI-uORO6x ·
+  expired 3:13:27 PM", reveal showing the URI (copyable) and 28 lines of QR.
+  Scenario `018` pins the fold; its pairing values are synthetic on purpose.
+
+- **…and the entry path used to key those rows differently, which was a
+  duplicate-row bug.** The live path keys a custom notice `cust<content hash>`;
+  the durable replay path keyed it `notice@<content hash>`. Same message, two
+  rows: rendered live, then rendered again when the entry came back in a
+  refetch. Both folds now funnel the entry through the same `message_end` shape
+  the reference does (`SessionState+BirthEntry.swift:28`), so one rule applies.
+  Nothing in the corpus could have caught this — **no scenario feeds entries**
+  (the harness's replay wiring is not built), so `applyEntries` is checked here
+  by unit tests only, and that is a real limit of the oracle worth knowing
+  before trusting a green corpus.
+
 - **The compaction caption prints a token count only if the wire sent one.**
   "Context compacted (213920 tokens)" is a measurement; `(0 tokens)` is a lie the
   client tells itself, because both folds used to default a missing

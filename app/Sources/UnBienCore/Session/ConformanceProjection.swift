@@ -122,12 +122,24 @@ public extension SessionState {
                     "text": .string(Conformance.scrub(marker.caption)),
                 ]))
             case let .notice(notice):
-                rows.append(.object([
+                var noticeObj: [String: JSONValue] = [
                     "kind": .string("notice"),
                     "row": rowID(kind: "notice", id: notice.id, replayStable: true),
                     "code": .string(Conformance.scrub(notice.code)),
                     "text": .string(Conformance.scrub(notice.message)),
-                ]))
+                ]
+                // A custom-role message keeps what the machine sent: its type and
+                // its structured payload, deep-scrubbed but not reshaped (same
+                // rule as panel items). Secret values are length-only here, so a
+                // golden can pin the SHAPE of a pairing payload without pinning
+                // the token.
+                if let customType = notice.customType {
+                    noticeObj["customType"] = .string(Conformance.scrub(customType))
+                }
+                if let details = notice.details {
+                    noticeObj["details"] = Conformance.scrubbed(details)
+                }
+                rows.append(.object(noticeObj))
             }
         }
 
@@ -136,7 +148,7 @@ public extension SessionState {
             "ended": .bool(ended),
         ]
         return .object([
-            "version": .number(2),
+            "version": .number(3),
             "items": .array(rows),
             "flags": .object(flags),
         ])

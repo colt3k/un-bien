@@ -36,11 +36,20 @@ extension SessionState {
             // birth are one code path.
             let display = entry["display"]?.boolValue ?? true
             guard display else { return }
+            // Carry customType + details through the SAME funnel: pi writes both
+            // on the entry (`un-bien:pair-code` carries uri/token/expiresAt…),
+            // and a client that cannot see them has to scrape the display text
+            // the producer explicitly offered `details` to avoid.
+            var message: [String: JSONValue] = [
+                "role": .string("custom"),
+                "timestamp": .number(0),
+                "display": .bool(display),
+                "content": entry["content"] ?? .string(""),
+            ]
+            if let customType = entry["customType"] { message["customType"] = customType }
+            if let details = entry["details"] { message["details"] = details }
             applyRPC(.object(["type": .string("message_end"),
-                              "message": .object(["role": .string("custom"),
-                                                  "timestamp": .number(0),
-                                                  "display": .bool(display),
-                                                  "content": entry["content"] ?? .string("")]),
+                              "message": .object(message),
                               "entryId": entry["id"] ?? .null]))
         case "message":
             guard let msg = entry["message"] else { return }

@@ -652,7 +652,9 @@ public struct SessionState: Equatable, Sendable {
             let text = message?["content"]?.joinedText() ?? ""
             return append(.notice(NoticeItem(
                 id: "cust\(Self.stableHash(text))",
-                code: "custom", message: text)))
+                code: "custom", message: text,
+                customType: message?["customType"]?.stringValue,
+                details: message?["details"])))
         default:
             return false  // toolResult is rendered via tool_execution_*, not as a row
         }

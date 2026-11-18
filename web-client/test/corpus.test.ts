@@ -59,7 +59,7 @@ const SKIP_REASONS: Record<string, string> = {}
 /** The conformance vocabulary this runner implements. The reference projects it
  *  (`ConformanceProjection`) and vocab.md documents it; version 2 added the
  *  live `panels` plane. */
-const VOCAB_VERSION = 2
+const VOCAB_VERSION = 3
 
 interface ScenarioMeta {
   modes?: string[]
@@ -90,9 +90,13 @@ function projections(items: { kind?: unknown; row?: unknown }[]): string[] {
  *  before comparing, or every multi-line reply "mismatches" on a formatting
  *  artifact. */
 function textMatches(actual: string, expected: string): boolean {
-  if (!expected.endsWith("…")) return actual === expected
-  const prefix = expected.slice(0, -1).replace(/\\n/g, "\n")
-  return actual.startsWith(prefix)
+  // The reference's scrub (Conformance.scrub) turns real newlines into a literal
+  // `\n` PAIR of characters and truncates long text with `…`. Undo the escaping
+  // on the expected side, otherwise every multi-line row fails on a difference
+  // the scrub itself introduced.
+  const want = expected.replace(/\\n/g, "\n")
+  if (!want.endsWith("…")) return actual === want
+  return actual.startsWith(want.slice(0, -1))
 }
 
 /** Compare a panel item exactly as the projection emits it: pi's own wire
@@ -208,6 +212,27 @@ function itemProblems(
             `code ${JSON.stringify(got.code)} != ${JSON.stringify(expected)}`,
           )
         break
+      case "customType":
+        // What the machine sent (vocabulary v3): `un-bien:pair-code`,
+        // `un-bien:mesh-message`. A client that drops it has to pattern-match
+        // the display text the producer told it to show instead.
+        if (!textMatches(String(got.customType ?? ""), String(expected)))
+          problems.push(
+            `customType ${JSON.stringify(got.customType)} !~ ${JSON.stringify(expected)}`,
+          )
+        break
+      case "details": {
+        // The message's structured payload, compared as structure with
+        // scrubbed strings — never reshaped on either side.
+        problems.push(
+          ...panelItemProblems(
+            expected as Record<string, unknown>,
+            got.details,
+            "details",
+          ),
+        )
+        break
+      }
       default:
         problems.push(`expected key this client does not project: ${key}`)
     }

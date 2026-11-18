@@ -31,7 +31,8 @@ across modes and across implementations**.
 {
   "version": 1,
   "items": [
-    { "kind": "notice", "row": "<row-id>", "code": "...", "text": "<scrubbed>" },
+    { "kind": "notice", "row": "<row-id>", "code": "...", "text": "<scrubbed>",
+      "customType": "<scrubbed>", "details": { "...": "deep-scrubbed, structure kept" } },
     { "kind": "user", "row": "<row-id>", "text": "<scrubbed>", "images": 0 },
     { "kind": "assistant", "row": "<row-id>", "text": "<scrubbed>",
       "streaming": false, "images": 0 },
@@ -72,6 +73,17 @@ client's guess instead. The legacy `subagents`/`plan` fields above stay (older
 extensions, pinned by 002) and are NOT derived from `panels`.
 
 Version 2 = `panels` added.
+
+**A notice may carry `customType` + `details`** (a custom-role message: what the
+machine sent, and its structured payload). They are emitted only when present.
+`details` follows the panel rule — deep-scrubbed in place, structure untouched —
+so a golden pins the SHAPE of a pairing payload without pinning a credential.
+The point is that a client renders from the payload the producer sent for that
+purpose (`pairing.ts:124-136`: "render their own QR from `uri` + show the
+expiry, without scraping the display string") instead of scraping text back out
+of what it was told to display. Pinned by 018.
+
+Version 3 = notice `customType` / `details` added.
 ```
 
 - `items` is in render order. `n` is implicit (array index + 1).
