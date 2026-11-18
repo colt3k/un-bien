@@ -1,0 +1,461 @@
+{
+  "flags" : {
+    "ended" : false,
+    "streaming" : false
+  },
+  "items" : [
+    {
+      "blocks" : [
+        "text"
+      ],
+      "images" : 1,
+      "kind" : "tool",
+      "row" : "tc-svg-1795029292605",
+      "state" : "ok",
+      "tool" : "render_svg"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "bash.ok-1795029292605-0",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "bash.truncated-1795029292606-1",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "bash.git-diff-1795029292606-2",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "error"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "bash.exit-code-1795029292606-3",
+      "state" : "failed",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "file"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "read.ranged-1795029292606-4",
+      "state" : "ok",
+      "tool" : "read"
+    },
+    {
+      "blocks" : [
+        "error"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "read.error-1795029292606-5",
+      "state" : "failed",
+      "tool" : "read"
+    },
+    {
+      "blocks" : [
+        "diff"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "edit.ok-1795029292606-6",
+      "state" : "ok",
+      "tool" : "edit"
+    },
+    {
+      "blocks" : [
+        "confirmation"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "write.ok-1795029292606-7",
+      "state" : "ok",
+      "tool" : "write"
+    },
+    {
+      "blocks" : [
+        "lines"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "grep.limit-1795029292606-8",
+      "state" : "ok",
+      "tool" : "grep"
+    },
+    {
+      "blocks" : [
+        "lines"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "find.hits-1795029292606-9",
+      "state" : "ok",
+      "tool" : "find"
+    },
+    {
+      "blocks" : [
+        "script"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "codemode.completed-1795029292606-10",
+      "state" : "ok",
+      "tool" : "codemode"
+    },
+    {
+      "blocks" : [
+        "text"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "mcp.call-1795029292606-11",
+      "state" : "ok",
+      "tool" : "mcp"
+    },
+    {
+      "blocks" : [
+        "markdown"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "subagent.ok-1795029292606-12",
+      "state" : "ok",
+      "tool" : "subagent"
+    },
+    {
+      "blocks" : [
+        "markdown"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "web_fetch.ok-1795029292606-13",
+      "state" : "ok",
+      "tool" : "web_fetch"
+    },
+    {
+      "images" : 0,
+      "kind" : "assistant",
+      "row" : "assistant#1",
+      "streaming" : false,
+      "text" : "«29»"
+    },
+    {
+      "code" : "provider_error",
+      "kind" : "notice",
+      "row" : "errm2hzz7gxzf0cj1gakk5yy8e9kw",
+      "text" : "«21»"
+    },
+    {
+      "blocks" : [
+        "text"
+      ],
+      "images" : 1,
+      "kind" : "tool",
+      "row" : "tc-svg-1795029308273",
+      "state" : "ok",
+      "tool" : "render_svg"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "bash.ok-1795029308273-0",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "bash.truncated-1795029308273-1",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "bash.git-diff-1795029308273-2",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "error"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "bash.exit-code-1795029308273-3",
+      "state" : "failed",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "file"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "read.ranged-1795029308273-4",
+      "state" : "ok",
+      "tool" : "read"
+    },
+    {
+      "blocks" : [
+        "error"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "read.error-1795029308273-5",
+      "state" : "failed",
+      "tool" : "read"
+    },
+    {
+      "blocks" : [
+        "diff"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "edit.ok-1795029308273-6",
+      "state" : "ok",
+      "tool" : "edit"
+    },
+    {
+      "blocks" : [
+        "confirmation"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "write.ok-1795029308273-7",
+      "state" : "ok",
+      "tool" : "write"
+    },
+    {
+      "blocks" : [
+        "lines"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "grep.limit-1795029308274-8",
+      "state" : "ok",
+      "tool" : "grep"
+    },
+    {
+      "blocks" : [
+        "lines"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "find.hits-1795029308274-9",
+      "state" : "ok",
+      "tool" : "find"
+    },
+    {
+      "blocks" : [
+        "script"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "codemode.completed-1795029308274-10",
+      "state" : "ok",
+      "tool" : "codemode"
+    },
+    {
+      "blocks" : [
+        "text"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "mcp.call-1795029308274-11",
+      "state" : "ok",
+      "tool" : "mcp"
+    },
+    {
+      "blocks" : [
+        "markdown"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "subagent.ok-1795029308274-12",
+      "state" : "ok",
+      "tool" : "subagent"
+    },
+    {
+      "blocks" : [
+        "markdown"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "web_fetch.ok-1795029308274-13",
+      "state" : "ok",
+      "tool" : "web_fetch"
+    },
+    {
+      "images" : 0,
+      "kind" : "user",
+      "row" : "user#1",
+      "text" : "«65»"
+    },
+    {
+      "blocks" : [
+        "error"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_4816c07de06c4fe88184231d",
+      "state" : "failed",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_2e2b9c155eeb4221ac81e39f",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "images" : 0,
+      "kind" : "assistant",
+      "row" : "assistant#2",
+      "streaming" : false,
+      "text" : "«173»"
+    },
+    {
+      "blocks" : [
+        "confirmation"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_66c3367e1ed24125bf82fa3d",
+      "state" : "ok",
+      "tool" : "write"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_eed0a462e7e04a9db4556759",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "images" : 0,
+      "kind" : "assistant",
+      "row" : "assistant#3",
+      "streaming" : false,
+      "text" : "«373»"
+    },
+    {
+      "images" : 0,
+      "kind" : "user",
+      "row" : "user#2",
+      "text" : "«38»"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_fcc14a68658f4bd69212a810",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "images" : 0,
+      "kind" : "assistant",
+      "row" : "assistant#4",
+      "streaming" : false,
+      "text" : "«76»"
+    },
+    {
+      "images" : 0,
+      "kind" : "user",
+      "row" : "user#3",
+      "text" : "«41»"
+    },
+    {
+      "blocks" : [
+        "error"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_03b48e5f4375456d95fb79ab",
+      "state" : "failed",
+      "tool" : "bash"
+    },
+    {
+      "images" : 0,
+      "kind" : "assistant",
+      "row" : "assistant#5",
+      "streaming" : false,
+      "text" : "«139»"
+    },
+    {
+      "images" : 0,
+      "kind" : "user",
+      "row" : "user#4",
+      "text" : "«23»"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_e23a8b97fc6f4d8aa4fcd85b",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "images" : 0,
+      "kind" : "assistant",
+      "row" : "assistant#6",
+      "streaming" : false,
+      "text" : "«481»"
+    },
+    {
+      "images" : 0,
+      "kind" : "user",
+      "row" : "user#5",
+      "text" : "«49»"
+    }
+  ],
+  "leafId" : null,
+  "subagents" : [
+
+  ],
+  "version" : 1
+}

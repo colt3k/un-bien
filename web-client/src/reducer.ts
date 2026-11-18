@@ -727,7 +727,7 @@ export class TranscriptReducer {
       const text = joinedText(message.content)
       this.push({
         kind: "notice",
-        row: `notice@${stableHash(text)}`,
+        row: `cust${stableHash(text)}`,
         text,
         streaming: false,
         blocks: [],
@@ -746,7 +746,12 @@ export class TranscriptReducer {
       const text = String(message.errorMessage ?? "Provider error")
       const item = {
         kind: "notice" as ItemKind,
-        row: `notice@err@${stableHash(text)}`,
+        // Reference `SyntheticID.error(identify:hash:)` = "err" + the message's
+        // content identity + the hash of the error text — the content identity is
+        // what dedups a live error against its later entry replay, so it cannot
+        // be left out (this client was keying on the text hash alone, and
+        // prefixing the row with a kind the projection does not add).
+        row: `err${key}${stableHash(text)}`,
         text,
         streaming: false,
         blocks: [] as string[],

@@ -2,6 +2,9 @@
   "origin": "real-capture",
   "source": "app/Tests/Fixtures/rpc-stream/subagent-run.envelope.jsonl",
   "captured": "2026-09",
-  "modes": ["live"],
-  "description": "Real enveloped subagent run (447 frames, both {rpc} and {evt:{channel:\"subagents:*\"}} planes folded). Reality-check for the subagent shape family."
+  "modes": [
+    "live"
+  ],
+  "description": "Real enveloped subagent run (447 frames, both {rpc} and {evt:{channel:\"subagents:*\"}} planes folded). Reality-check for the subagent shape family.",
+  "note": "WIRE-WIDTH WARNING (2026-11-18, from scenario 016's capture): the `subagents:*` / `plan:snapshot` {evt} channels this scenario feeds are NOT what the shipped extension sends. Its only panel producers are extension/src/routing.ts:120 and session/relay_lifecycle.ts:246, and both emit `{evt:{channel:\"panel\", data:{type:\"panel_update\", key:\"subagents\"|\"plan\", title, icon, data:{items}}}}` \u2014 coalesced full snapshots, one per source per 60 ms tick. The app handles that form in its UI layer (AppModel+Inbound.swift:569 re-routes the inner panel_update as a stock ServerMessage); core's EnvelopeReducer \u2014 which is what the conformance harness runs \u2014 and the web client both key on the granular channels, so on the wire they see nothing. 002 pins the code path, not the transport; 016 pins the transport and shows both folds producing an EMPTY panel from it. Choosing between them (unwrap in core + client, or emit the granular channels) is an open decision."
 }

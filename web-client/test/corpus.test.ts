@@ -135,6 +135,16 @@ function itemProblems(
           )
         break
       }
+      case "code":
+        // A notice's class — `provider_error`, `custom`, `branch`. The
+        // reference projects it (ConformanceProjection.swift:113) because the
+        // class decides the styling (info vs warning), so it is a compared
+        // field, not a rendering detail.
+        if (got.code !== expected)
+          problems.push(
+            `code ${JSON.stringify(got.code)} != ${JSON.stringify(expected)}`,
+          )
+        break
       default:
         problems.push(`expected key this client does not project: ${key}`)
     }
