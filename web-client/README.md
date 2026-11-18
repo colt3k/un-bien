@@ -300,6 +300,24 @@ toolCall]`, `tool_execution_start`/`_end` for a `read`, the toolResult
   expired 3:13:27 PM", reveal showing the URI (copyable) and 28 lines of QR.
   Scenario `018` pins the fold; its pairing values are synthetic on purpose.
 
+- **A claim of mine about the diff sidecar was wrong, and a probe settled it.**
+  Scenario 016's note asserted that zero frames in 2272 carried `aux`, "so the
+  diff sidecar is dead on the live plane too". What it actually showed is that no
+  kept frame in ONE capture carried it — five of its 37 `tool_execution_start`
+  frames were edit-family, and I read absence in one capture as a property of the
+  wire. A turn asking the live session to `write` then `edit` a scratch file
+  produced, in the extension's own envelope log (0.25.15), `aux.hunks attached:
+  edit (1 hunk(s))`, and this client drew that card with one hunk and four diff
+  lines (1 add, 1 remove, 2 context). So the sidecar does ride live — on the
+  **start** frame, not on the result frame (`extension/src/session/rpc_envelope.ts:405`,
+  comment at :420 — checked against the running 0.25.15 build too, where the same
+  code sits at `dist/session/rpc_envelope.js:205`),
+  and it is missing when enrichment returns nothing, which the producer logs
+  ("usually the target-file read failed (wrong cwd) or the arg shape didn't
+  match", :209-214). Most likely that is what 016 caught: its edits target paths
+  outside the session's cwd. 016's note is corrected in place; live hunks remain
+  pinned by 004 and replay hunks by 012.
+
 - **…and the entry path used to key those rows differently, which was a
   duplicate-row bug.** The live path keys a custom notice `cust<content hash>`;
   the durable replay path keyed it `notice@<content hash>`. Same message, two
