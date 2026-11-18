@@ -16,7 +16,7 @@ runs) is imported directly, aliased through Vite so three node-isms don't drag
 pnpm --filter web-client dev            # vite dev server, bound to all interfaces
 pnpm --filter web-client build          # dist/ (88 kB JS, 30 kB gzip)
 pnpm --filter web-client preview        # serve dist/ — use THIS on a phone
-pnpm --filter web-client test           # 81 passing (see Conformance)
+pnpm --filter web-client test           # 85 passing (see Conformance)
 ```
 
 On a phone, use `preview`, not `dev`: the dev server's HMR socket drops on a
@@ -120,11 +120,28 @@ Screenshot of a live turn: `/tmp/unbien-smoke/web-client-live.png`.
   together (face-derived hunks counted too) and 012 caught it. Reference
   projection for 012: 34 items — 26 tool cards (21 terminal, 4 file, 1 diff),
   4 user, 4 assistant — leaf `c8dde2c8`.
+- **`013` is the compaction plane, and it exposed a dropped frame.** No paired
+  room had ever compacted — the `test` room refused `/compact` ("Nothing to
+  compact (session too small)") and wrote **no entry and no frame** for the
+  attempt, so a client cannot learn about a failed compaction from history.
+  The fixture therefore comes from one of pi's own session logs for this repo,
+  cut after its first `compaction` entry: pi's log lines are the entries the
+  extension forwards, minus the leading `session` line it does not send. What it
+  proved: the live plane's only compaction shape is the rpc **`compaction_end`**,
+  because the extension remaps pi's `session_compact` EVENT into it
+  (`extension/src/session/rpc_envelope.ts:338`) — folding on the event name, or
+  on pi's subscribe-only `compaction`, matches nothing and drops the marker
+  silently. This client was doing exactly that, and its replay path built a row
+  with no `tokensBefore` (the count the caption shows: "Context compacted
+  (213920 tokens)"). Both fixed by routing the entry through the same funnel as
+  the live frame, keyed on the entry id, as the reference does
+  (`SessionState+BirthEntry.swift:18`). The row's kind survived; its content did
+  not, which is the kind of bug a green projection can hide.
 
 ## What is not here
 
 - **Conformance covers the projection, not the pixels.** `test/corpus.test.ts`
-  runs all twelve `contracts/conformance/` scenarios with no skips and compares,
+  runs all thirteen `contracts/conformance/` scenarios with no skips and compares,
   in **render order**: `(kind, row)`, `text` (prefix — the corpus scrubs long
   strings and escapes their newlines), `streaming`, `images`, `state`, `tool`,
   `blocks` (the tool card's result face, `src/tool-faces.ts`), `flags`, `leafId`,

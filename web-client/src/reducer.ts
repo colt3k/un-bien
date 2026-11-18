@@ -67,6 +67,11 @@ export interface TranscriptItem {
    *  to one). The boundary between replayed history and the live tail is
    *  defined by this, and that boundary is where late entry births insert. */
   replayStable: boolean
+  /** A `compaction` marker's token count before the fold (`tokensBefore` on pi's
+   *  compaction entry / the `compaction_end` result). The app renders the row as
+   *  "Context compacted (N tokens)"; the summary itself is the stand-in text for
+   *  the folded history, not a label, so it is not shown. */
+  tokensBefore?: number
   /** Edit-family diff hunks the extension rides in `env.aux` alongside the
    *  byte-faithful rpc frame. Not part of the corpus vocabulary. */
   hunks?: unknown[]
@@ -357,14 +362,21 @@ export class TranscriptReducer {
     const entryId = typeof entry.id === "string" ? entry.id : undefined
     switch (entry.type) {
       case "compaction":
-        this.insertBeforeLiveTail({
-          kind: "compaction",
-          row: entryId ?? this.row("compaction"),
-          text: "",
-          streaming: false,
-          blocks: [],
-          images: 0,
-          replayStable: true,
+        // Not a row of its own: fold it through the SAME funnel the live plane
+        // uses. pi fires `session_compact` and the extension remaps it to an rpc
+        // `compaction_end` frame; a replayed `compaction` ENTRY is reduced by
+        // synthesizing that frame with the entry id (reference
+        // `SessionState+BirthEntry.swift:18`), so the entry and the frame that
+        // streamed it land on one row instead of duplicating it.
+        this.apply({
+          rpc: {
+            type: "compaction_end",
+            result: {
+              summary: entry.summary ?? "",
+              tokensBefore: entry.tokensBefore ?? 0,
+            },
+            entryId,
+          },
         })
         return
       case "custom_message": {
@@ -526,17 +538,33 @@ export class TranscriptReducer {
         this.applyEntryAppended(asFrame(rpc.entry))
         break
       }
-      case "compaction":
-      case "session_compact": {
-        this.push({
+      case "compaction_end": {
+        // The live plane's compaction. pi fires the `session_compact` EVENT and
+        // the extension remaps it to this rpc frame, whose `result` carries the
+        // persisted entry's `summary` + `tokensBefore`
+        // (extension/src/session/rpc_envelope.ts:338). Folding on the event name
+        // instead — `session_compact` — matches nothing on the wire and silently
+        // drops the marker.
+        // Entry-born markers (a replay, carrying `entryId`) key on the entry id
+        // and ride the log position; live ones take a seq id and append, because
+        // they are a "now" event.
+        const result = asFrame(rpc.result)
+        if (!result) break
+        const entryId =
+          typeof rpc.entryId === "string" ? rpc.entryId : undefined
+        const item: TranscriptItem = {
           kind: "compaction",
-          row: this.row("compaction", rowHint),
+          row: entryId ?? this.row("compaction", rowHint),
           text: "",
           streaming: false,
           blocks: [],
-          replayStable: false,
           images: 0,
-        })
+          replayStable: entryId !== undefined,
+          tokensBefore:
+            typeof result.tokensBefore === "number" ? result.tokensBefore : 0,
+        }
+        if (entryId) this.insertBeforeLiveTail(item)
+        else this.push(item)
         break
       }
       case "turn_start":

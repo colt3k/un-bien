@@ -197,7 +197,13 @@ textarea {
   background: #241a12;
 }
 .item.compaction {
+  /* A marker, not a message: centred caption, no card fill. Mirrors the app's
+     caption row (`.font(.caption)`, secondary text, centred). */
+  border-style: dashed;
+  background: none;
   color: var(--muted);
+  text-align: center;
+  font-size: 12px;
 }
 .item pre {
   margin: 0;

@@ -604,3 +604,85 @@ describe("image blocks", () => {
     expect(item.imageParts).toHaveLength(8)
   })
 })
+
+describe("compaction", () => {
+  // pi's own compaction entry shape, as it rides `get_entries` (captured in
+  // corpus scenario 013; a real one carries a 4 KB summary).
+  const entry = (id: string, tokensBefore: number) => ({
+    type: "compaction",
+    id,
+    parentId: null,
+    timestamp: "2026-11-16T19:53:04.388Z",
+    summary: "the stand-in text that replaces the folded history",
+    firstKeptEntryId: "e1",
+    tokensBefore,
+    fromHook: false,
+  })
+
+  it("marks the live plane from `compaction_end`, keeping the token count", () => {
+    const reducer = new TranscriptReducer()
+    // The extension remaps pi's `session_compact` EVENT into this rpc frame
+    // (extension/src/session/rpc_envelope.ts:338). It is the only compaction
+    // shape that arrives live, and the marker's whole visible content is the
+    // count the caption renders.
+    reducer.apply({
+      rpc: {
+        type: "compaction_end",
+        reason: "manual",
+        result: { summary: "…", tokensBefore: 213920 },
+        aborted: false,
+        willRetry: false,
+      },
+    })
+    const item = reducer.snapshot().items.find((i) => i.kind === "compaction")
+    expect(item?.row).toBe("compaction#1")
+    expect(item?.tokensBefore).toBe(213920)
+    expect(item?.replayStable).toBe(false)
+  })
+
+  it("pi's EVENT name is not a wire frame: `session_compact` marks nothing", () => {
+    // Not a tolerance test — a record of the trap. Folding on the event name
+    // (or on pi's subscribe-only `compaction`) silently drops the marker,
+    // because the client is only ever sent `compaction_end`.
+    const reducer = new TranscriptReducer()
+    reducer.apply({
+      rpc: { type: "session_compact", compactionEntry: { tokensBefore: 1 } },
+    })
+    reducer.apply({ rpc: { type: "compaction", tokensBefore: 1 } })
+    expect(reducer.snapshot().items.some((i) => i.kind === "compaction")).toBe(
+      false,
+    )
+  })
+
+  it("a replayed entry keys on the entry id, lands in the history, and redelivers once", () => {
+    const reducer = new TranscriptReducer()
+    // A live row is already on screen (this is what a reconnect looks like).
+    reducer.apply({
+      rpc: {
+        type: "message_end",
+        message: {
+          role: "assistant",
+          timestamp: 2000,
+          content: [{ type: "text", text: "watched this stream" }],
+        },
+      },
+    })
+
+    reducer.applyEntries([entry("c1", 900)], "c1")
+    const rows = reducer.snapshot().items.map((i) => `${i.kind}@${i.row}`)
+    // In the log, not below the newest live row: history keeps its position.
+    expect(rows).toEqual(["compaction@c1", "assistant@assistant#1"])
+
+    // Redelivery — a second page carrying the same entry — must not duplicate
+    // the caption. Entry-born markers key on the entry id for exactly this.
+    reducer.applyEntries([entry("c1", 900)], "c1")
+    expect(
+      reducer.snapshot().items.filter((i) => i.kind === "compaction"),
+    ).toHaveLength(1)
+    const marker = reducer
+      .snapshot()
+      .items.find((i) => i.kind === "compaction")!
+    expect(marker.replayStable).toBe(true)
+    expect(marker.tokensBefore).toBe(900)
+  })
+})

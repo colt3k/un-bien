@@ -1,0 +1,9 @@
+{
+  "origin": "real-capture",
+  "source": "one of pi's own session logs for this repo (2026-11-16, 3101 lines), cut just after its first `compaction` entry. Taken from the log file rather than over the relay because no paired room has ever compacted — the `test` room refused `/compact` (\"Nothing to compact (session too small)\") and wrote NO entry for the attempt. pi's log lines are the entries the extension forwards, so the slice is the wire content; pi's leading `session` line is dropped because the extension does not forward it.",
+  "captured": "2026-11-18",
+  "modes": ["live"],
+  "scrub": "Content → «length» (the compaction `summary` is 4093 chars of prior-conversation text and is replaced whole; `systemMessage`, `details`, `usage` likewise). Structure kept verbatim: ids, the parentId chain, ISO timestamps, `firstKeptEntryId`, `tokensBefore` (213920 — the number the caption renders), `fromHook`, keys everywhere. Verified: no absolute path, username or hostname survives.",
+  "description": "The compaction plane, captured rather than authored. A `compaction` ENTRY (pi's shape: `summary`, `tokensBefore`, `firstKeptEntryId`, `fromHook`, `systemMessage`, `usage`, `details`) mid-chain, folded by the reference through the SAME funnel as the live wire — `SessionState+BirthEntry.swift:18` synthesizes a `compaction_end` rpc carrying the entry id, and the live plane's `compaction_end` comes from the extension remapping pi's `session_compact` EVENT (`extension/src/session/rpc_envelope.ts:338`), which is why folding on the event name matches nothing. Pins the marker row's identity: entry-born markers key on the entry id and insert before the live tail; live ones take a seq id and append. Also carries 351 entries of ordinary chain so the marker's neighbours stay in order.",
+  "note": "A failed `/compact` produces NO entry and NO frame — a client cannot learn about it from history. Only a successful compaction is visible."
+}
