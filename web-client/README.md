@@ -251,6 +251,20 @@ toolCall]`, `tool_execution_start`/`_end` for a `read`, the toolResult
   the app's own budget (32 000 chars, `markdownBudget` at
   `TranscriptRowViews.swift:284`) text is shown as-is.
 
+- **Long bodies are clamped behind a control, not suppressed.** `/unbien pair`
+  sends its QR as a custom message with `display: true`
+  (`extension/src/commands/pairing.ts:124`), so it arrives as an ordinary notice
+  row — ~30 lines of blocks whose pairing URI (and token) is then on screen in
+  every attached client. This client keeps the row (the app has **no** special
+  case for `un-bien:pair-code`; grep it and you find nothing, so folding it away
+  would diverge) and clamps anything taller than 12rem behind a *show more*
+  toggle. Whether the token *should* be visible to already-paired devices is an
+  extension-side question, and not the one-liner it looks like: `display: false`
+  would also take the QR out of the operator's own TUI, which is where it is
+  needed — the alternative is a structured pairing view built from the
+  `details: {uri, token, expiresAt, roomId, name}` the same message already
+  carries, and that is a change on both sides plus a corpus scenario.
+
 - **A `read` of an image file is transcoded on the way in.** `docs/images/
 01-welcome.png` is `PNG image data, 1206 x 2622`; what reached the log was
   `mimeType: "image/jpeg"` with a caption saying `original 1206x2622, displayed

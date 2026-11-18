@@ -278,6 +278,30 @@ textarea {
 .body a {
   color: var(--accent);
 }
+/* Long bodies are clamped behind a control (see `syncClamp` in app.ts): a
+ * pairing QR notice and a model counting to 2000 are both real rows, and both
+ * used to take over the screen. */
+.item.notice .body,
+.item.assistant .body {
+  max-height: 12rem;
+  overflow: hidden;
+}
+.item.expanded .body {
+  max-height: none;
+}
+button.clamp {
+  margin-top: 6px;
+  padding: 2px 10px;
+  font-size: 11px;
+  color: var(--muted);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+}
+button.clamp:hover {
+  color: var(--fg);
+}
 .item.streaming .body::after {
   content: "▌";
   color: var(--accent);

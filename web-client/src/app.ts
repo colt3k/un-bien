@@ -829,10 +829,40 @@ export class App {
     body.replaceChildren(...blockNodes(parseMarkdown(item.text)))
   }
 
+  /** Clamp a body that is taller than it is useful, behind an explicit control.
+   *  Two real cases from the live session: `/unbien pair` sends its QR as a custom
+   *  message (`extension/src/commands/pairing.ts:124`, `display: true`), which
+   *  lands as one notice row ~30 lines tall whose pairing token is then visible to
+   *  every attached client; and a model that counts to 2000 fills the scroll area
+   *  with digits. The row stays the row — the fold and the corpus are untouched —
+   *  it just does not dominate the screen. */
+  private syncClamp(node: HTMLElement): void {
+    const body = node.querySelector<HTMLElement>(".body")
+    if (!body) return
+    const toggle = node.querySelector<HTMLElement>("button.clamp")
+    const needsClamp = body.scrollHeight > body.clientHeight + 24
+    if (!needsClamp) {
+      node.classList.remove("expanded")
+      toggle?.remove()
+      return
+    }
+    if (toggle) return
+    const button = el("button", "clamp")
+    button.type = "button"
+    button.textContent = "show more"
+    button.addEventListener("click", () => {
+      const expanded = node.classList.toggle("expanded")
+      button.textContent = expanded ? "show less" : "show more"
+    })
+    node.append(button)
+  }
+
   private patchItem(node: HTMLElement, item: TranscriptItem): void {
     node.classList.toggle("streaming", item.streaming)
     if (item.kind !== "tool") {
       this.setBody(node, item)
+      if (item.kind === "notice" || item.kind === "assistant")
+        this.syncClamp(node)
       this.syncImages(node, item)
       return
     }
