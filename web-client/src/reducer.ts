@@ -22,6 +22,7 @@ import {
   stableHash,
 } from "./content-identity.js"
 import {
+  canonicalToolResult,
   projectionBlocks,
   resolveToolResult,
   type ToolFace,
@@ -493,7 +494,11 @@ export class TranscriptReducer {
       case "tool_execution_end": {
         const card = this.toolsById.get(String(rpc.toolCallId ?? ""))
         if (!card) break
-        const result = asFrame(rpc.result)
+        // Canonical, not the live object: pi's `result` also carries
+        // `structuredContent` (which repeats an image's base64 a second time),
+        // `usage` and friends that the stored record never has. Keeping them
+        // would make this card differ from its own replay.
+        const result = canonicalToolResult(rpc.result) as Frame | undefined
         if (!card.hunks && Array.isArray(env.aux?.hunks))
           card.hunks = env.aux?.hunks as unknown[]
         card.images = countImages(result?.content)
@@ -573,16 +578,28 @@ export class TranscriptReducer {
         this.ended = false
         break
       }
-      case "turn_end":
+      case "turn_end": {
+        // A turn ending is NOT the session ending, and NOT the end of the turn
+        // as far as the fold is concerned: the reference's `streaming` flag is
+        // `activeTurnID != nil`, and only `agent_settled` (or a shutdown) clears
+        // it — an agent that chains turns stays streaming in between. What
+        // `turn_end` does is close the open bubble.
+        this.closeOpenAssistant()
+        break
+      }
       case "agent_end":
+        // The reference has no `agent_end` case at all: pi sends it before
+        // `agent_settled`, and the settled frame is the one that ends the turn.
+        break
       case "agent_settled": {
-        // A turn ending is NOT the session ending. `ended` means the machine
-        // stopped being drivable, and only `session_shutdown` says that; the
-        // corpus asserts `ended == false` after a completed turn for a reason.
+        // `ended` means the machine stopped being drivable, and only
+        // `session_shutdown` says that; the corpus asserts `ended == false`
+        // after a completed turn for a reason.
         this.streaming = false
-        // Any row still marked streaming is stale once the turn settles.
+        // Any row still marked streaming is stale once the agent settles.
         for (const item of this.items)
           if (item.kind !== "tool") item.streaming = false
+        this.closeOpenAssistant()
         break
       }
       case "session_shutdown": {
@@ -644,7 +661,11 @@ export class TranscriptReducer {
         break
       case "text_end":
       case "thinking_end":
-        if (typeof event.content === "string") item.text = event.content
+        // The `_end` events carry the whole block, and the reference IGNORES
+        // them: the deltas are the record of what was streamed, and overwriting
+        // with the settled block re-writes text the viewer already watched. It
+        // also loses nothing in practice — the settled content arrives again on
+        // the entry replay, where the match loop owns the row.
         item.streaming = false
         break
       default:
@@ -777,7 +798,9 @@ export class TranscriptReducer {
       // never lost, and the row keeps the position the viewer watched.
       const item = this.touch(kind, this.openAssistant)
       item.streaming = false
-      if (text.length > item.text.length) item.text = text
+      // No text is copied from the settled message: what streamed is what the
+      // viewer watched, and the reference's live settle attaches images and
+      // closes the bubble without touching the text the deltas built.
       this.attachImages(item, message.content)
       this.identifyIndex.set(key, this.openAssistant)
       this.pendingRows.add(this.openAssistant)
@@ -1095,6 +1118,19 @@ export class TranscriptReducer {
 
   setLeaf(id: string | null): void {
     this.leafId = id
+  }
+
+  /** Close whatever streaming row is open — reference `closeOpenAssistant`.
+   *  The rows stop streaming and stay exactly where they are; nothing is
+   *  appended, nothing is re-written. */
+  private closeOpenAssistant(): void {
+    for (const row of [this.openAssistant, this.openReasoning]) {
+      if (row === null) continue
+      const item = this.byRow.get(row)
+      if (item) item.streaming = false
+    }
+    this.openAssistant = null
+    this.openReasoning = null
   }
 
   /** Turn state is pi's to know, not inferable from history: a completed

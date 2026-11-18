@@ -1,0 +1,11 @@
+{
+  "origin": "real-capture",
+  "source": "`scripts/dump-entries.ts --watch 300` on the live room (QlEDzdZoHZWc): one complete turn, frames 933..1171 of the capture, recorded as the machine pushed them. The first fixture in this corpus captured from the LIVE plane rather than from `get_entries`.",
+  "captured": "2026-11-18",
+  "modes": [
+    "live"
+  ],
+  "scrub": "Streaming `delta` strings, message text and thinking \u2192 \u00ablength\u00bb (counts and order kept, which is what a fold consumes); image `data` \u2192 a valid 1x1 PNG for both copies (see 014's note on why undecodable filler is vacuous); paths replaced. Ids, tool names, keys, durations and `structuredContent`/`usage` presence kept \u2014 the extras are part of what is under test.",
+  "description": "One real turn on the live plane: turn_start, three messages (assistant thinking+toolCall, toolResult, assistant text) built from 229 `message_update` deltas, `tool_execution_start` / `tool_execution_end` for a `read`, then turn_end. Pins: (a) the image arrives TWICE over the wire \u2014 inside `tool_execution_end.result.content` and again in the later `message_end` toolResult \u2014 and the card counts it ONCE; (b) pi's live `result` also carries `structuredContent` (repeating the same base64 a third time) plus `usage`/`isError`, which the reference's `canonicalToolResult` (`SessionState+ToolResult.swift:20`) drops so a live card cannot resolve a different face from its own replay \u2014 this client now matches; (c) `tool_execution_update.partialResult` is `{content: []}`, not a string; (d) thinking and text stream as separate blocks of ONE assistant message, and the settled content shape is [thinking, toolCall] with no text \u2014 matching what 011/012 showed on replay.",
+  "note": "Frame window chosen at a turn boundary (`turn_start` .. `turn_end`) so the scenario is self-contained: no resume, no entry tree, no panels. The subagent/plan panels ride `{evt}` envelopes and appeared in no captured turn yet."
+}

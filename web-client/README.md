@@ -156,6 +156,39 @@ Screenshot of a live turn: `/tmp/unbien-smoke/web-client-live.png`.
   on the card, and block order is not something a client may assume. (The pair is
   captured, not authored — at entry 2060 of a harnager session — but re-parented
   onto this chain, which `meta.json` says.)
+- **`015` is the first scenario captured from the LIVE plane**, recorded with
+  `scripts/dump-entries.ts --watch 300` (it walks entries, then writes every
+  envelope the machine pushes, one per line). One complete turn: 229
+  `message_update` deltas, the assistant's `message_end` with `[thinking,
+toolCall]`, `tool_execution_start`/`_end` for a `read`, the toolResult
+  `message_end`, `turn_end`. It found three places where I had quietly not been
+  the reference:
+  - **The image arrives three times per turn** — in `tool_execution_end.result
+.content`, again in `result.structuredContent` (pi's machine-readable copy,
+    repeating the same 142 KB base64), and again in the later `message_end`
+    toolResult. The card counts it **once**. And the live `result` carries fields
+    the stored record never has (`structuredContent`, `usage`, a nested
+    `isError`), so I now canonicalize it to `{content, details?}` the way
+    `canonicalToolResult` (`SessionState+ToolResult.swift:20`) does — keeping the
+    live object both retained the payload twice and let a live card resolve a
+    different face from its own replay.
+  - **Settling never re-writes what streamed.** `text_end`/`thinking_end` carry
+    the whole block, and the reference ignores them outright; a live `message_end`
+    settles (attaches images, stops the streaming flag) without touching the text
+    the deltas built. I was overwriting both. In production the two strings are
+    identical, so this only shows up under a scrubbed fixture — which is exactly
+    why the corpus caught it and a live demo would not.
+  - **A turn is open until `agent_settled`, not until `turn_end`.** The
+    reference's `streaming` flag is `activeTurnID != nil`, and `turn_end` only
+    closes the bubble; `agent_end` has no case at all. I was clearing it at
+    `turn_end`, which for a chained agent means the transcript stops looking live
+    between turns.
+- **A `read` of an image file is transcoded on the way in.** `docs/images/
+01-welcome.png` is `PNG image data, 1206 x 2622`; what reached the log was
+  `mimeType: "image/jpeg"` with a caption saying `original 1206x2622, displayed
+at 920x2000. Multiply coordinates by 1.31…`. pi re-encodes and downscales, and
+  puts the dimensions in prose. A client that labels a picture from its file path
+  would be lying about both format and size.
 - **A pasted screenshot is not an image on the wire.** Pasting one at pi's prompt
   writes a user message with one `text` block holding a temp path
   (`/var/folders/…/pasted-image-20261117-203807-….png`) — no base64, no image
@@ -166,7 +199,7 @@ Screenshot of a live turn: `/tmp/unbien-smoke/web-client-live.png`.
 ## What is not here
 
 - **Conformance covers the projection, not the pixels.** `test/corpus.test.ts`
-  runs all fourteen `contracts/conformance/` scenarios with no skips and compares,
+  runs all fifteen `contracts/conformance/` scenarios with no skips and compares,
   in **render order**: `(kind, row)`, `text` (prefix — the corpus scrubs long
   strings and escapes their newlines), `streaming`, `images`, `state`, `tool`,
   `blocks` (the tool card's result face, `src/tool-faces.ts`), `flags`, `leafId`,

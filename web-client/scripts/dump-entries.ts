@@ -14,6 +14,12 @@
  *     --pair  'unbien://pair?t=…&epk=…&n=…&rm=…' \
  *     --out   /tmp/unbien-fixture.json
  *
+ * `--watch <seconds>` adds a LIVE-plane capture: after the entry walk, every
+ * envelope the machine pushes is appended to `--watch-out` as one JSON per line.
+ * That is how you record the shapes an entry log cannot show — an image
+ * streaming inside `tool_execution_end`, a `subagents:*` panel, an ask opening
+ * live. Drive the session during the window.
+ *
  * (`npx tsx`, not `node --experimental-strip-types`: this package writes
  * extensionless-`.js` specifiers for the browser's sake, and Node's type
  * stripping will not resolve them to `.ts`.)
@@ -111,9 +117,12 @@ async function main(): Promise<number> {
     console.error(
       "usage: dump-entries --relay http://host:3000 (--pair unbien://pair?… | " +
         "--peer <machine epk>) [--room <id>] [--out <path>] [--max-pages N] " +
-        "[--identity <path>] [--include-panels]\n" +
+        "[--identity <path>] [--include-panels] [--watch <secs>]\n" +
         "  --pair pairs (and needs a fresh code, valid 60s unless " +
-        "`/unbien pair --ttl 600`); --peer reuses the stored device identity.",
+        "`/unbien pair --ttl 600`); --peer reuses the stored device identity.\n" +
+        "  --watch records every envelope pushed after the walk to --watch-out " +
+        "(default /tmp/unbien-live.jsonl): the live plane, which get_entries " +
+        "cannot show.",
     )
     return 2
   }
@@ -275,6 +284,45 @@ async function main(): Promise<number> {
     state,
     leafId,
     entries,
+  }
+
+  // The live plane: whatever the machine pushes from here on is recorded, one
+  // envelope per line. Subscribing AFTER the walk is deliberate — the walk's own
+  // replay frames are not live, and mixing them in would make a fixture that
+  // claims to test streaming but tests attach instead.
+  const watchSeconds = Number(arg("watch") ?? 0)
+  if (watchSeconds > 0) {
+    const watchOut = resolve(arg("watch-out") ?? "/tmp/unbien-live.jsonl")
+    const frames: unknown[] = []
+    const counts = new Map<string, number>()
+    client.on("envelope", (env) => {
+      frames.push(env)
+      const rpc = env.rpc as Record<string, unknown> | undefined
+      const evt = env.evt as Record<string, unknown> | undefined
+      const key =
+        rpc && typeof rpc.type === "string"
+          ? `rpc:${rpc.type}`
+          : evt && typeof evt.channel === "string"
+            ? `evt:${evt.channel}`
+            : "other"
+      counts.set(key, (counts.get(key) ?? 0) + 1)
+    })
+    console.log(
+      `watching for ${watchSeconds}s — drive the session now (a turn, a tool call, a panel).`,
+    )
+    const started = Date.now()
+    while (Date.now() - started < watchSeconds * 1000) {
+      await new Promise((r) => setTimeout(r, 5000))
+      console.log(
+        `  ${frames.length} frames, ${((Date.now() - started) / 1000) | 0}s`,
+      )
+    }
+    mkdirSync(dirname(watchOut), { recursive: true })
+    writeFileSync(watchOut, frames.map((f) => JSON.stringify(f)).join("\n"))
+    console.log(`wrote ${watchOut} (${frames.length} frames)`)
+    for (const [key, n] of [...counts].sort((a, b) => b[1] - a[1])) {
+      console.log(`  ${n}× ${key}`)
+    }
   }
 
   if (flag("include-panels")) {

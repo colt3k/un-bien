@@ -588,6 +588,32 @@ function settledFace(
   return { kind: "text", text: trimLines(joined) }
 }
 
+/** The ONE result shape a card holds, whichever path delivered it — reference
+ *  `SessionState+ToolResult.swift`'s `canonicalToolResult`. pi's LIVE
+ *  `tool_execution_end.result` carries extra fields the stored record has no
+ *  copy of — `structuredContent`, `usage`, `terminate`, a nested `isError`. A
+ *  captured image read carries the same 142 KB base64 in `content` AND in
+ *  `structuredContent`, so keeping the live object verbatim both retains the
+ *  payload twice and lets a live card resolve a different face from its own
+ *  replay. Accepts pi's object, a bare content array, or a joined-text string;
+ *  an object with no content is a foreign shape and is left alone. */
+export function canonicalToolResult(raw: unknown): unknown {
+  if (raw === undefined || raw === null) return undefined
+  if (typeof raw === "string") return { content: [{ type: "text", text: raw }] }
+  if (Array.isArray(raw)) return { content: raw }
+  if (typeof raw === "object") {
+    const fields = raw as Frame
+    const out: Frame = {}
+    if (Array.isArray(fields.content)) out.content = fields.content
+    else if (typeof fields.content === "string")
+      out.content = [{ type: "text", text: fields.content }]
+    else return raw
+    if ("details" in fields) out.details = fields.details
+    return out
+  }
+  return raw
+}
+
 export function resolveToolResult(options: {
   tool: string
   args: Frame

@@ -17,7 +17,7 @@ function text(frame: Record<string, unknown>): EnvelopeMessage {
 }
 
 describe("streaming fold", () => {
-  it("coalesces text deltas into one row, then takes message_end as authoritative", () => {
+  it("keeps what streamed: message_end settles the row, it does not re-write it", () => {
     const snapshot = fold([
       text({
         type: "message_start",
@@ -53,9 +53,12 @@ describe("streaming fold", () => {
     ]).snapshot()
 
     expect(snapshot.items).toHaveLength(1)
+    // The deltas are the record of what the viewer watched. The settled frame
+    // carries MORE text here, and the reference deliberately does not swap it
+    // in — same rule as the `text_end` event, which is ignored outright.
     expect(snapshot.items[0]).toMatchObject({
       kind: "assistant",
-      text: "hello there",
+      text: "hello",
       streaming: false,
     })
     expect(snapshot.items[0]?.row).toBe("assistant#1")
@@ -108,8 +111,8 @@ describe("streaming fold", () => {
     expect(snapshot.items[1]).toMatchObject({ text: "answer", streaming: true })
   })
 
-  it("marks the turn settled so no row stays streaming", () => {
-    const snapshot = fold([
+  it("keeps the turn open until agent_settled, and settles the rows there", () => {
+    const reducer = fold([
       text({ type: "turn_start" }),
       text({
         type: "message_update",
@@ -120,8 +123,17 @@ describe("streaming fold", () => {
         },
       }),
       text({ type: "turn_end" }),
-    ]).snapshot()
-    expect(snapshot.flags.streaming).toBe(false)
+    ])
+    const afterTurnEnd = reducer.snapshot()
+    // `turn_end` closes the bubble but does NOT end the turn: the reference's
+    // streaming flag is `activeTurnID != nil`, cleared only by agent_settled —
+    // an agent chaining turns stays streaming in between.
+    expect(afterTurnEnd.flags.streaming).toBe(true)
+    expect(afterTurnEnd.items.every((item) => !item.streaming)).toBe(true)
+    reducer.apply(text({ type: "agent_end" }))
+    expect(reducer.snapshot().flags.streaming).toBe(true)
+    reducer.apply(text({ type: "agent_settled" }))
+    const snapshot = reducer.snapshot()
     // A turn settling is NOT the session ending. `ended` means the machine
     // stopped being drivable, and getting that wrong dims the transcript and
     // kills the composer after every reply.
@@ -684,5 +696,89 @@ describe("compaction", () => {
       .items.find((i) => i.kind === "compaction")!
     expect(marker.replayStable).toBe(true)
     expect(marker.tokensBefore).toBe(900)
+  })
+})
+
+describe("a tool result's live shape", () => {
+  // Captured from a live room (corpus scenario 015): pi's `tool_execution_end`
+  // carries the image in `content` AND repeats the same base64 in
+  // `structuredContent`, along with fields the stored record never has.
+  const IMAGE =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+  const liveResult = {
+    content: [
+      { type: "text", text: "Read image file [image/jpeg]" },
+      { type: "image", mimeType: "image/jpeg", data: IMAGE },
+    ],
+    structuredContent: { type: "image", data: IMAGE },
+    usage: { input: 0, output: 0 },
+    isError: false,
+  }
+
+  it("keeps only the canonical {content, details?} on the card", () => {
+    const reducer = new TranscriptReducer()
+    reducer.apply({
+      rpc: {
+        type: "tool_execution_start",
+        toolCallId: "c1",
+        toolName: "read",
+        args: { path: "docs/images/01-welcome.png" },
+      },
+    })
+    reducer.apply({
+      rpc: {
+        type: "tool_execution_end",
+        toolCallId: "c1",
+        toolName: "read",
+        result: liveResult,
+        isError: false,
+        durationMs: 423,
+      },
+    })
+    const card = reducer.snapshot().items.find((i) => i.kind === "tool")!
+    // One image, counted once — not once per copy on the wire.
+    expect(card.images).toBe(1)
+    expect(card.imageParts).toHaveLength(1)
+    expect(card.blocks).toEqual(["file"])
+    // The live extras are gone: a card must not hold a field its own replay
+    // cannot produce (and must not hold the same 142 KB string twice).
+    expect(card.result).toEqual({ content: liveResult.content })
+  })
+
+  it("live then replay leaves one card with one image", () => {
+    const reducer = new TranscriptReducer()
+    reducer.apply({
+      rpc: {
+        type: "tool_execution_start",
+        toolCallId: "c1",
+        toolName: "read",
+        args: { path: "x.png" },
+      },
+    })
+    reducer.apply({
+      rpc: {
+        type: "tool_execution_end",
+        toolCallId: "c1",
+        toolName: "read",
+        result: liveResult,
+        isError: false,
+      },
+    })
+    reducer.apply({
+      rpc: {
+        type: "message_end",
+        message: {
+          role: "toolResult",
+          toolCallId: "c1",
+          toolName: "read",
+          timestamp: 10,
+          content: liveResult.content,
+        },
+      },
+    })
+    const cards = reducer.snapshot().items.filter((i) => i.kind === "tool")
+    expect(cards).toHaveLength(1)
+    expect(cards[0]!.images).toBe(1)
+    expect(cards[0]!.state).toBe("ok")
   })
 })
