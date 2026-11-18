@@ -3,8 +3,8 @@ import UnBienCore
 
 /// Default SF Symbol for a panel key when the wire doesn't name one.
 func panelSymbol(_ panel: PanelState) -> String {
-    if let icon = panel.icon, !icon.isEmpty { return icon }
-    switch panel.key {
+    if let icon = panel.panel.icon, !icon.isEmpty { return icon }
+    switch panel.panel.key {
     case "plan": return "checklist"
     case "subagents", "agents": return "person.2.badge.gearshape"
     default: return "square.grid.2x2"
@@ -24,15 +24,16 @@ struct PanelHostView: View {
     var body: some View {
         NavigationStack {
             Group {
-                switch panel.key {
-                case "plan": PlanPanelView(items: PlanModel.items(from: panel.data))
+                switch panel.panel.key {
+                case "plan": PlanPanelView(items: PlanModel.items(fromItems: panel.panel.items))
                 case "subagents", "agents":
-                    SubagentsPanelView(items: PlanModel.agentItems(from: panel.data),
+                    SubagentsPanelView(items: PlanModel.agentItems(fromItems: panel.panel.items),
                                        onSelect: onSelectSubagent)
-                default: GenericPanelView(data: panel.data)
+                // An unknown panel's own items, as the fold kept them.
+                default: GenericPanelView(data: .array(panel.panel.items))
                 }
             }
-            .navigationTitle(panel.title)
+            .navigationTitle(panel.panel.title ?? panel.panel.key)
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif

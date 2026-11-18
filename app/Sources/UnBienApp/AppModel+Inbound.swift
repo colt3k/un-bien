@@ -124,38 +124,44 @@ extension AppModel {
         }
     }
 
-    // Only reached from the envelope PANEL path: {evt channel:"panel"} decodes
-    // to a stock `panel_update` frame and routes here. All other stock session
-    // frames are gone from the fork (E1–E7), so no general receive fallback.
-    func route(_ message: ServerMessage, relayID: UUID, peer: String, sessionID: String) {
-        let key = "\(relayID.uuidString):\(peer):\(sessionID)"
-        switch message {
-        case let .panelUpdate(panelKey, title, icon, data):
-            let wasOpen = panels[key]?[panelKey]?.changed == false && openPanel == "\(key):\(panelKey)"
-            var forSession = panels[key] ?? [:]
-            forSession[panelKey] = PanelState(key: panelKey, title: title, icon: icon,
-                                              data: data, changed: !wasOpen)
-            panels[key] = forSession
-            // Subagents panel rows carry each child's live status (meta.sessionId)
-            // — fold it into the child LiveSessions so the HOME status chip
-            // updates live. The session_info pull only fires on room announce /
-            // reconnect, so without this the chip sticks on running until then.
-            if panelKey == "subagents" {
-                var updates: [String: String] = [:]  // LiveSession key -> status
-                for item in data["items"]?.arrayValue ?? [] {
-                    guard let sid = item["meta"]?["sessionId"]?.stringValue,
-                          let status = item["status"]?.stringValue else { continue }
-                    for (k, s) in sessions
-                    where s.sessionID == sid && s.relayID == relayID && s.peerEPK == peer {
-                        updates[k] = status
-                    }
-                }
-                for (k, status) in updates {
-                    sessions[k]?.status = status
+    /// Mirror core's folded panels into the app's badge store, and refresh the
+    /// subagent status chips from the same items. Core folds `panel_update`
+    /// frames into `EnvelopeReducer.panels` (the fold the conformance corpus
+    /// compares); this app used to decode the SAME frame a second time into a
+    /// stock `panel_update` and keep its own raw `data` — two folds of one frame,
+    /// with the unchecked one driving the UI.
+    func applyPanels(from reducer: EnvelopeReducer, key: String,
+                     relayID: UUID, peer: String) {
+        guard !reducer.panels.isEmpty else { return }
+        var forSession = panels[key] ?? [:]
+        for snapshot in reducer.panels {
+            let seen = forSession[snapshot.key]
+            let changed = PanelBadge.changed(
+                previous: seen?.panel,
+                alreadyFlagged: seen?.changed ?? false,
+                currentlyOpen: openPanel == "\(key):\(snapshot.key)",
+                next: snapshot)
+            forSession[snapshot.key] = PanelState(key: snapshot.key, panel: snapshot,
+                                                  changed: changed)
+        }
+        panels[key] = forSession
+        // Subagent rows carry each child's live status (meta.sessionId) — fold it
+        // into the child LiveSessions so the HOME status chip updates live. The
+        // session_info pull only fires on room announce / reconnect, so without
+        // this the chip sticks on running until then.
+        for snapshot in reducer.panels where snapshot.key == "subagents" {
+            var updates: [String: String] = [:]  // LiveSession key -> status
+            for item in snapshot.items {
+                guard let sid = item["meta"]?["sessionId"]?.stringValue,
+                      let status = item["status"]?.stringValue else { continue }
+                for (k, s) in sessions
+                where s.sessionID == sid && s.relayID == relayID && s.peerEPK == peer {
+                    updates[k] = status
                 }
             }
-        default:
-            break
+            for (k, status) in updates {
+                sessions[k]?.status = status
+            }
         }
     }
 
@@ -566,12 +572,12 @@ extension AppModel {
                 commitFold(key, reducer)
             }
         }
-        if let evt = env.evt, evt.channel == "panel",
-           let pdata = try? JSONEncoder().encode(evt.data),
-           let pline = String(data: pdata, encoding: .utf8),
-           let pmsg = try? Codec.decodeServer(pline) {
-            route(pmsg, relayID: relayID, peer: envelope.peer,
-                  sessionID: env.sessionId ?? envelope.room)
+        // Panels are envelope-only: {evt channel:"panel"} carries a panel_update,
+        // and `reducer.apply(env)` above already folded it (core's applyEvt). What
+        // the app needs is the badge and the child-session chips — read from the
+        // fold, never re-decoded.
+        if env.evt?.channel == "panel" {
+            applyPanels(from: reducer, key: key, relayID: relayID, peer: envelope.peer)
         }
         handleExtensionUi(env: env, key: key)
         handleRpcResponses(env: env, key: key, envelope: envelope, relayID: relayID)

@@ -169,16 +169,18 @@ public enum MachineSessionListing: Sendable {
     case timeout
 }
 
-/// A named side-panel (plan, subagents, …) mirrored from a cooperating event
-/// source, surfaced as a top-bar item that badges when it changes.
+/// A named side-panel (plan, subagents, …) as the FOLD reports it, plus the one
+/// thing the fold cannot know: whether this reader has looked at it since.
 public struct PanelState: Identifiable, Equatable, Sendable {
     public let key: String
-    public var title: String
-    public var icon: String?
-    public var data: JSONValue
-    /// True since the last update; cleared when the user opens the panel.
+    /// Core's folded panel (`EnvelopeReducer.panels`) — title, icon, items. The
+    /// app deliberately keeps no copy of the wire payload: it used to decode the
+    /// same `panel_update` a second time and store the raw `data`, so the UI and
+    /// the corpus were driven by two folds of one frame, free to disagree.
+    public var panel: PanelSnapshot
+    /// True since the last update this reader has seen; cleared when the panel opens.
     public var changed: Bool
-    public var id: String { key }
+    public var id: String { panel.key }
 }
 
 /// A pairing invite that arrived via the `unbien://` URL scheme (system Camera

@@ -43,6 +43,25 @@ public struct PanelSnapshot: Equatable, Sendable {
     public var items: [JSONValue]
 }
 
+/// The badge rule for panels — the one panel decision that is NOT about the wire,
+/// stated next to the fold so it can be tested instead of buried in a view model.
+public enum PanelBadge {
+    /// Should this panel light its "unseen" badge?
+    ///
+    /// - Identical re-send: change NOTHING. The extension coalesces and re-sends
+    ///   the same snapshot on a tick (one capture held 12 frames for 2 sources,
+    ///   payload unchanged), and re-lighting a panel the reader already looked at
+    ///   trains them to ignore the badge — which is the opposite of what it is for.
+    /// - Real change: badge, unless the reader is looking at that panel right now.
+    /// - First time the panel exists here: badge, same open-panel carve-out.
+    public static func changed(previous: PanelSnapshot?, alreadyFlagged: Bool,
+                               currentlyOpen: Bool, next: PanelSnapshot) -> Bool {
+        if previous == nil { return !currentlyOpen }
+        if previous == next { return alreadyFlagged }
+        return !currentlyOpen
+    }
+}
+
 public struct UINotification: Equatable, Sendable {
     public var level: String
     public var message: String

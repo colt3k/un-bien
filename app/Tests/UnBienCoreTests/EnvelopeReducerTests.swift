@@ -448,4 +448,74 @@ final class EnvelopeReducerTests: XCTestCase {
         XCTAssertEqual(reducer.session.items.count, 2,
                        "non-authoritative regression keeps the superset (trunc-keep)")
     }
+
+    // MARK: - the live panel plane
+
+    /// A `panel_update` on `{evt channel:"panel"}` folds into `panels`, and a
+    /// later update REPLACES the whole panel (the extension coalesces and re-sends
+    /// full snapshots; merging per item would grow a panel forever).
+    func testPanelUpdateFoldsAndReplaces() {
+        func frame(key: String, items: [JSONValue]) -> EnvelopeMessage {
+            EnvelopeMessage(evt: EnvelopeEvt(channel: "panel", data: .object([
+                "type": .string("panel_update"),
+                "key": .string(key),
+                "title": .string(key == "plan" ? "Plan" : "Agents"),
+                "data": .object(["items": .array(items)]),
+            ])))
+        }
+        var reducer = EnvelopeReducer()
+        reducer.apply([frame(key: "subagents", items: [
+            .object(["id": .string("agent:sa1"), "status": .string("in_progress")]),
+        ]), frame(key: "plan", items: [
+            .object(["id": .string("t1"), "status": .string("done")]),
+        ])])
+        XCTAssertEqual(reducer.panels.map(\.key), ["subagents", "plan"],
+                       "first-seen order, not sorted")
+        XCTAssertEqual(reducer.panels[0].items.count, 1)
+
+        reducer.apply([frame(key: "subagents", items: [
+            .object(["id": .string("agent:sa1"), "status": .string("done")]),
+            .object(["id": .string("agent:sa2"), "status": .string("in_progress")]),
+        ]), frame(key: "subagents", items: [
+            .object(["id": .string("agent:sa1"), "status": .string("done")]),
+            .object(["id": .string("agent:sa2"), "status": .string("done")]),
+        ])])
+        XCTAssertEqual(reducer.panels.map(\.key), ["subagents", "plan"],
+                       "a replaced panel keeps its position")
+        XCTAssertEqual(reducer.panels[0].items.count, 2, "replace, not merge")
+
+        // A frame on the same channel that is NOT a panel update must not clear a
+        // panel that is still full.
+        reducer.apply([EnvelopeMessage(evt: EnvelopeEvt(channel: "panel", data: .object([
+            "type": .string("something_else"),
+        ])))])
+        XCTAssertEqual(reducer.panels.count, 2)
+    }
+
+    /// The badge rule lives in core so it can be tested: an identical re-send
+    /// changes nothing, a real change badges, and an open panel never badges.
+    func testPanelBadgeRule() {
+        let one = PanelSnapshot(key: "plan", title: "Plan", icon: nil,
+                                items: [.object(["id": .string("t1")])])
+        let two = PanelSnapshot(key: "plan", title: "Plan", icon: nil,
+                                items: [.object(["id": .string("t1")]),
+                                        .object(["id": .string("t2")])])
+        XCTAssertTrue(PanelBadge.changed(previous: nil, alreadyFlagged: false,
+                                         currentlyOpen: false, next: one),
+                      "a panel appearing for the first time is news")
+        XCTAssertFalse(PanelBadge.changed(previous: nil, alreadyFlagged: false,
+                                          currentlyOpen: true, next: one),
+                       "and is not news while the reader is looking at it")
+        XCTAssertFalse(PanelBadge.changed(previous: one, alreadyFlagged: false,
+                                          currentlyOpen: false, next: one),
+                       "an identical re-send must not light the badge again")
+        XCTAssertTrue(PanelBadge.changed(previous: one, alreadyFlagged: true,
+                                         currentlyOpen: false, next: one),
+                       "an identical re-send must not CLEAR a badge either")
+        XCTAssertTrue(PanelBadge.changed(previous: one, alreadyFlagged: false,
+                                         currentlyOpen: false, next: two))
+        XCTAssertFalse(PanelBadge.changed(previous: one, alreadyFlagged: false,
+                                          currentlyOpen: true, next: two),
+                       "a change while the panel is open is already seen")
+    }
 }

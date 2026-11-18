@@ -179,11 +179,29 @@ public enum PlanModel {
         return object.items
     }
 
+    /// The same decode from an ALREADY-extracted item array — what core's
+    /// `PanelSnapshot.items` holds after the fold. Wrapping it back into a
+    /// `{items: …}` payload just to unwrap it again is how two shapes of the same
+    /// thing end up in one codebase.
+    public static func items(fromItems raw: [JSONValue]) -> [PlanItem] {
+        guard let encoded = try? JSONEncoder().encode(raw),
+              let decoded = try? JSONDecoder().decode([PlanItem].self, from: encoded) else { return [] }
+        return decoded
+    }
+
     /// Subagent items from a `subagents` panel payload, chronological by
     /// `startedAt` (mirrors pi-plan's `sortAgents`). Items without a start time
     /// keep insertion order behind those that have one.
     public static func agentItems(from data: JSONValue) -> [PlanItem] {
-        items(from: data)
+        sortedByStart(items(from: data))
+    }
+
+    public static func agentItems(fromItems raw: [JSONValue]) -> [PlanItem] {
+        sortedByStart(items(fromItems: raw))
+    }
+
+    private static func sortedByStart(_ items: [PlanItem]) -> [PlanItem] {
+        items
             .enumerated()
             .sorted { lhs, rhs in
                 let lStart = lhs.element.startedAt ?? Double(lhs.offset)
