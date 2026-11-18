@@ -9,8 +9,10 @@ import {
   resolveServiceRuntime,
   serviceEnv,
   serviceEnvNames,
+  globalPackageRoot,
+  packageManagerConfigured,
 } from "./service_env.js"
-import { _foreignBinOwner } from "./install.js"
+import { _foreignBinOwner, unlinkCliBinaries } from "./install.js"
 
 describe("service env", () => {
   test("defaults to the XDG and bun variables, plus UNBIEN_SERVICE_ENV", () => {
@@ -96,5 +98,30 @@ describe("unbien-admin link: which existing bins are kept", () => {
     const broken = join(home, "broken")
     symlinkSync(join(home, "gone"), broken)
     expect(_foreignBinOwner(broken, home)).toBeNull()
+  })
+})
+
+describe("package manager global tree", () => {
+  test("only an explicit package_manager counts as configured", () => {
+    expect(packageManagerConfigured({})).toBe(false)
+    expect(packageManagerConfigured({ package_manager: "bun" })).toBe(true)
+  })
+  test("bun's global packages live under BUN_INSTALL", () => {
+    expect(globalPackageRoot("bun", { BUN_INSTALL: "/b" })).toBe("/b/install/global/node_modules")
+  })
+})
+
+describe("unbien-admin unlink", () => {
+  test("keeps a package manager's link", () => {
+    const home = mkdtempSync(join(tmpdir(), "svc-unlink-"))
+    const global = join(home, "bun", "index.js")
+    mkdirSync(join(global, ".."), { recursive: true })
+    writeFileSync(global, "")
+    mkdirSync(join(home, ".local", "bin"), { recursive: true })
+    const bin = join(home, ".local", "bin", "unbien-admin")
+    symlinkSync(global, bin)
+    const r = unlinkCliBinaries(home)
+    expect(r.removed[0]?.existed).toBe(false)
+    expect(_foreignBinOwner(bin, home)).toBe(global)
   })
 })

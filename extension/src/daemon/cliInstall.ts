@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url"
 import { join } from "node:path"
 import { promisify } from "node:util"
 import { loadConfig } from "../config.js"
-import { globalInstallCommand, packageManager } from "./service_env.js"
+import { globalBinPath, globalInstallCommand, packageManager } from "./service_env.js"
 
 const execFileAsync = promisify(execFile)
 
@@ -83,7 +83,9 @@ export async function installCliPackage(
   // Verify: `unbien --version` (win32: npm writes unbien.cmd shims).
   let version: string | null = null
   try {
-    const bin = process.platform === "win32" ? "unbien.cmd" : "unbien"
+    // From the package manager's own bin dir: a different copy earlier on
+    // PATH (e.g. an older npm install) would otherwise answer.
+    const bin = globalBinPath(pm, "unbien")
     const { stdout: vOut } = await execFileAsync(bin, ["--version"], {
       timeout: 15_000,
     })
