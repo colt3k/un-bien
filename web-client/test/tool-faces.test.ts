@@ -94,6 +94,39 @@ describe("settled faces", () => {
     expect(projectionBlocks(view)).toEqual(["terminal"])
   })
 
+  it("bracketed text at the END of real output is not a notice", () => {
+    // Captured from a live session (corpus scenario 012): a `df` usage line
+    // whose last characters are brackets. `splitNotice` keys on the "\n\n["
+    // seam pi writes, so the whole line stays output. A resolver that only
+    // asked "does it end in ]?" would eat the usage text.
+    const text =
+      "usage: df [-g | -h | -k | -m] [-a | -s | -d depth] " +
+      "[-B blocksize] [-I mask] [-t threshold] [file ...]"
+    const view = ok("bash", { content: [{ type: "text", text }], details: {} })
+    expect(view.face.kind).toBe("terminal")
+    expect(view.face.notices).toEqual([])
+    expect(view.face.text).toBe(text)
+  })
+
+  it("a read truncated mid-file reports its offset from the TEXT alone", () => {
+    // The other half of the same capture: pi sent NO `details` at all on the
+    // replayed toolResult, so the continuation notice has nothing to
+    // corroborate it — it is recognised by its template, not by a payload.
+    const view = ok("read", {
+      content: [
+        {
+          type: "text",
+          text: "1\timport x\n2\tfoo\n\n[965 more lines in file. Use offset=201 to continue.]",
+        },
+      ],
+    })
+    expect(view.face.kind).toBe("file")
+    expect(view.face.notices).toEqual([
+      "965 more lines in file. Use offset=201 to continue.",
+    ])
+    expect(view.face.text).toBe("1\timport x\n2\tfoo")
+  })
+
   it("a shell command whose output IS a diff becomes terminal-diff", () => {
     const view = ok("bash", {
       content: [

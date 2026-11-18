@@ -1,0 +1,11 @@
+{
+  "origin": "real-capture",
+  "source": "web-client/scripts/dump-entries.ts against a live pi session (room QlEDzdZoHZWc), same session as 011 driven further",
+  "captured": "2026-11-18",
+  "modes": [
+    "live"
+  ],
+  "scrub": "Every string \u2192 \u00ablength\u00bb except structural keys (id, parentId, role, toolCallId, toolName, type, model, \u2026). EXCEPTION: a trailing pi notice matching its own template (`[\u2026 N more lines in file. Use offset=N to continue.]`) is kept verbatim, since it carries offsets rather than content and is the whole point of two pins below. `details`/`sections` keep keys, lose values; `usage` counts zeroed. Verified: no path, hostname, command line or string over 64 chars survives (except the notice templates).",
+  "description": "A long real session: 68 entries, 20 assistant turns, 18 tool results, 23 extension `custom` entries. Pins what the machine ACTUALLY sends on the replay plane: NO `details` on any toolResult (so faces resolve from the spec's empty-details path, and a diff face can never come from replay \u2014 the app's edit cards get their hunks from the `aux` sidecar instead); `read` results whose truncation notice rides the TEXT (`[965 more lines in file. Use offset=201 to continue.]`) with no `truncation` payload to corroborate it; a `bash` result ending in bracketed text that is NOT a notice (`\u2026 [-B blocksize] [-I mask] \u2026 [file ...]`) \u2014 a naive 'ends in ]' split would cut usage text out of the output; and assistant content that is always [thinking, toolCall], so the transcript is user rows plus cards and never an assistant bubble.",
+  "note": "The dump records the walk's pages, not their boundaries: 68 entries are written as one page plus the terminal page. The reference and this client both see the same shape, so paging across page boundaries stays 009's job."
+}

@@ -16,7 +16,7 @@ runs) is imported directly, aliased through Vite so three node-isms don't drag
 pnpm --filter web-client dev            # vite dev server, bound to all interfaces
 pnpm --filter web-client build          # dist/ (88 kB JS, 30 kB gzip)
 pnpm --filter web-client preview        # serve dist/ — use THIS on a phone
-pnpm --filter web-client test           # 77 passing (see Conformance)
+pnpm --filter web-client test           # 80 passing (see Conformance)
 ```
 
 On a phone, use `preview`, not `dev`: the dev server's HMR socket drops on a
@@ -86,7 +86,7 @@ prompts, tool output, paths — so it goes in `/tmp`, never in the repo.
 
 Screenshot of a live turn: `/tmp/unbien-smoke/web-client-live.png`.
 
-- **`011-real-replay-shapes` is captured, not authored** — a live pi session's
+- **`011`/`012` are captured, not authored** — a live pi session's
   `get_entries` pages, pulled by `scripts/dump-entries.ts`, with every string,
   thinking block, tool argument, tool output, system-prompt `sections` value and
   `details` value replaced by its length (`«62»`). Ids, the parentId chain,
@@ -100,11 +100,20 @@ Screenshot of a live turn: `/tmp/unbien-smoke/web-client-live.png`.
   `toolResult` entries with no `details` (still a terminal face), `custom`
   entries with entry-level `data` (no row), and a trailing assistant whose
   toolCall has no result yet (`pending`).
+- **`012` is the same session driven to 68 entries**, and it says plainly that
+  the replay plane sends **no `details` on any `toolResult`** — faces resolve from
+  the empty-details path, and a diff face can never come from replay (the app's
+  edit cards take their hunks from the `aux` sidecar). A `read` truncation notice
+  rides the TEXT (`[965 more lines in file. Use offset=201 to continue.]`) with no
+  payload to corroborate it, while a `bash` result ending in `[file ...]` proves
+  the split must key on pi's `\n\n[` seam and not on "ends in a bracket".
+  Reference projection: 22 items (18 tool cards — 15 terminal, 3 file — 2 user,
+  2 assistant), leaf `1c1b9b78`, no notices.
 
 ## What is not here
 
 - **Conformance covers the projection, not the pixels.** `test/corpus.test.ts`
-  runs all eleven `contracts/conformance/` scenarios with no skips and compares,
+  runs all twelve `contracts/conformance/` scenarios with no skips and compares,
   in **render order**: `(kind, row)`, `text` (prefix — the corpus scrubs long
   strings and escapes their newlines), `streaming`, `images`, `state`, `tool`,
   `blocks` (the tool card's result face, `src/tool-faces.ts`), `flags`, `leafId`,

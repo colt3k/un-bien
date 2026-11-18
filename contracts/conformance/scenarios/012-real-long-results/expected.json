@@ -1,0 +1,219 @@
+{
+  "flags" : {
+    "ended" : false,
+    "streaming" : false
+  },
+  "items" : [
+    {
+      "images" : 0,
+      "kind" : "user",
+      "row" : "97d17550",
+      "text" : "«62»"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_ce3cdabe4977472b9fa82853",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_98cd5fc17eac40fc8748ad0d",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_4a90e8dff3864739a5ab5286",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_1d313d3b7b9348ce9e1d5b1a",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "file"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_a44ee7ea1a2f40ed8f97dbf8",
+      "state" : "ok",
+      "tool" : "read"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_5646fcadd43048fd8b07150e",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "file"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_021b5a8d265c40cdb28b4275",
+      "state" : "ok",
+      "tool" : "read"
+    },
+    {
+      "blocks" : [
+        "file"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_d399ba59ffbe40dd89853397",
+      "state" : "ok",
+      "tool" : "read"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_3ce6e98ea8eb4561bccf236e",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_efe3fb7598ba41f29a161ef6",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_d0cb42ca34f44b65931fa7ab",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_aa0e5dc0fa9a4dccac2d809b",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "images" : 0,
+      "kind" : "assistant",
+      "row" : "ba1e918f",
+      "streaming" : false,
+      "text" : "«4906»"
+    },
+    {
+      "images" : 0,
+      "kind" : "user",
+      "row" : "23354f15",
+      "text" : "«44»"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_5558df6e170945e5bd6a11e0",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_f7c93dac52ba4bdfa8912db5",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_a0ef297c818f4b72a36d0b64",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_46e850a85e124abcb273ccd0",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_9fec49e349484c14bdcfd90f",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_407bc12583194409a064bd1f",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "images" : 0,
+      "kind" : "assistant",
+      "row" : "ced7934a",
+      "streaming" : false,
+      "text" : "«4339»"
+    }
+  ],
+  "leafId" : "1c1b9b78",
+  "subagents" : [
+
+  ],
+  "version" : 1
+}
