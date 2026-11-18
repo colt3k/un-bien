@@ -19,11 +19,24 @@ asserting against the SAME expected artifact).
 Each scenario declares `modes` in meta: one or both of
 
 - `live` — frames delivered as pushes, in order, to a fresh `SessionState`/reducer.
-- `replay` — the same logical content delivered as `get_entries` pages
-  (`applyEntries` + leaf beacons).
+- `replay` — durable content delivered as `get_entries` **response frames**
+  (`{type:"response", command:"get_entries", data:{entries, leafId}}`), which
+  both folds route to the entry tree — not as direct `applyEntries` calls, so the
+  paging rule itself is under test: a non-empty page's `leafId` is a resume
+  cursor, and the ACTIVE-LEAF BEACON is the `leafId` of the page that came back
+  EMPTY.
 
-Both runners run every declared mode; the interpreted state must be **identical
-across modes and across implementations**.
+Both runners run every declared mode (an unknown mode name fails the harness
+rather than going inert); the interpreted state must be **identical across modes
+and across implementations**.
+
+Honest status: every scenario declares exactly one mode, and no scenario yet
+feeds the SAME history through both. So "identical across modes" is currently a
+design claim, not an asserted fact — 019 is the first `replay` fixture and pins
+entry folding against its own golden. The paired fixture (one session, both
+planes, one golden) is the next thing to capture, and it needs both planes
+recorded from the same session — the durable log alone cannot say what the live
+plane would have produced.
 
 ## Normalized vocabulary (`expected.json`)
 

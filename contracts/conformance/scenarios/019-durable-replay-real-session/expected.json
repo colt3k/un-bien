@@ -1,0 +1,214 @@
+{
+  "flags" : {
+    "ended" : false,
+    "streaming" : false
+  },
+  "items" : [
+    {
+      "code" : "custom",
+      "customType" : "un-bien:pair-code",
+      "details" : {
+        "expiresAt" : 1795040007382,
+        "name" : "«9»",
+        "roomId" : "«12»",
+        "token" : "«22»",
+        "uri" : "«116»"
+      },
+      "kind" : "notice",
+      "row" : "cust2mpv37dmt3fti",
+      "text" : "«1154»"
+    },
+    {
+      "images" : 0,
+      "kind" : "user",
+      "row" : "da802c59",
+      "text" : "«93»"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_0ed5fc419d2e472ebe6f8da9",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "file"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_7558670382b745908442d130",
+      "state" : "ok",
+      "tool" : "read"
+    },
+    {
+      "images" : 0,
+      "kind" : "assistant",
+      "row" : "51a2b1ee",
+      "streaming" : false,
+      "text" : "«762»"
+    },
+    {
+      "images" : 0,
+      "kind" : "user",
+      "row" : "f0b48622",
+      "text" : "«38»"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_5e2b375f98a24dcfbecf3ca5",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "images" : 0,
+      "kind" : "assistant",
+      "row" : "15aae183",
+      "streaming" : false,
+      "text" : "«160»"
+    },
+    {
+      "images" : 0,
+      "kind" : "user",
+      "row" : "6a07db40",
+      "text" : "«40»"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_d11930754d7643369f5e2d20",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "images" : 0,
+      "kind" : "assistant",
+      "row" : "0af4dbf1",
+      "streaming" : false,
+      "text" : "«100»"
+    },
+    {
+      "images" : 0,
+      "kind" : "user",
+      "row" : "3c9131a1",
+      "text" : "«99»"
+    },
+    {
+      "blocks" : [
+        "error"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_dfba667d81314eaa96bc9cc0",
+      "state" : "failed",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_b01a9b04c3b44cc496b565f2",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "images" : 0,
+      "kind" : "assistant",
+      "row" : "1cabc839",
+      "streaming" : false,
+      "text" : "«663»"
+    },
+    {
+      "images" : 0,
+      "kind" : "user",
+      "row" : "88f68f8e",
+      "text" : "«63»"
+    },
+    {
+      "images" : 0,
+      "kind" : "assistant",
+      "row" : "fd95851c",
+      "streaming" : false,
+      "text" : "«1491»"
+    },
+    {
+      "images" : 0,
+      "kind" : "user",
+      "row" : "0aa4a3dc",
+      "text" : "«64»"
+    },
+    {
+      "images" : 0,
+      "kind" : "assistant",
+      "row" : "ab0bf989",
+      "streaming" : false,
+      "text" : "«8892»"
+    },
+    {
+      "images" : 0,
+      "kind" : "user",
+      "row" : "83a33abf",
+      "text" : "«90»"
+    },
+    {
+      "blocks" : [
+        "file"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_974664266835410a931e34bc",
+      "state" : "ok",
+      "tool" : "read"
+    },
+    {
+      "images" : 0,
+      "kind" : "assistant",
+      "row" : "03345b66",
+      "streaming" : false,
+      "text" : "«1382»"
+    },
+    {
+      "images" : 0,
+      "kind" : "user",
+      "row" : "5478d5af",
+      "text" : "«52»"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_194d66c48db945e6b5ecf002",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "images" : 0,
+      "kind" : "assistant",
+      "row" : "4bf6ca8c",
+      "streaming" : false,
+      "text" : "«2»"
+    }
+  ],
+  "leafId" : "20bfd4de",
+  "panels" : [
+
+  ],
+  "subagents" : [
+
+  ],
+  "version" : 3
+}

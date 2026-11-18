@@ -91,14 +91,20 @@ final class ConformanceHarnessTests: XCTestCase {
 
     /// Replays each scenario in BOTH declared modes and asserts the interpreted
     /// state is mode-independent (live pushes vs get_entries replay pages).
-    /// Seed scenarios declare only [live]; replay-mode wiring lands with the
-    /// get_entries page framing (design build step 3).
+    /// Mode names are validated here rather than silently ignored: a scenario
+    /// whose mode nobody runs is a fixture that pins nothing.
     func testScenarioModesDeclared() throws {
+        let known: Set<String> = ["live", "replay"]
         for dir in try scenarioDirectories() {
             let raw = try String(contentsOf: dir.appendingPathComponent("meta.json"), encoding: .utf8)
             let meta = try JSONDecoder().decode(JSONValue.self, from: Data(raw.utf8))
             let modes = meta["modes"]?.arrayValue?.compactMap { $0.stringValue } ?? []
             XCTAssertFalse(modes.isEmpty, "\(dir.lastPathComponent): modes must be declared")
+            for mode in modes {
+                XCTAssertTrue(known.contains(mode),
+                              "\(dir.lastPathComponent): unknown mode \"\(mode)\" — "
+                                  + "a mode no runner implements would make this fixture inert")
+            }
         }
     }
 }

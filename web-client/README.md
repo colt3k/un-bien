@@ -266,6 +266,26 @@ toolCall]`, `tool_execution_start`/`_end` for a `read`, the toolResult
   reference now folds panels in two places (core's `panels`, the app's
   `PanelState`) and rewiring the app to read core's is the follow-up.
 
+- **The durable plane is now in the corpus, and it immediately failed this
+  client.** Scenario `019` feeds a real session's 52 entries as three
+  `get_entries` response pages (two non-empty, then the empty terminal page that
+  carries the active-leaf beacon) — the first fixture in 18 that exercises entry
+  folding instead of live pushes, on either side. It caught a row-order bug: the
+  pairing notice was appended, while the reference inserts entry-born rows at
+  their **log position** (`insertBeforeLiveTail`). Fixed; the fold now decides
+  insert-vs-append by whether the row came from an entry or a live frame, the way
+  the reference's replay flag does. The fixture and its `capture.py` sit next to
+  each other, and `meta.json` says plainly which parts are captured (entries,
+  verbatim, content length-marked, `details` marked at any length) and which are
+  authored (page boundaries — pi pages by its own byte budget and no capture ever
+  contained a `get_entries` response, because the client sends that request
+  itself).
+  One honesty note the corpus now records in vocab.md: every scenario declares
+  exactly **one** mode, and no scenario yet feeds the same history through both
+  planes, so "identical across modes" is still a design claim rather than an
+  asserted fact. An unknown mode name now fails the harness instead of going
+  inert.
+
 - **A pairing notice renders from its payload, not from its display text.**
   Conformance vocabulary **version 3** keeps `customType` and `details` on a
   custom-role notice (deep-scrubbed, structure intact — same rule as panel

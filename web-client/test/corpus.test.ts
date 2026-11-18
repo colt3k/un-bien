@@ -25,9 +25,12 @@ import type { TranscriptItem } from "../src/reducer.js"
  *   - The face FIELDS beyond their name (a terminal face's notices, a diff's
  *     hunks, a script's calls) — `blocks` names the face; the corpus does not
  *     project what is inside it, so `test/tool-faces.test.ts` carries that.
- *   - `replay` mode: every scenario declares `modes: ["live"]` — the corpus has
- *     no recorded paging fixture, so the paging contract is covered only by
- *     test/derive.test.ts, not here.
+ *   - Mode INDEPENDENCE per session: 019 is a replay-mode fixture (durable
+ *     `get_entries` pages of a real session) and runs here like any other, but
+ *     no scenario yet feeds the SAME session through both planes, so "the live
+ *     fold and the replay fold agree on one history" is still not asserted —
+ *     only that each matches its own golden. Paging edges beyond 019's remain
+ *     covered by test/derive.test.ts.
  *   - 003/006/008 expect NO items, so for them this asserts "produces no
  *     spurious rows", which is weaker than it looks.
  *
@@ -256,11 +259,12 @@ describe("conformance corpus (kind + row)", () => {
       .split("\n")
       .filter((line) => line.trim().length > 0)
 
+    // The fold is one loop for both planes: a `get_entries` response page enters
+    // through the same `apply` as a live frame and is routed to the entry tree by
+    // the fold itself (as in the reference). So a replay-mode scenario needs no
+    // separate runner here — and skipping one would hide exactly the entry
+    // folding that 019 was added to pin.
     const skipReason = SKIP_REASONS[name]
-      ? SKIP_REASONS[name]
-      : meta.modes?.includes("live")
-        ? undefined
-        : "replay-mode paging is not exercised by this client's fold test"
 
     const run = skipReason ? it.skip : it
     run(

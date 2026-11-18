@@ -788,7 +788,7 @@ export class TranscriptReducer {
       // entry replay are the same row.
       if (message.display === false) return
       const text = joinedText(message.content)
-      this.push({
+      const notice: TranscriptItem = {
         kind: "notice",
         row: `cust${stableHash(text)}`,
         text,
@@ -796,13 +796,20 @@ export class TranscriptReducer {
         blocks: [],
         images: 0,
         code: "custom",
-        replayStable: false,
+        // A row born from an ENTRY keeps its log position (the reference's
+        // `insertBeforeLiveTail`); one born from a live frame appends, because it
+        // is a "now" event. 019 caught this client appending in both cases — the
+        // pairing notice jumped to the END of a replayed history instead of
+        // sitting where the machine wrote it.
+        replayStable: entryId !== undefined,
         customType:
           typeof message.customType === "string"
             ? message.customType
             : undefined,
         details: asFrame(message.details) ?? undefined,
-      })
+      }
+      if (entryId !== undefined) this.insertBeforeLiveTail(notice)
+      else this.push(notice)
       return
     }
     if (role !== "user" && role !== "assistant") return
