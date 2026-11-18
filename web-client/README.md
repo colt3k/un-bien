@@ -16,7 +16,7 @@ runs) is imported directly, aliased through Vite so three node-isms don't drag
 pnpm --filter web-client dev            # vite dev server, bound to all interfaces
 pnpm --filter web-client build          # dist/ (88 kB JS, 30 kB gzip)
 pnpm --filter web-client preview        # serve dist/ — use THIS on a phone
-pnpm --filter web-client test           # 85 passing (see Conformance)
+pnpm --filter web-client test           # 86 passing (see Conformance)
 ```
 
 On a phone, use `preview`, not `dev`: the dev server's HMR socket drops on a
@@ -137,11 +137,29 @@ Screenshot of a live turn: `/tmp/unbien-smoke/web-client-live.png`.
   the live frame, keyed on the entry id, as the reference does
   (`SessionState+BirthEntry.swift:18`). The row's kind survived; its content did
   not, which is the kind of bug a green projection can hide.
+- **`014` puts images on the replay plane** — a captured `chrome_screenshot`
+  result whose content is `[image, text]`, image FIRST, then the
+  "Screenshot 1024x578 png (42KB) saved to …" line, with
+  `details: {path, width, height}` and the bytes inline as
+  `{type: "image", data, mimeType: "image/png"}`. The card stays ONE row: its
+  face is `text` (an unfamiliar tool name → the text face, not an image face) and
+  `images: 1` is a per-card count, so a client that promotes images to their own
+  rows, or to a new card kind, diverges. The fixture's payload is replaced by a
+  **valid** 1×1 PNG rather than `«116164»`, because the reference decodes `data`
+  before it counts: undecodable filler makes BOTH sides report `images: 0`, and
+  the scenario then silently tests the decoder's rejection instead of the fold. I
+  built it that way first and it was vacuously green.
+- **A pasted screenshot is not an image on the wire.** Pasting one at pi's prompt
+  writes a user message with one `text` block holding a temp path
+  (`/var/folders/…/pasted-image-20261117-203807-….png`) — no base64, no image
+  block. Every remote client renders a path that only exists on the host, and the
+  picture exists for the client only once the model calls `describe_image` and
+  gets text back. Neither client does anything smarter about that yet.
 
 ## What is not here
 
 - **Conformance covers the projection, not the pixels.** `test/corpus.test.ts`
-  runs all thirteen `contracts/conformance/` scenarios with no skips and compares,
+  runs all fourteen `contracts/conformance/` scenarios with no skips and compares,
   in **render order**: `(kind, row)`, `text` (prefix — the corpus scrubs long
   strings and escapes their newlines), `streaming`, `images`, `state`, `tool`,
   `blocks` (the tool card's result face, `src/tool-faces.ts`), `flags`, `leafId`,

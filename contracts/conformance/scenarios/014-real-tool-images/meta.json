@@ -1,0 +1,11 @@
+{
+  "origin": "real-capture",
+  "source": "one of pi's own session logs (harnager, 2026-10-30T19-51-36-153Z_01a18e5e-21d8-73b2-889d-e9a2090f107e.jsonl), cut at its first `chrome_screenshot` tool result. Chosen over the un-bien log's screenshot because that chain is 808 entries deep; this one reaches an image result at entry 44. pi's log lines are the entries the extension forwards, minus the leading `session` line.",
+  "captured": "2026-11-18",
+  "modes": [
+    "live"
+  ],
+  "scrub": "Content \u2192 \u00ablength\u00bb; absolute paths replaced. The one thing NOT reduced to a length is the image payload: it is replaced by a VALID 1x1 PNG (the same placeholder the browser double sends), because the reference decodes `data` before it counts a card's images \u2014 base64 replaced by \u00ab116164\u00bb decodes to nothing, and BOTH implementations then report `images: 0`, which tests the decoder's rejection rather than the fold. The real payload was 116164 chars of PNG. `details` collapses to key \u2192 type name (the real one carried `path`, `width: 1024`, `height: 578`); `mimeType` is kept.",
+  "description": "Images on the replay plane, captured rather than authored: a `chrome_screenshot` result whose content is `[image, text]` in that order (image FIRST, the \"Screenshot 1024x578 png (42KB) saved to \u2026\" line second), with `details: {path,width,height}` and the image inline as `{type:\"image\", data: base64, mimeType:\"image/png\"}`. Pins that image blocks ride the RESULT of a tool card, not their own row \u2014 the corpus's `images` field is a per-card count, and the card's face is still `terminal` (text plus dimensions), not an image face. A client that renders images as separate transcript rows, or that makes an image result a different card kind, diverges here.",
+  "note": "Pasted images do NOT arrive like this. A screenshot pasted at pi's prompt lands in the log as a user message with one `text` block holding a temp file path (`/var/folders/\u2026/pasted-image-\u2026.png`) \u2014 no base64, no image block. To a remote client that path points at a file on the host machine."
+}

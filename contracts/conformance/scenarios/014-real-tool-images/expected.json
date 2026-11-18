@@ -1,0 +1,286 @@
+{
+  "flags" : {
+    "ended" : false,
+    "streaming" : false
+  },
+  "items" : [
+    {
+      "images" : 0,
+      "kind" : "user",
+      "row" : "23f89e3b",
+      "text" : "«145»"
+    },
+    {
+      "images" : 0,
+      "kind" : "assistant",
+      "row" : "bee289a8",
+      "streaming" : false,
+      "text" : "«46»"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_81b5684aaa3043669eb0f597",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_41acd3d6980f4e3f8306c844",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_79c6b5b2ccc5445b9936aa1b",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_5a9cd863151c401d8630fed4",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_d007cfd15e1c4d709ef4be4d",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_4bac1755dfe1421a8befb5c8",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "file"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_1b0b17ff54da4c1f8ef8a344",
+      "state" : "ok",
+      "tool" : "read"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_dbd06c4c7b1045d5ab121787",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_9c3b87f37ce849df9d9cc7f7",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_ef7160d7bdd947aea425481e",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_6feda610276e49a2b4f8b26b",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_49e682d74bc342fa9f7831f9",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_58dd02bf338649e9aa570d0b",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_ef899217f90f433e9b711046",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_27ccd7b52d5645d980bb6e45",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_eb8b444ff2b049be9803fe53",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_324db317a6e14d9189c769a5",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "file"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_e2c40aa747544dc283a2a294",
+      "state" : "ok",
+      "tool" : "read"
+    },
+    {
+      "blocks" : [
+        "file"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_9d7dab60c5b645ad95b2d8de",
+      "state" : "ok",
+      "tool" : "read"
+    },
+    {
+      "blocks" : [
+        "text"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_79b3702cfa014e269e3249de",
+      "state" : "ok",
+      "tool" : "chrome"
+    },
+    {
+      "blocks" : [
+        "file"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_229fac1db1d8481d8b5ebfa0",
+      "state" : "ok",
+      "tool" : "read"
+    },
+    {
+      "blocks" : [
+        "text"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_57139f106b9845beabb90a8a",
+      "state" : "ok",
+      "tool" : "chrome_navigate"
+    },
+    {
+      "blocks" : [
+        "text"
+      ],
+      "images" : 1,
+      "kind" : "tool",
+      "row" : "call_e242d9a66d054079a7322bb6",
+      "state" : "ok",
+      "tool" : "chrome_screenshot"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_68244458e25346e89517af07",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "pending"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_998216e6d4fe4e5297d9b0ae",
+      "state" : "running",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "pending"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_96815250a143498cb848c52a",
+      "state" : "running",
+      "tool" : "bash"
+    }
+  ],
+  "leafId" : "2d53aa2d",
+  "subagents" : [
+
+  ],
+  "version" : 1
+}
