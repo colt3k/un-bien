@@ -289,8 +289,11 @@
     }
   ],
   "leafId" : "f5c75de2",
+  "panels" : [
+
+  ],
   "subagents" : [
 
   ],
-  "version" : 1
+  "version" : 2
 }

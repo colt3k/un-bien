@@ -26,8 +26,11 @@
     }
   ],
   "leafId" : "e4",
+  "panels" : [
+
+  ],
   "subagents" : [
 
   ],
-  "version" : 1
+  "version" : 2
 }

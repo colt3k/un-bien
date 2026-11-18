@@ -251,6 +251,21 @@ toolCall]`, `tool_execution_start`/`_end` for a `read`, the toolResult
   the app's own budget (32 000 chars, `markdownBudget` at
   `TranscriptRowViews.swift:284`) text is shown as-is.
 
+- **The live panel plane is now under the oracle, not just under this client's
+  tests.** Conformance vocabulary **version 2** adds `panels`: the
+  `{evt channel:"panel"}` / `panel_update` frames the shipped extension actually
+  sends, folded into core (`PanelSnapshot`) and projected with pi's item shape
+  carried verbatim — deep-scrubbed, never reshaped, because the point of
+  comparing panels is that both clients read the machine's schema rather than a
+  guess at it. The field is emitted always (empty array when there are none): an
+  optional field cannot tell "this machine sent no panels" apart from "this
+  client ignored the frames". Scenario 016 now pins 2 panels and their item ids,
+  `deps` and `meta`; the legacy `subagents`/`plan` fields stay compared
+  separately, because 002 exercises the older transport. What is still app-side
+  is UI bookkeeping — `changed`/viewed badges and the subagent sound — so the
+  reference now folds panels in two places (core's `panels`, the app's
+  `PanelState`) and rewiring the app to read core's is the follow-up.
+
 - **The compaction caption prints a token count only if the wire sent one.**
   "Context compacted (213920 tokens)" is a measurement; `(0 tokens)` is a lie the
   client tells itself, because both folds used to default a missing

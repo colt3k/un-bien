@@ -33,7 +33,8 @@ import type { TranscriptItem } from "../src/reducer.js"
  *
  * Everything else the reference projects — `text` (prefix, because the corpus
  * scrubs long strings and escapes their newlines), `streaming`, `images`,
- * `state`, `tool`, `flags`, `leafId`, `subagents`, `pendingAsks` — is compared,
+ * `state`, `tool`, `flags`, `leafId`, `subagents`, `pendingAsks`, `panels` — is
+ * compared,
  * `blocks` is compared against the resolved result face (tool-faces.ts).
  *
  * Widening the comparison is what caught the phantom-dialog bug (8 `setStatus`/`notify` frames
@@ -55,6 +56,11 @@ const SCENARIO_DIR = join(
  *  Keep this empty: an unexplained skip is how a client drifts. */
 const SKIP_REASONS: Record<string, string> = {}
 
+/** The conformance vocabulary this runner implements. The reference projects it
+ *  (`ConformanceProjection`) and vocab.md documents it; version 2 added the
+ *  live `panels` plane. */
+const VOCAB_VERSION = 2
+
 interface ScenarioMeta {
   modes?: string[]
 }
@@ -67,6 +73,7 @@ interface Expected {
   subagents?: Record<string, unknown>[]
   pendingAsks?: Record<string, unknown>[]
   plan?: Record<string, unknown> | null
+  panels?: Record<string, unknown>[]
 }
 
 /** `kind@row`, in RENDER ORDER. The vocab says items are in render order, so
@@ -86,6 +93,62 @@ function textMatches(actual: string, expected: string): boolean {
   if (!expected.endsWith("…")) return actual === expected
   const prefix = expected.slice(0, -1).replace(/\\n/g, "\n")
   return actual.startsWith(prefix)
+}
+
+/** Compare a panel item exactly as the projection emits it: pi's own wire
+ *  shape, strings scrubbed, STRUCTURE required. The reference deliberately does
+ *  not reshape these items, so the comparison must not reshape them either —
+ *  that is the whole value of comparing panels: both clients read the machine's
+ *  schema rather than a guess at it. */
+function panelItemProblems(
+  want: Record<string, unknown>,
+  got: unknown,
+  at: string,
+): string[] {
+  if (typeof got !== "object" || got === null)
+    return [`${at} is ${JSON.stringify(got)}, not an object`]
+  const mine = got as Record<string, unknown>
+  const problems: string[] = []
+  for (const key of Object.keys(want)) {
+    const expected = want[key]
+    const actual = mine[key]
+    if (typeof expected === "string") {
+      if (typeof actual !== "string" || !textMatches(actual, expected))
+        problems.push(
+          `${at}.${key} ${JSON.stringify(actual)} !~ ${JSON.stringify(expected)}`,
+        )
+    } else if (Array.isArray(expected)) {
+      if (!Array.isArray(actual) || actual.length !== expected.length)
+        problems.push(
+          `${at}.${key} ${JSON.stringify(actual)} != ${JSON.stringify(expected)}`,
+        )
+      else
+        expected.forEach((entry, i) => {
+          if (typeof entry === "string") {
+            const value = actual[i]
+            if (typeof value !== "string" || !textMatches(value, entry))
+              problems.push(
+                `${at}.${key}[${i}] ${JSON.stringify(value)} !~ ${JSON.stringify(entry)}`,
+              )
+          } else if (JSON.stringify(actual[i]) !== JSON.stringify(entry))
+            problems.push(
+              `${at}.${key}[${i}] ${JSON.stringify(actual[i])} != ${JSON.stringify(entry)}`,
+            )
+        })
+    } else if (expected && typeof expected === "object") {
+      problems.push(
+        ...panelItemProblems(
+          expected as Record<string, unknown>,
+          actual,
+          `${at}.${key}`,
+        ),
+      )
+    } else if (actual !== expected)
+      problems.push(
+        `${at}.${key} ${JSON.stringify(actual)} != ${JSON.stringify(expected)}`,
+      )
+  }
+  return problems
 }
 
 /** Compare every field the expected item declares. `blocks` is the one gap:
@@ -198,6 +261,13 @@ describe("conformance corpus (kind + row)", () => {
             problems.push(`item[${index}] ${item.kind}@${item.row}: ${problem}`)
         })
 
+        // The vocabulary this runner implements (contracts/conformance/vocab.md).
+        // A golden from another version is not this test's contract.
+        if (expected.version !== VOCAB_VERSION)
+          problems.push(
+            `vocab version ${expected.version} != this runner's ${VOCAB_VERSION}`,
+          )
+
         // Flags: the fold must not claim a turn is running (or ended) when the
         // reference does not, and vice versa — that flag drives the composer's
         // steer/follow affordance.
@@ -299,6 +369,47 @@ describe("conformance corpus (kind + row)", () => {
               if (mine[key] !== wantPlan[key])
                 problems.push(`plan.${key} ${mine[key]} != ${wantPlan[key]}`)
           }
+        }
+
+        // The LIVE panel plane: what the machine says its agents and plan are.
+        // Compared ALWAYS (the projection always emits the field, empty when
+        // there are none) — an optional field cannot tell "this machine sent no
+        // panels" apart from "this client dropped the frames". The legacy
+        // `subagents`/`plan` fields above stay compared separately: they are the
+        // older transport, and 002 pins it.
+        const wantPanels = (expected.panels ?? []) as Record<string, unknown>[]
+        if (got.panels.length !== wantPanels.length) {
+          problems.push(`panels ${got.panels.length} != ${wantPanels.length}`)
+        } else {
+          wantPanels.forEach((want, i) => {
+            const mine = got.panels[i] as unknown as Record<string, unknown>
+            for (const field of ["key", "title", "icon"]) {
+              const expectedValue = want[field]
+              if (expectedValue === undefined) continue
+              if (
+                !textMatches(String(mine[field] ?? ""), String(expectedValue))
+              )
+                problems.push(
+                  `panel[${i}].${field} ${JSON.stringify(mine[field])} !~ ${JSON.stringify(expectedValue)}`,
+                )
+            }
+            const wantItems = (want.items ?? []) as Record<string, unknown>[]
+            const mineItems = (mine.items ?? []) as unknown[]
+            if (mineItems.length !== wantItems.length)
+              problems.push(
+                `panel[${i}] (${want.key}).items ${mineItems.length} != ${wantItems.length}`,
+              )
+            else
+              wantItems.forEach((item, j) =>
+                problems.push(
+                  ...panelItemProblems(
+                    item,
+                    mineItems[j],
+                    `panel[${i}](${want.key}).items[${j}]`,
+                  ),
+                ),
+              )
+          })
         }
 
         expect(problems).toEqual([])

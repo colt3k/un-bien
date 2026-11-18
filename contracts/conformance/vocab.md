@@ -44,6 +44,10 @@ across modes and across implementations**.
   "subagents": [ { "id": "<scrubbed>", "status": "started|steered|completed|failed",
                    "description": "<scrubbed>", "result": "<scrubbed>", "error": "<scrubbed>" } ],
   "plan": { "project": "<scrubbed>", "itemCount": 2 },
+  "panels": [ { "key": "<scrubbed>", "title": "<scrubbed>", "icon": "<scrubbed>",
+                "items": [ { "id": "<scrubbed>", "kind": "agent|plan", "title": "<scrubbed>",
+                             "status": "<scrubbed>", "deps": ["<scrubbed>"],
+                             "meta": { "agentType": "<scrubbed>", "startedAt": 0 } } ] } } ],
   "pendingAsks": [ { "id": "<scrubbed>", "method": "select", "title": "<scrubbed>", "options": ["<scrubbed>"] } ],
   "leafId": "<scrubbed entry id | null>"
 }
@@ -55,6 +59,19 @@ Reducer-level fields (`subagents`, `plan`, `pendingAsks`) come from the
 when the scenario exercises panels/asks, absent otherwise. `leafId` is the
 delta-refetch cursor. `version` bumps when the vocabulary changes — runners
 assert the version they implement.
+
+**`panels` is the live panel plane** (`{evt channel:"panel"}`, `panel_update`:
+one frame per panel key, carrying that panel's WHOLE item set, so folding
+replaces the panel rather than merging into it — see `PanelSnapshot`). It is
+listed always (empty array when the scenario has no panel frames), because an
+optional field cannot pin "this machine sent no panels" apart from "this client
+ignored them". `items` is pi's own wire shape, deep-scrubbed in place and
+otherwise UNTOUCHED: the value of comparing panels is that both clients read the
+same schema, so a projection that renames or reshapes items compares each
+client's guess instead. The legacy `subagents`/`plan` fields above stay (older
+extensions, pinned by 002) and are NOT derived from `panels`.
+
+Version 2 = `panels` added.
 ```
 
 - `items` is in render order. `n` is implicit (array index + 1).

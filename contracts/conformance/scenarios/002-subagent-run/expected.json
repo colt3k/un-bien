@@ -42,6 +42,9 @@
     }
   ],
   "leafId" : "12d89bc0",
+  "panels" : [
+
+  ],
   "subagents" : [
     {
       "description" : "How to print date in blue in zsh",
@@ -51,5 +54,5 @@
       "type" : "general-purpose"
     }
   ],
-  "version" : 1
+  "version" : 2
 }

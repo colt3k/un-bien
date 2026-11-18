@@ -7,6 +7,9 @@
 
   ],
   "leafId" : null,
+  "panels" : [
+
+  ],
   "pendingAsks" : [
     {
       "id" : "ask-flow-1",
@@ -31,5 +34,5 @@
       "type" : "explore"
     }
   ],
-  "version" : 1
+  "version" : 2
 }

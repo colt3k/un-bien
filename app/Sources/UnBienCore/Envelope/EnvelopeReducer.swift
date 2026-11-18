@@ -26,6 +26,23 @@ public struct PlanSnapshot: Equatable, Sendable {
     public var itemCount: Int
 }
 
+/// A panel as the LIVE `{evt channel:"panel"}` plane reports it — what pi-plan
+/// and the subagent bridge actually send today (`panel_update`, one frame per
+/// key, carrying the WHOLE item set, so folding replaces rather than merges).
+/// The legacy `subagents:*` / `plan:snapshot` channels above still fold into
+/// their own fields; they are what older extensions emitted, and scenario 002
+/// pins them.
+///
+/// `items` is pi's wire shape carried VERBATIM (only scrubbed in place, see
+/// `Conformance.scrubbed`). Reshaping it here would compare this client's guess
+/// about pi's schema instead of whether clients read the same schema.
+public struct PanelSnapshot: Equatable, Sendable {
+    public var key: String
+    public var title: String?
+    public var icon: String?
+    public var items: [JSONValue]
+}
+
 public struct UINotification: Equatable, Sendable {
     public var level: String
     public var message: String
@@ -49,6 +66,9 @@ public struct EnvelopeReducer {
     public private(set) var session = SessionState()
     public private(set) var subagents: [SubagentEntry] = []
     public private(set) var plan: PlanSnapshot?
+    /// Panels keyed by pi's own panel key (`subagents`, `plan`, …), in first-
+    /// seen order; a later update replaces the panel at its place.
+    public private(set) var panels: [PanelSnapshot] = []
     public private(set) var snapshot: SessionSnapshot?
     public private(set) var notifications: [UINotification] = []
     public private(set) var status: [String: String] = [:]
@@ -228,9 +248,30 @@ public struct EnvelopeReducer {
         case "plan:snapshot", "plan:update":
             plan = PlanSnapshot(project: evt.data["project"]?.stringValue,
                                 itemCount: evt.data["items"]?.arrayValue?.count ?? 0)
+        case "panel":
+            // The live panel plane. `type` is checked, not trusted: the channel
+            // is a container, and a frame that is not a panel update must not be
+            // folded as one (silently treating an unknown shape as empty would
+            // clear a panel that is still full).
+            guard evt.data["type"]?.stringValue == "panel_update",
+                  let key = evt.data["key"]?.stringValue else { return }
+            setPanel(key: key,
+                     title: evt.data["title"]?.stringValue,
+                     icon: evt.data["icon"]?.stringValue,
+                     items: evt.data["data"]?["items"]?.arrayValue ?? [])
         default:
             break
         }
+    }
+
+    /// One update replaces the whole panel for its key — the extension never
+    /// sends a patch — and keeps its position, so a panel that updates does not
+    /// jump in the UI.
+    private mutating func setPanel(key: String, title: String?, icon: String?,
+                                   items: [JSONValue]) {
+        let panel = PanelSnapshot(key: key, title: title, icon: icon, items: items)
+        if let idx = panels.firstIndex(where: { $0.key == key }) { panels[idx] = panel }
+        else { panels.append(panel) }
     }
 
     private mutating func upsertSubagent(id: String, type: String?, description: String?,

@@ -32,6 +32,20 @@ public enum Conformance {
         return String(stripped.prefix(textLimit)) + "…"
     }
 
+    /// Deep scrub for a payload the projection carries as-is (panel items):
+    /// strings scrubbed in place, structure untouched, numbers and booleans
+    /// passed through. The projection must be able to diff a payload without
+    /// reshaping it — reshaping is where a client starts comparing its own
+    /// schema instead of the machine's.
+    public static func scrubbed(_ value: JSONValue) -> JSONValue {
+        switch value {
+        case let .string(text): return .string(scrub(text))
+        case let .array(items): return .array(items.map { scrubbed($0) })
+        case let .object(entries): return .object(entries.mapValues { scrubbed($0) })
+        default: return value
+        }
+    }
+
     /// Synthetic-id detection: live placeholders mint as `a-`/`u-`/`r-` +
     /// UUID (the dash marks the synthetic id-space; pi entry ids are bare hex).
     static func isSynthetic(_ id: String) -> Bool {
@@ -122,7 +136,7 @@ public extension SessionState {
             "ended": .bool(ended),
         ]
         return .object([
-            "version": .number(1),
+            "version": .number(2),
             "items": .array(rows),
             "flags": .object(flags),
         ])
@@ -158,6 +172,24 @@ public extension EnvelopeReducer {
                 "itemCount": .number(Double(plan.itemCount)),
             ])
         }
+
+        // Panels from the LIVE plane, in first-seen order, items deep-scrubbed
+        // but not reshaped. The point of comparing these is that both clients
+        // read pi's own panel shape — including the item ids and `deps` a client
+        // might otherwise invent a key for.
+        var panelValues: [JSONValue] = []
+        for panel in panels {
+            var panelObj: [String: JSONValue] = [
+                "key": .string(Conformance.scrub(panel.key)),
+                "items": .array(panel.items.map { Conformance.scrubbed($0) }),
+            ]
+            if let title = panel.title {
+                panelObj["title"] = .string(Conformance.scrub(title))
+            }
+            if let icon = panel.icon { panelObj["icon"] = .string(Conformance.scrub(icon)) }
+            panelValues.append(.object(panelObj))
+        }
+        obj["panels"] = .array(panelValues)
 
         var asks: [JSONValue] = []
         for ask in pendingAsks {
