@@ -337,6 +337,14 @@ textarea {
 .collapsed {
   display: none;
 }
+/* The tool card's body (args, face output, images) is built into the DOM and
+ * updated by signature, but `.collapsed` above hides it unconditionally — with
+ * no rule for the open state, expanding a card showed nothing at all (found by
+ * driving a live session from the browser: `details.open` went true while the
+ * computed style stayed `display: none`). */
+details[open] > .collapsed {
+  display: block;
+}
 .panels {
   padding: 6px 12px;
   border-top: 1px solid var(--line);
