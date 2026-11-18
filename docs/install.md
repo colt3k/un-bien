@@ -313,6 +313,16 @@ surfaces: `GET /` (WebSocket upgrade), `GET /health`, and `GET|POST
 `/data/mesh.db` — the `-v un-bien-data:/data` volume keeps it across upgrades.
 Verify with `curl http://<docker-host>:3000/health`.
 
+Both images run as an unprivileged user, not root: the relay as uid/gid
+`10001`, the launcher image as the `node` user (`1000`). A volume first
+created by an older image, which ran as root, still holds root-owned files.
+Chown it once before starting the new image, or the relay can't open its
+databases:
+
+```bash
+docker run --rm -v un-bien-data:/data debian:bookworm-slim chown -R 10001:10001 /data
+```
+
 **2. Working machine** — identical to Flow A step 4 (Pi + extension +
 `/unbien set-relay http://<docker-host>:3000` + `/unbien pair` + optional
 `unbien-admin install` for the launcher service).
