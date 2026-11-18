@@ -16,6 +16,8 @@ import { homedir, platform, tmpdir, userInfo } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { unbienStateHome } from "../paths.js"
+import { loadConfig } from "../config.js"
+import { resolveServiceRuntime, serviceEnv } from "./service_env.js"
 
 /**
  * Generates and activates a system service for the un-bien launcher daemon so
@@ -192,30 +194,25 @@ function xmlEscape(v: string): string {
  *  an install from a shell without the vars silently produced a relay
  *  that could not advertise a dialable address). Exported for tests. */
 export function propagatedUnbienEnv(): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(process.env)
-      .filter(([k]) => k.startsWith("UNBIEN_"))
-      .map(([k, v]) => [k, String(v ?? "")]),
-  )
+  return serviceEnv(loadConfig())
 }
 
-/** Every `UNBIEN_*` variable in the installing environment, as plist
+/** Every variable the service copies from the installing environment
+ *  (`UNBIEN_*` plus `service.env`, see service_env.ts), as plist
  *  `<key>/<string>` pairs (indented to sit inside EnvironmentVariables). */
 export function renderUnbienEnvPlist(): string {
-  return Object.entries(process.env)
-    .filter(([k]) => k.startsWith("UNBIEN_"))
+  return Object.entries(propagatedUnbienEnv())
     .map(
       ([k, v]) =>
-        `    <key>${xmlEscape(k)}</key>\n    <string>${xmlEscape(String(v))}</string>`,
+        `    <key>${xmlEscape(k)}</key>\n    <string>${xmlEscape(v)}</string>`,
     )
     .join("\n")
 }
 
 /** Same, as systemd `Environment="K=V"` lines (indented for the unit). */
 export function renderUnbienEnvSystemd(): string {
-  return Object.entries(process.env)
-    .filter(([k]) => k.startsWith("UNBIEN_"))
-    .map(([k, v]) => `Environment="${k}=${String(v).replaceAll('"', '\\"')}"`)
+  return Object.entries(propagatedUnbienEnv())
+    .map(([k, v]) => `Environment="${k}=${v.replaceAll('"', '\\"')}"`)
     .join("\n")
 }
 
@@ -263,7 +260,8 @@ export function resolvePiAgentDirSnapshot(): string {
 
 export function defaultRenderVars(): RenderVars {
   return {
-    node: findNodeBinary(),
+    // `service.runtime` (node / bun / a path), else the installing runtime.
+    node: resolveServiceRuntime(loadConfig()),
     launcher: findLauncherScript(),
     home: homedir(),
     user: userInfo().username,
@@ -776,6 +774,15 @@ export function linkCliBinaries(
     },
   ]
   for (const link of links) {
+    const owner = _foreignBinOwner(link.path, home, link.target)
+    if (owner) {
+      // A package manager's global install already provides this bin: keep
+      // it. Pointing it at this Pi-extension copy would swap a working
+      // install for one that only resolves inside pi (its host packages,
+      // e.g. @earendil-works/pi-tui, are not next to it).
+      log.push(`kept ${link.path} → ${owner} (installed by a package manager)`)
+      continue
+    }
     _replaceSymlink(link.path, link.target, log)
   }
 
@@ -931,6 +938,37 @@ export function unlinkCliBinaries(
  * first. Race window between unlink and symlink is irrelevant for a
  * single-user install command (no concurrent writers).
  */
+/** The target of an existing `linkPath` this installer must not replace, or
+ *  null when it may: replaced are a missing path, a broken symlink, and a
+ *  symlink into Pi's own agent dir (an earlier link to a Pi-extension copy,
+ *  which moves on every extension upgrade). Kept is anything else that
+ *  resolves: a package manager's global bin (npm, bun, pnpm links or
+ *  shims). */
+export function _foreignBinOwner(
+  linkPath: string,
+  home: string = homedir(),
+  ownTarget?: string,
+): string | null {
+  let stat: ReturnType<typeof lstatSync>
+  try {
+    stat = lstatSync(linkPath)
+  } catch {
+    return null // absent
+  }
+  if (!stat.isSymbolicLink()) return linkPath // a real file: a shim
+  let target: string
+  try {
+    target = resolve(dirname(linkPath), readlinkSync(linkPath))
+  } catch {
+    return null
+  }
+  if (!existsSync(target)) return null // broken
+  if (ownTarget && target === resolve(ownTarget)) return null // already ours
+  const agentDir = process.env["PI_CODING_AGENT_DIR"] || join(home, ".pi")
+  const inAgentDir = target === agentDir || target.startsWith(agentDir.replace(/\/+$/, "") + "/")
+  return inAgentDir ? null : target
+}
+
 function _replaceSymlink(
   linkPath: string,
   target: string,

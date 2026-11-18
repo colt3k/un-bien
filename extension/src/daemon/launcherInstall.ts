@@ -17,6 +17,8 @@ import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { join } from "node:path"
 import { promisify } from "node:util"
+import { loadConfig } from "../config.js"
+import { globalInstallCommand, packageManager } from "./service_env.js"
 
 const execFileAsync = promisify(execFile)
 
@@ -58,15 +60,14 @@ export async function installLauncherPackage(
     onLog?.(l)
   }
 
-  // npm is a sibling of node everywhere node is installed; resolve npm-cli.js
-  // from process.execPath's tree so we don't depend on `npm` being on a
-  // possibly-sparse PATH (same reasoning as findNodeBinary in install.ts).
-  const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm"
-  push(`npm install -g ${spec}${dev ? "  (dev channel — matches this dev extension)" : ""} …`)
+  // The configured package manager (`package_manager`: npm, bun or pnpm).
+  const pm = packageManager(loadConfig())
+  const install = globalInstallCommand(pm, spec)
+  push(`${install.display}${dev ? "  (dev channel — matches this dev extension)" : ""} …`)
 
   const { stdout, stderr } = await execFileAsync(
-    npmCmd,
-    ["install", "-g", spec],
+    install.cmd,
+    install.args,
     { timeout: 5 * 60_000, maxBuffer: 4 * 1024 * 1024 },
   ).catch((err) => {
     const detail =
@@ -74,8 +75,8 @@ export async function installLauncherPackage(
       (err as { message?: string }).message ??
       String(err)
     throw new Error(
-      `npm install -g ${LAUNCHER_PACKAGE} failed: ${detail}\n` +
-        "  If npm isn't found, install Node from https://nodejs.org and retry.",
+      `${install.display} failed: ${detail}\n` +
+        `  If ${pm} isn't found, install it or set package_manager in un-bien.json.`,
     )
   })
   for (const line of `${stdout}\n${stderr}`.split("\n")) {
@@ -110,7 +111,7 @@ export async function installLauncherPackage(
     )
   } catch {
     push(
-      "⚠ installed, but `unbien-launcher --version` failed — the npm global bin dir " +
+      "⚠ installed, but `unbien-launcher --version` failed — the global bin dir of " + `${pm} ` +
         "may not be on $PATH. Open a new terminal and run `unbien-launcher --version`.",
     )
   }
