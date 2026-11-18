@@ -13,6 +13,11 @@ import { existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { delimiter, isAbsolute, join } from "node:path"
 import type { UnBienConfig } from "../config.js"
+import {
+  globalInstallCommand as piInstallCommand,
+  packageManagerName,
+  readPiNpmCommand,
+} from "./packageManager.js"
 
 /** Copied into the service unless `service.env` says otherwise: the XDG
  *  base-dir variables (tools that read config/data dirs from them, e.g.
@@ -99,29 +104,72 @@ export function resolveServiceRuntime(
 
 export type PackageManager = "npm" | "bun" | "pnpm"
 
-/** The configured package manager for un-bien's own global installs. */
-export function packageManager(config: UnBienConfig): PackageManager {
+/** Where the package manager came from: un-bien.json `package_manager`,
+ *  pi's global `npmCommand`, or neither (npm by default). */
+export type PackageManagerSource = "config" | "pi" | "default"
+
+/** The package manager for un-bien's own global installs: `package_manager`
+ *  in un-bien.json, else the one pi's `npmCommand` names (so pi and un-bien
+ *  install into one tree), else npm. `npmCommand` is pi's setting, read when
+ *  not given; pass null for "pi sets none". */
+export function resolvePackageManager(
+  config: UnBienConfig,
+  npmCommand: readonly string[] | null = readPiNpmCommand() ?? null,
+): { pm: PackageManager; source: PackageManagerSource } {
   const pm = config.package_manager
-  return pm === "bun" || pm === "pnpm" ? pm : "npm"
+  if (pm === "npm" || pm === "bun" || pm === "pnpm") return { pm, source: "config" }
+  if (npmCommand && npmCommand.length > 0) {
+    try {
+      return { pm: packageManagerName(npmCommand), source: "pi" }
+    } catch {
+      /* an ambiguous wrapper: fall through to npm */
+    }
+  }
+  return { pm: "npm", source: "default" }
 }
 
-/** The global-install command for `spec` under `pm`. */
+/** The package manager for un-bien's own global installs (see
+ *  resolvePackageManager). */
+export function packageManager(
+  config: UnBienConfig,
+  npmCommand: readonly string[] | null = readPiNpmCommand() ?? null,
+): PackageManager {
+  return resolvePackageManager(config, npmCommand).pm
+}
+
+/** The global-install command for `spec` under `pm`. When pi's
+ *  `npmCommand` names that same manager it is used as is, wrapper included
+ *  (`bun-as-npm -- bun add -g …`); otherwise the bare manager. */
 export function globalInstallCommand(
   pm: PackageManager,
   spec: string,
+  npmCommand: readonly string[] | null = readPiNpmCommand() ?? null,
 ): { cmd: string; args: string[]; display: string } {
+  let sameManager = false
+  try {
+    sameManager = !!npmCommand && npmCommand.length > 0 && packageManagerName(npmCommand) === pm
+  } catch {
+    sameManager = false
+  }
+  if (sameManager) {
+    const c = piInstallCommand(spec, npmCommand)
+    return { cmd: c.command, args: c.args, display: c.display }
+  }
   const win = process.platform === "win32"
   const args = pm === "npm" ? ["install", "-g", spec] : ["add", "-g", spec]
   const cmd = pm === "bun" ? "bun" : win ? `${pm}.cmd` : pm
   return { cmd, args, display: `${pm} ${args.join(" ")}` }
 }
 
-/** Whether the config names a package manager explicitly. When it does,
- *  `/unbien install` installs and runs un-bien from that package manager's
- *  global tree instead of pi's own copy of the extension. */
-export function packageManagerConfigured(config: UnBienConfig): boolean {
-  const pm = config.package_manager
-  return pm === "npm" || pm === "bun" || pm === "pnpm"
+/** Whether a package manager is chosen (un-bien.json `package_manager`, or
+ *  pi's `npmCommand`). When one is, `/unbien install` installs and runs
+ *  un-bien from that package manager's global tree instead of pi's own copy
+ *  of the extension. With neither, installs keep the original behaviour. */
+export function packageManagerConfigured(
+  config: UnBienConfig,
+  npmCommand: readonly string[] | null = readPiNpmCommand() ?? null,
+): boolean {
+  return resolvePackageManager(config, npmCommand).source !== "default"
 }
 
 function _ask(cmd: string, args: string[]): string | null {

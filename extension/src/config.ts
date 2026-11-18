@@ -118,9 +118,11 @@ export type UnBienConfig = {
    */
   service?: { runtime?: string; env?: string[] }
   /**
-   * The package manager `/unbien install cli|launcher` uses for its global
-   * installs: `npm` (`npm install -g`), `bun` (`bun add -g`) or `pnpm`
-   * (`pnpm add -g`). Absent ⇒ npm.
+   * The package manager un-bien's global installs use: `npm`
+   * (`npm install -g`), `bun` (`bun add -g`) or `pnpm` (`pnpm add -g`).
+   * Absent ⇒ the one pi's global `npmCommand` names (its wrapper kept, e.g.
+   * `bun-as-npm -- bun add -g`), else npm. With either set, `/unbien install`
+   * runs from that package manager's global copy (see service_env.ts).
    */
   package_manager?: "npm" | "bun" | "pnpm"
   /**

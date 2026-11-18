@@ -393,17 +393,21 @@ snapshot the daemons would fall back to defaults your shell doesn't use.
 more. If you change your relay URL, state dir, agent config location or any of
 those variables, re-run the install from a shell that has them.
 
-**Which copy runs, and which package manager.** Set `package_manager`
-(`"npm"`, `"bun"` or `"pnpm"`) in `un-bien.json` to install un-bien's global
-packages with it (`npm install -g`, `bun add -g`, `pnpm add -g`). With it set,
+**Which copy runs, and which package manager.** un-bien's global installs
+use, in order: `package_manager` (`"npm"`, `"bun"` or `"pnpm"`) in
+`un-bien.json`; else the package manager pi's global `npmCommand` names
+(resolved as pi does, and run through pi's wrapper when it names the same
+manager, e.g. `bun-as-npm -- bun add -g`); else npm. With either setting,
 installs always run from that package manager's global copy of
 `@geohar/un-bien`: `/unbien install` inside pi installs this version there,
 then runs that copy's `unbien-admin install`, so the service never runs pi's
 own copy of the extension (which moves on every extension update and only
 resolves its host packages inside pi). The package manager links
 `unbien-admin`; un-bien doesn't, and never replaces one a package manager
-installed. Without `package_manager`, `/unbien install` runs from pi's copy
-and links `unbien-admin` into `~/.local/bin`, as before.
+installed. With neither, `/unbien install` runs from pi's copy and links
+`unbien-admin` into `~/.local/bin`, as before. The `unbien` and
+`unbien-launcher` bins land in that package manager's global bin dir, so a
+terminal opened before the install won't have them on `$PATH` yet.
 
 ```json
 {
@@ -411,9 +415,6 @@ and links `unbien-admin` into `~/.local/bin`, as before.
   "service": { "runtime": "bun" }
 }
 ```
-
-**The CLI needs a fresh terminal.** `unbien` lands in the npm global bin dir;
-a terminal opened before the install won't have it on `$PATH` yet.
 
 **Startup order doesn't matter.** Both daemons reconnect on their own: the
 launcher retries the relay every 3 seconds (single in-flight chain), and the

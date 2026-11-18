@@ -460,8 +460,8 @@ unbien-admin install
 
 Or from inside Pi: `/unbien install` — same service, plus it links the
 `unbien-admin` CLI into `~/.local/bin` so no global npm install is needed.
-With `package_manager` set in `un-bien.json` (`npm`, `bun` or `pnpm`) it
-instead installs `@geohar/un-bien` globally with that package manager and runs
+With a package manager chosen (`package_manager` in `un-bien.json`, or the
+one pi's `npmCommand` names) it instead installs `@geohar/un-bien` globally with that package manager and runs
 that copy's `unbien-admin install`, so the service never runs pi's copy; see
 [Service environment](../docs/install.md#service-environment--gotchas) for
 that and the `service.runtime` / `service.env` settings.
