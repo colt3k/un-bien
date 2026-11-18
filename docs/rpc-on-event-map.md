@@ -41,6 +41,40 @@ transform).
 
 ---
 
+### Compaction, in one place (the three ways it goes wrong)
+
+- **The live plane sends ONE shape: rpc `compaction_end`.** pi fires the
+  `session_compact` EVENT; table A's remap turns it into `compaction_end`. A
+  consumer that switches on `session_compact` or on pi's subscribe-only
+  `compaction` matches nothing and drops the marker in silence — that was
+  `web-client`'s bug (fixed; pinned by corpus scenario `013-real-compaction`).
+- **The entry plane is a different payload.** `get_entries` returns a
+  `compaction` entry: `{summary, tokensBefore, firstKeptEntryId, fromHook,
+  systemMessage, usage, details}`. Fold it by synthesizing the SAME
+  `compaction_end` frame keyed on the entry id (reference
+  `SessionState+BirthEntry.swift:18`, and `web-client/src/reducer.ts`), so the
+  entry and the frame that streamed it land on one row instead of two captions.
+  `firstKeptEntryId` (where the kept history starts) is carried but used by
+  nobody yet.
+- **A refused compaction is invisible.** `/compact` on a short session fails
+  ("Nothing to compact (session too small)") and emits NO frame and writes NO
+  entry — verified against a live room: entry count and leaf unchanged. Nothing
+  a client can show.
+
+Where it renders, per surface: the app draws a centred caption
+"Context compacted (N tokens)" (`TranscriptRowViews.swift:61`) using
+`tokensBefore`, never `summary`; `web-client` does the same; **`unbien-cli` has
+no compaction case at all** — `connect.ts:479` only lists `compaction_end` as a
+frame that forces a transcript redraw, so the TUI shows nothing.
+
+The durable path cannot supply the count: `unbien-durable` reconstructs the entry
+from a model message and writes `tokensBefore: 0` (`mirror.ts:140`, then
+`view_translator.ts:138`). So a durable-replayed compaction caption reads "0
+tokens" — true of the app and `web-client` alike. Suppressing the parenthetical
+when the count is 0 is the honest fix, and it is not done anywhere yet.
+
+---
+
 ## B. In the rpc stream but NOT deliverable via `pi.on()` — the true gap
 
 | rpc/json frame | consumer uses it? | producer source |
