@@ -1,0 +1,49 @@
+{
+  "flags" : {
+    "ended" : false,
+    "streaming" : false
+  },
+  "items" : [
+    {
+      "images" : 0,
+      "kind" : "user",
+      "row" : "97d17550",
+      "text" : "«62»"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_ce3cdabe4977472b9fa82853",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_98cd5fc17eac40fc8748ad0d",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "pending"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_4a90e8dff3864739a5ab5286",
+      "state" : "running",
+      "tool" : "bash"
+    }
+  ],
+  "leafId" : "d55e21bf",
+  "subagents" : [
+
+  ],
+  "version" : 1
+}

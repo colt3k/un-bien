@@ -309,12 +309,6 @@ export class EntryTree {
     }
   }
 
-  /** Forget every row (a reset tore the transcript down) so the whole path
-   *  re-births from the retained entries. */
-  forgetRenderedRows(): void {
-    this.renderedPathCount = 0
-  }
-
   reset(): void {
     this.byId.clear()
     this.parent.clear()

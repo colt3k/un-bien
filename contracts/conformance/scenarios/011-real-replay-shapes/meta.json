@@ -1,0 +1,10 @@
+{
+  "origin": "real-capture",
+  "source": "web-client/scripts/dump-entries.ts against a live pi session (room QlEDzdZoHZWc)",
+  "captured": "2026-11-18",
+  "modes": [
+    "live"
+  ],
+  "scrub": "All text, thinking, tool-call arguments and tool output replaced by \u00abredacted N\u00bb (N = original char count); entry ids, parentId chain, timestamps, entry/message keys, tool names, usage and display flags kept verbatim. No prompt text, file paths or command lines survive.",
+  "description": "Real machine shapes on the replay plane, captured not authored: a `system` entry with `sections`/`toolsAdded` (no row), assistant entries whose content is [thinking, toolCall] (no row, cards reconstructed from the toolCall blocks), `toolResult` entries with NO `details` (terminal face), `custom` entries with entry-level `data` (no row), `custom_message` gated by display, and a trailing assistant whose toolCall has no result yet (pending card). Pins the vocabulary this client's double could not: thinking blocks ride replayed assistant messages and birth NO reasoning row; entry AND message timestamps are both epoch ms."
+}
