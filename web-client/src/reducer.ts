@@ -132,6 +132,9 @@ export interface Toast {
 export interface ReducerSnapshot {
   items: TranscriptItem[]
   flags: { streaming: boolean; ended: boolean }
+  /** Busy for the view: what the frame stream suggests OR what pi itself says
+   *  via `get_state`. The two can disagree when frames were missed. */
+  busy: boolean
   subagents: SubagentRecord[]
   plan: PlanSnapshot | null
   panels: PanelSnapshot[]
@@ -299,6 +302,10 @@ export class TranscriptReducer {
   private rekeyLog: { from: string; to: string }[] = []
   private leafId: string | null = null
   private streaming = false
+  /** pi's own answer to `get_state` (or a `room_meta` equivalent): "a turn is in
+   *  flight" as the machine knows it. Kept apart from `streaming`, which is what
+   *  the frame stream alone suggests and what the conformance corpus compares. */
+  private peerBusy = false
   private ended = false
   private seq: Record<ItemKind, number> = {
     user: 0,
@@ -556,6 +563,15 @@ export class TranscriptReducer {
             completed ? String(data.leafId ?? "") || null : null,
           )
           if (typeof data.leafId === "string") this.leafId = data.leafId
+        } else if (rpc.command === "get_state") {
+          // Authoritative busy state, folded whenever pi answers `get_state` —
+          // not only at attach. Only an explicit boolean counts: `isStreaming`
+          // absent (older extension, or a stubbed response) must leave the live
+          // state untouched rather than deciding the machine is idle.
+          const state = asFrame(rpc.data)
+          if (state && typeof state.isStreaming === "boolean") {
+            this.reconcileBusy(state.isStreaming)
+          }
         }
         break
       }
@@ -1191,13 +1207,22 @@ export class TranscriptReducer {
 
   /** Turn state is pi's to know, not inferable from history: a completed
    *  assistant entry may still contain tool calls, which the live fold reads as
-   *  "a turn is in flight". After a replay the app asks pi's own `get_state`
-   *  (`isStreaming`) and seeds the flag here; live frames then take over. */
-  setTurnStreaming(streaming: boolean): void {
-    this.streaming = streaming
-    if (!streaming) {
-      for (const item of this.items) item.streaming = false
+   *  "a turn is in flight", and a stream whose terminal frames never arrived
+   *  stays open forever. pi's `get_state.isStreaming` outranks the frame
+   *  stream in BOTH directions (the app calls this design 01M1NFAE): `false`
+   *  while we hold an open stream means we missed the terminal events; `true`
+   *  while we show idle means we missed the turn's START, which folding events
+   *  one by one can never correct. `peerBusy` is kept separate from the corpus-
+   *  compared `flags.streaming` and shows up in `busy`, which is what the view
+   *  drives its stop button and busy dot from. */
+  reconcileBusy(isStreaming: boolean): void {
+    this.peerBusy = isStreaming
+    if (isStreaming) return
+    this.streaming = false
+    for (const item of this.items) {
+      if (item.kind !== "tool") item.streaming = false
     }
+    this.closeOpenAssistant()
   }
 
   /** The viewer's session-ended signal. pi says it with `session_shutdown`; a
@@ -1227,6 +1252,7 @@ export class TranscriptReducer {
     this.panels.clear()
     this.leafId = null
     this.streaming = false
+    this.peerBusy = false
     this.ended = false
     this.messageSeq = 0
     this.pendingToasts = []
@@ -1236,6 +1262,7 @@ export class TranscriptReducer {
     return {
       items: this.items.slice(),
       flags: { streaming: this.streaming, ended: this.ended },
+      busy: this.streaming || this.peerBusy,
       subagents: this.subagents.slice(),
       plan: this.plan,
       panels: [...this.panels.values()],

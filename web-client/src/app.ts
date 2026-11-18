@@ -123,6 +123,14 @@ export class App {
       }
     })
     this.input.addEventListener("input", () => this.autogrow())
+    // The browser's version of the app's foreground heal (RootView.swift:78 →
+    // `AppModel.refreshBusyState`): a hidden tab is throttled and can miss the
+    // frames that bracket a turn while its socket stays healthy — which is
+    // precisely the case a reconnect-driven re-ask never covers. Ask pi for its
+    // state again when the tab comes back and let the fold reconcile.
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") this.refreshBusyState()
+    })
     const hideBox = $<HTMLInputElement>("hideReasoning")
     hideBox.checked = this.reasoningHidden
     hideBox.addEventListener("change", () => {
@@ -453,13 +461,28 @@ export class App {
       const piState = await client
         .request<Record<string, unknown>>("get_state")
         .catch(() => undefined)
-      this.reducer.setTurnStreaming(Boolean(piState?.isStreaming))
+      this.reducer.reconcileBusy(Boolean(piState?.isStreaming))
     } else {
       this.sub.textContent = `${name} · machine not answering — is it connected?`
     }
     client.requestSync()
     this.render()
     this.sub.textContent = `${name} · ${entries.length} entries`
+  }
+
+  /** Re-ask the machine for its authoritative turn state. `reconcileBusy` uses
+   *  only an explicit `isStreaming`, so a machine that does not answer (or does
+   *  not carry the field) leaves the folded state alone instead of guessing idle. */
+  private refreshBusyState(): void {
+    const client = this.client
+    if (!client) return
+    void client
+      .request<Record<string, unknown>>("get_state")
+      .then((state) => {
+        if (state && typeof state.isStreaming === "boolean")
+          this.reducer.reconcileBusy(state.isStreaming)
+      })
+      .catch(() => undefined)
   }
 
   /** Re-attach the session this client was last driving. The room id is only a
@@ -622,8 +645,8 @@ export class App {
     }
     this.renderPanels(snapshot)
     this.renderAsks(snapshot.pendingAsks)
-    this.busy = snapshot.flags.streaming
-    this.stopBtn.hidden = !snapshot.flags.streaming
+    this.busy = snapshot.busy
+    this.stopBtn.hidden = !snapshot.busy
     // An ended session is not drivable: say so where the user will hit it rather
     // than letting `prompt` fail with `unknown_peer`/`room_ended` toasts.
     this.sendBtn.disabled = snapshot.flags.ended

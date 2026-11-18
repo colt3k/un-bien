@@ -404,13 +404,15 @@ describe("replay through the same fold", () => {
     )
     // Replaying history does NOT claim a turn is in flight — that was the spike
     // inferring "streaming" from tool calls sitting in a completed entry. The
-    // app still seeds the flag from pi's own get_state, which is the only
-    // authority on it.
+    // app seeds busy from pi's own get_state, which is the only authority on it,
+    // and that lands in `busy` (the view's surface) rather than in the fold's own
+    // `flags.streaming`: pi saying "mid-turn" must not fabricate a local turn.
     expect(reducer.snapshot().flags.streaming).toBe(false)
-    reducer.setTurnStreaming(true)
-    expect(reducer.snapshot().flags.streaming).toBe(true)
-    reducer.setTurnStreaming(false)
+    reducer.reconcileBusy(true)
+    expect(reducer.snapshot().busy).toBe(true)
     expect(reducer.snapshot().flags.streaming).toBe(false)
+    reducer.reconcileBusy(false)
+    expect(reducer.snapshot().busy).toBe(false)
     expect(reducer.snapshot().items.every((item) => !item.streaming)).toBe(true)
   })
 
@@ -829,5 +831,69 @@ describe("the panel transport a real machine sends", () => {
     expect(snapshot.subagents).toEqual([])
     expect(snapshot.plan).toBeNull()
     expect(snapshot.panels.length).toBe(2)
+  })
+})
+
+describe("busy state reconciled from pi's own get_state", () => {
+  const midTurn = (delta: string) => [
+    { rpc: { type: "turn_start" } },
+    { rpc: { type: "message_start" } },
+    {
+      rpc: {
+        type: "message_update",
+        assistantMessageEvent: {
+          type: "text_delta",
+          contentIndex: 0,
+          delta,
+        },
+      },
+    },
+  ]
+  const stateResponse = (data: Record<string, unknown>) => ({
+    rpc: {
+      type: "response",
+      command: "get_state",
+      id: "s1",
+      success: true,
+      data,
+    },
+  })
+
+  it("says busy when pi says it is streaming, even if no turn opened here", () => {
+    // A client that attached after `turn_start` never saw the turn open, and
+    // folding events one by one can never recover a start it missed. The app
+    // calls this design 01M1NFAE; `flags.streaming` (what the corpus compares)
+    // stays the fold's own view, while `busy` is what the view shows.
+    const reducer = new TranscriptReducer()
+    reducer.apply(stateResponse({ isStreaming: true }))
+    const snapshot = reducer.snapshot()
+    expect(snapshot.busy).toBe(true)
+    expect(snapshot.flags.streaming).toBe(false)
+    expect(snapshot.items).toEqual([])
+  })
+
+  it("closes a stream whose terminal frames never arrived", () => {
+    const reducer = new TranscriptReducer()
+    for (const frame of midTurn("streamed, then the socket went quiet"))
+      reducer.apply(frame)
+    expect(reducer.snapshot().busy).toBe(true)
+
+    reducer.apply(stateResponse({ isStreaming: false }))
+    const snapshot = reducer.snapshot()
+    expect(snapshot.busy).toBe(false)
+    expect(snapshot.flags.streaming).toBe(false)
+    expect(snapshot.items.map((item) => item.streaming)).toEqual([false])
+  })
+
+  it("leaves the fold alone when get_state carries no isStreaming", () => {
+    // Absent means unknown (older extension, stubbed reply), not idle: deciding
+    // idle here would clear a genuinely open stream on a guess.
+    const reducer = new TranscriptReducer()
+    for (const frame of midTurn("still going")) reducer.apply(frame)
+    reducer.apply(stateResponse({ model: { id: "iq3_s" } }))
+    expect(reducer.snapshot().busy).toBe(true)
+    expect(reducer.snapshot().items.map((item) => item.streaming)).toEqual([
+      true,
+    ])
   })
 })

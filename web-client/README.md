@@ -221,6 +221,22 @@ toolCall]`, `tool_execution_start`/`_end` for a `read`, the toolResult
   path), so panel state is compared by this client's tests only. Corpus
   comparison would mean moving the app's panel store into core — an app-side
   call, and 002's `meta.json` now says so.
+- **Busy state is reconciled from pi, never inferred from history.**
+  `snapshot().busy` (what drives the stop button and busy dot) is the fold's own
+  turn state **or** pi's `get_state.isStreaming`; `flags.streaming` — what the
+  corpus compares — stays the frame-derived view, so a peer saying "mid-turn"
+  cannot fabricate a local turn. `reconcileBusy` covers both directions, the way
+  the app's design 01M1NFAE does: `false` while we hold an open stream means the
+  terminal frames were missed (close it), `true` while we show idle means the
+  turn's START was missed (busy, which event-by-event folding can never
+  recover), and an **absent** `isStreaming` means unknown, not idle. It is
+  re-asked when the tab becomes visible again — the browser's version of the
+  app's foreground heal (`RootView.swift:78` → `AppModel.refreshBusyState`),
+  since a hidden tab is throttled while its socket stays healthy. What is
+  deliberately **not** used: the relay's `room_meta_updated` `meta.working`.
+  Checked rather than assumed — it brackets *compaction*
+  (`extension/src/index.ts:1830`, `:1836`), not a turn, so folding it as busy
+  would be wrong.
 - **A `read` of an image file is transcoded on the way in.** `docs/images/
 01-welcome.png` is `PNG image data, 1206 x 2622`; what reached the log was
   `mimeType: "image/jpeg"` with a caption saying `original 1206x2622, displayed
