@@ -13,6 +13,7 @@ pub mod presence;
 pub mod protocol;
 pub mod relay_keypair;
 pub mod rooms;
+pub mod sync_util;
 
 use std::sync::Arc;
 
