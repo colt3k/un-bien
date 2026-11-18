@@ -178,8 +178,11 @@ function _probeBroker(sockPath: string): Promise<LeaderProbe> {
       clearTimeout(connectTimer)
       if (ackTimer !== null) clearTimeout(ackTimer)
       // A `live` socket may proceed to `register`; any other outcome must not
-      // leave the connection dangling.
+      // leave the connection dangling. A live socket is handed over, so this
+      // probe stops reading it (the peer reads every later line, including
+      // the probe's second reply, which it skips).
       if (result.outcome !== "live") sock.destroy()
+      else sock.off("data", onData)
       resolve(result)
     }
 
@@ -192,7 +195,7 @@ function _probeBroker(sockPath: string): Promise<LeaderProbe> {
     let ackTimer: ReturnType<typeof setTimeout> | null = null
 
     sock.setEncoding("utf8")
-    sock.on("data", (chunk: string) => {
+    const onData = (chunk: string): void => {
       buf += chunk
       let nl: number
       while ((nl = buf.indexOf("\n")) >= 0) {
@@ -214,7 +217,8 @@ function _probeBroker(sockPath: string): Promise<LeaderProbe> {
           /* partial or non-JSON line: keep reading */
         }
       }
-    })
+    }
+    sock.on("data", onData)
 
     sock.once("connect", () => {
       // Kernel connect won; now wait for the APP-level ack.

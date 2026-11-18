@@ -89,7 +89,7 @@ const {
   _seedRootSessionForTest,
 } = await import("../src/index.js");
 
-import type { ExtensionAPI, ExtensionFactory } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionFactory } from "@earendil-works/pi-coding-agent";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

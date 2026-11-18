@@ -176,7 +176,7 @@ impl PairingRegistry {
     pub fn set(&self, machine: String, owners: Vec<String>) {
         let set: HashSet<String> = owners.into_iter().collect();
         {
-            let mut guard = self.store.lock().unwrap();
+            let mut guard = crate::sync_util::lock(&self.store);
             if let Some(conn) = guard.as_mut() {
                 let persisted = (|| -> rusqlite::Result<()> {
                     let tx = conn.transaction()?;
@@ -197,12 +197,12 @@ impl PairingRegistry {
                 }
             }
         }
-        self.allow.lock().unwrap().insert(machine, set);
+        crate::sync_util::lock(&self.allow).insert(machine, set);
     }
 
     /// The monotonic version floor currently stored for `machine` (signed path).
     pub fn current_version(&self, machine: &str) -> Option<u64> {
-        self.versions.lock().unwrap().get(machine).copied()
+        crate::sync_util::lock(&self.versions).get(machine).copied()
     }
 
     /// True when `machine`'s stored signing pair is byte-identical to this
@@ -213,7 +213,7 @@ impl PairingRegistry {
     /// tie between two concurrent pushers could silently discard a push that
     /// carried a REAL allow-list change.
     pub fn is_same_signed(&self, machine: &str, blob: &[u8], sig: &[u8]) -> bool {
-        match self.blobs.lock().unwrap().get(machine) {
+        match crate::sync_util::lock(&self.blobs).get(machine) {
             None => false,
             Some((stored_blob, stored_sig)) => {
                 stored_blob.as_slice() == blob && stored_sig.as_slice() == sig
@@ -244,7 +244,7 @@ impl PairingRegistry {
         }
         let set: HashSet<String> = owners.into_iter().collect();
         {
-            let mut guard = self.store.lock().unwrap();
+            let mut guard = crate::sync_util::lock(&self.store);
             if let Some(conn) = guard.as_mut() {
                 let persisted = (|| -> rusqlite::Result<()> {
                     let tx = conn.transaction()?;
@@ -274,12 +274,9 @@ impl PairingRegistry {
                 }
             }
         }
-        self.blobs
-            .lock()
-            .unwrap()
-            .insert(machine.clone(), (blob.to_vec(), sig.to_vec()));
-        self.allow.lock().unwrap().insert(machine.clone(), set);
-        self.versions.lock().unwrap().insert(machine, version);
+        crate::sync_util::lock(&self.blobs).insert(machine.clone(), (blob.to_vec(), sig.to_vec()));
+        crate::sync_util::lock(&self.allow).insert(machine.clone(), set);
+        crate::sync_util::lock(&self.versions).insert(machine, version);
         Ok(())
     }
 
@@ -289,8 +286,8 @@ impl PairingRegistry {
     /// owner-set poisoning, because no peer can inject owner claims it
     /// cannot sign.
     pub fn signed_blobs(&self) -> Vec<(String, u64, Vec<u8>, Vec<u8>)> {
-        let versions = self.versions.lock().unwrap();
-        let blobs = self.blobs.lock().unwrap();
+        let versions = crate::sync_util::lock(&self.versions);
+        let blobs = crate::sync_util::lock(&self.blobs);
         blobs
             .iter()
             .map(|(machine, (blob, sig))| {
@@ -307,7 +304,7 @@ impl PairingRegistry {
     /// May `requester` list/reach `machine`? FAIL-CLOSED: an unconfigured
     /// machine (no push yet) permits no one.
     pub fn allows(&self, machine: &str, requester: &str) -> bool {
-        match self.allow.lock().unwrap().get(machine) {
+        match crate::sync_util::lock(&self.allow).get(machine) {
             None => false, // unconfigured → fail-CLOSED (design 01M1ZE43)
             Some(set) => set.contains(requester),
         }
@@ -316,21 +313,21 @@ impl PairingRegistry {
     /// The current allow-set for `machine` when configured — re-filtered
     /// subscribers on push. `None` = unconfigured (fails closed).
     pub fn owners_of(&self, machine: &str) -> Option<HashSet<String>> {
-        self.allow.lock().unwrap().get(machine).cloned()
+        crate::sync_util::lock(&self.allow).get(machine).cloned()
     }
 
     /// All unique owner pubkeys across ALL machines (from pairing_set pushes).
     /// Used for the federation shared-owner check — works without the app
     /// (the extension sends pairing_set when a pi connects).
     pub fn all_owner_pubkeys(&self) -> HashSet<String> {
-        let allow = self.allow.lock().unwrap();
+        let allow = crate::sync_util::lock(&self.allow);
         allow.values().flat_map(|set| set.iter().cloned()).collect()
     }
 
     /// All machines that allow a given owner in their pairing_set.
     /// Used for the authorization fallback (find siblings via pairing).
     pub fn machines_by_owner(&self, owner: &str) -> HashSet<String> {
-        let allow = self.allow.lock().unwrap();
+        let allow = crate::sync_util::lock(&self.allow);
         allow
             .iter()
             .filter(|(_, owners)| owners.contains(owner))

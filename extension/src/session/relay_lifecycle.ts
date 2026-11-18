@@ -24,6 +24,7 @@
  * (public state snapshot; index).
  */
 import { join } from "node:path"
+import { AppPresenceWatch } from "./app_presence.js"
 import { readFileSync } from "node:fs"
 import { hostname } from "node:os"
 import { fileURLToPath } from "node:url"
@@ -954,7 +955,24 @@ export function _installAutoListener(
   }
 
   relay.on("message", onMsg)
-  return () => relay.off("message", onMsg)
+  // Apps the relay reports offline for minutes are detached, so this pi stops
+  // streaming to them (see app_presence.ts); a returning app re-attaches on
+  // its first frame through the reconnect path above.
+  const presence = new AppPresenceWatch({
+    activePeers: () => deps.activePeers,
+    send: (frame) => relay.send(frame),
+    detach: (appPeerId) => {
+      if (hasListenerAuthority()) _onPeerDisconnect(deps, appPeerId)
+    },
+  })
+  const onPresence = (line: string): void => presence.onLine(line)
+  relay.on("message", onPresence)
+  presence.start()
+  return () => {
+    relay.off("message", onMsg)
+    relay.off("message", onPresence)
+    presence.stop()
+  }
 }
 
 /**

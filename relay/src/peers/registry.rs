@@ -95,7 +95,7 @@ impl PeerRegistry {
         // Compute both flags **before** the insert so they reflect the prior
         // state of the registry.
         let (was_offline_before, is_first_in_room) = {
-            let mut lock = self.senders.lock().unwrap();
+            let mut lock = crate::sync_util::lock(&self.senders);
             let was_offline_before = !lock.keys().any(|(p, _)| p == &peer_id);
             let is_first_in_room = !lock.contains_key(&key);
             lock.entry(key)
@@ -165,7 +165,7 @@ impl PeerRegistry {
             .as_millis() as i64;
 
         let (room_emptied, peer_offlined) = {
-            let mut lock = self.senders.lock().unwrap();
+            let mut lock = crate::sync_util::lock(&self.senders);
             let key = (peer_id.to_string(), room_id.to_string());
             let mut room_emptied = false;
             if let Some(v) = lock.get_mut(&key) {
@@ -217,7 +217,7 @@ impl PeerRegistry {
 
     /// Returns `true` if `peer_id` has at least one live connection.
     pub fn is_online(&self, peer_id: &str) -> bool {
-        let lock = self.senders.lock().unwrap();
+        let lock = crate::sync_util::lock(&self.senders);
         lock.keys().any(|(p, _)| p == peer_id)
     }
 
@@ -231,7 +231,7 @@ impl PeerRegistry {
     /// registered: the last conn's `extra` wins per key, and the other conns
     /// (e.g. the keeper) only fill in keys the last conn left out.
     pub fn rooms_of(&self, peer_id: &str) -> Vec<RoomMeta> {
-        let lock = self.senders.lock().unwrap();
+        let lock = crate::sync_util::lock(&self.senders);
         let mut by_room: HashMap<String, RoomMeta> = HashMap::new();
         for ((p, _), v) in lock.iter() {
             if p == peer_id
@@ -252,7 +252,7 @@ impl PeerRegistry {
     /// All local rooms grouped by peer epk (for the relay_peer_list exchange).
     /// Same merge logic as rooms_of, but for ALL peers, not one.
     pub fn all_rooms_by_epk(&self) -> HashMap<String, Vec<RoomMeta>> {
-        let lock = self.senders.lock().unwrap();
+        let lock = crate::sync_util::lock(&self.senders);
         let mut by_epk: HashMap<String, HashMap<String, RoomMeta>> = HashMap::new();
         for ((peer_id, _room_id), v) in lock.iter() {
             if let Some((_, last_meta, _)) = v.last() {
@@ -296,7 +296,7 @@ impl PeerRegistry {
         msg: Message,
         from_conn_id: u64,
     ) -> bool {
-        let lock = self.senders.lock().unwrap();
+        let lock = crate::sync_util::lock(&self.senders);
         let key = (dest_peer.to_string(), dest_room.to_string());
         let Some(v) = lock.get(&key) else {
             debug!(
@@ -346,7 +346,7 @@ impl PeerRegistry {
             current_parent,
             current_parent_session,
         ) = {
-            let mut lock = self.senders.lock().unwrap();
+            let mut lock = crate::sync_util::lock(&self.senders);
             let key = (peer_id.to_string(), room_id.to_string());
             match lock.get_mut(&key) {
                 Some(v) if !v.is_empty() => {
@@ -454,7 +454,7 @@ impl PeerRegistry {
     /// `room_announced`/`room_ended`, `room_meta_updated`) where the
     /// subscriber's room isn't known in advance.
     fn forward_to_all_rooms_of(&self, peer_id: &str, msg: Message) {
-        let lock = self.senders.lock().unwrap();
+        let lock = crate::sync_util::lock(&self.senders);
         for ((p, _), v) in lock.iter() {
             if p == peer_id {
                 for (_, _, tx) in v.iter() {
@@ -469,7 +469,7 @@ impl PeerRegistry {
     /// Used by `pi_envelope` cross-PC forwarding (plan 25) where the relay
     /// has Pi-B's pubkey but not its room_id.
     pub fn forward_to_peer(&self, peer_id: &str, msg: Message) -> bool {
-        let lock = self.senders.lock().unwrap();
+        let lock = crate::sync_util::lock(&self.senders);
         let mut delivered = false;
         for ((p, _), v) in lock.iter() {
             if p == peer_id {
@@ -487,7 +487,7 @@ impl PeerRegistry {
     /// connection in the registry). Used for Phase 4: pushing the
     /// `federated_peer_list` to apps/extensions when federated sessions change.
     pub fn broadcast_to_all(&self, msg: Message) {
-        let lock = self.senders.lock().unwrap();
+        let lock = crate::sync_util::lock(&self.senders);
         for v in lock.values() {
             for (_, _, tx) in v.iter() {
                 let _ = tx.send(msg.clone());

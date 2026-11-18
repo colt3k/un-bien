@@ -9,6 +9,7 @@ import {
   writeFileSync,
   mkdirSync,
 } from "node:fs"
+import { DEFAULT_SERVICE_ENV } from "./service_env.js"
 import { extIsDevChannel } from "./cliInstall.js"
 import { tmpdir } from "node:os"
 import { basename, dirname, isAbsolute, join } from "node:path"
@@ -371,19 +372,39 @@ describe.skipIf(posixOnly)("linkCliBinaries / unlinkCliBinaries", () => {
     expect(second.log.some((l) => l.includes("(unchanged)"))).toBe(true)
   })
 
-  test("link replaces a stale symlink pointing elsewhere", () => {
+  test("link replaces a stale symlink to an older Pi-extension copy", () => {
     const binDir = join(tmpHome, ".local", "bin")
     mkdirSync(binDir, { recursive: true })
-    // Write a fake stale symlink first
+    // A link left by an earlier extension install, inside Pi's agent dir.
+    const agentDir = join(tmpHome, "agent")
+    const old = join(agentDir, "npm", "old", "index.js")
+    mkdirSync(join(old, ".."), { recursive: true })
+    writeFileSync(old, "// old\n")
     const stale = join(binDir, "unbien-admin")
-    writeFileSync(join(tmpHome, "fake-old.js"), "// old\n")
-    require("node:fs").symlinkSync(join(tmpHome, "fake-old.js"), stale)
-    expect(readlinkSync(stale)).toBe(join(tmpHome, "fake-old.js"))
+    require("node:fs").symlinkSync(old, stale)
+    const saved = process.env["PI_CODING_AGENT_DIR"]
+    process.env["PI_CODING_AGENT_DIR"] = agentDir
+    try {
+      const result = linkCliBinaries(tmpHome, fakePaths)
+      const pi = result.links.find((l) => l.name === "unbien-admin")!
+      expect(readlinkSync(pi.path)).toBe(pi.target)
+    } finally {
+      if (saved === undefined) delete process.env["PI_CODING_AGENT_DIR"]
+      else process.env["PI_CODING_AGENT_DIR"] = saved
+    }
+  })
 
+  test("link keeps an unbien-admin a package manager installed", () => {
+    const binDir = join(tmpHome, ".local", "bin")
+    mkdirSync(binDir, { recursive: true })
+    const global = join(tmpHome, "bun-global", "index.js")
+    mkdirSync(join(global, ".."), { recursive: true })
+    writeFileSync(global, "// bun global copy\n")
+    const bin = join(binDir, "unbien-admin")
+    require("node:fs").symlinkSync(global, bin)
     const result = linkCliBinaries(tmpHome, fakePaths)
-    const pi = result.links.find((l) => l.name === "unbien-admin")!
-    expect(readlinkSync(pi.path)).toBe(pi.target)
-    expect(readlinkSync(pi.path)).not.toBe(join(tmpHome, "fake-old.js"))
+    expect(readlinkSync(bin)).toBe(global)
+    expect(result.log.some((l) => l.includes("installed by a package manager"))).toBe(true)
   })
 
   test("link signals onPath=false when binDir is absent from PATH (typical CI)", () => {
@@ -507,8 +528,10 @@ describe("propagatedUnbienEnv (the install-time env snapshot)", () => {
     }
   })
 
-  it("ignores non-UNBIEN variables entirely", () => {
+  it("copies only UNBIEN_* and the service.env names (default: XDG + bun)", () => {
     const env = propagatedUnbienEnv()
-    expect(Object.keys(env).every((k) => k.startsWith("UNBIEN_"))).toBe(true)
+    const allowed = new Set(DEFAULT_SERVICE_ENV)
+    expect(Object.keys(env).every((k) => k.startsWith("UNBIEN_") || allowed.has(k))).toBe(true)
+    expect(env["PATH"]).toBeUndefined()
   })
 })

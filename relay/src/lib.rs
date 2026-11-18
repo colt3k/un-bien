@@ -1,6 +1,8 @@
 pub mod auth;
+pub mod drop_log;
 pub mod handlers;
 mod identity;
+pub mod log_file;
 pub mod membership;
 pub mod mesh;
 pub mod metrics;
@@ -11,6 +13,7 @@ pub mod presence;
 pub mod protocol;
 pub mod relay_keypair;
 pub mod rooms;
+pub mod sync_util;
 
 use std::sync::Arc;
 

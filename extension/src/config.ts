@@ -103,6 +103,27 @@ export type UnBienConfig = {
     shell_args?: string[]
   }
   /**
+   * The launcher service (launchd / systemd / Task Scheduler) that
+   * `/unbien install` / `unbien-admin install` renders. Read at install time;
+   * re-run the install to apply a change.
+   *  - `runtime`: what runs the launcher: `"node"`, `"bun"`, or an absolute
+   *    path. A name is resolved on PATH when installing. Absent ⇒ the runtime
+   *    running the install (process.execPath).
+   *  - `env`: names of variables copied from the installing environment into
+   *    the service, in addition to `UNBIEN_*` (always copied) and HOME / PATH /
+   *    PI_CODING_AGENT_DIR / PI_CODING_AGENT_SESSION_DIR. Only variables that
+   *    are set are written. Absent ⇒ `DEFAULT_SERVICE_ENV` (the XDG base-dir
+   *    variables and bun's install dirs). `UNBIEN_SERVICE_ENV` (comma
+   *    separated) adds more.
+   */
+  service?: { runtime?: string; env?: string[] }
+  /**
+   * The package manager `/unbien install cli|launcher` uses for its global
+   * installs: `npm` (`npm install -g`), `bun` (`bun add -g`) or `pnpm`
+   * (`pnpm add -g`). Absent ⇒ npm.
+   */
+  package_manager?: "npm" | "bun" | "pnpm"
+  /**
    * Subagent surfacing. When `rooms` is true, a
    * Pi SUBAGENT is surfaced to the paired app as its OWN session — a distinct
    * relay room (under this machine's identity) that nests under its parent via

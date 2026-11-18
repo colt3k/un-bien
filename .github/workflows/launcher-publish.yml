@@ -19,15 +19,16 @@ jobs:
     runs-on: ubuntu-latest
     environment: npm
     steps:
-      - uses: actions/checkout@v7
-
-      - uses: pnpm/action-setup@v6
-
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          package-manager-cache: false
           node-version: "24.x"
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
 
       - run: npm install -g npm@latest
 
@@ -46,11 +47,14 @@ jobs:
         run: |
           VER=$(node -p "require('./package.json').version")
           if echo "$VER" | grep -q '-'; then
-            echo "tag=--tag dev" >> "$GITHUB_OUTPUT"
+            echo "tag=dev" >> "$GITHUB_OUTPUT"
             echo "pre-release $VER -> publishing under 'dev' tag"
           else
             echo "tag=" >> "$GITHUB_OUTPUT"
           fi
       - name: Publish @geohar/un-bien-launcher
         working-directory: launcher
-        run: pnpm publish --provenance --access public --no-git-checks ${{ steps.prerelease.outputs.tag }}
+        env:
+          # The dist-tag for a pre-release (dev); empty publishes as latest.
+          NPM_TAG: ${{ steps.prerelease.outputs.tag }}
+        run: pnpm publish --provenance --access public --no-git-checks ${NPM_TAG:+--tag "$NPM_TAG"}

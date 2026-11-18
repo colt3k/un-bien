@@ -192,40 +192,37 @@ fn relay_log_filter() -> tracing_subscriber::EnvFilter {
 /// Install the global subscriber: stdout exactly as `tracing_subscriber::
 /// fmt::init()` behaved (same default fmt layer, same `EnvFilter` from
 /// `RUST_LOG`), plus a best-effort second layer appending to
-/// `<state root>/relay.log`. The relay used to depend on whoever launched it
-/// to redirect output somewhere useful (relay.log ended up in the CONFIG
-/// tree by accident); now it owns a log file in its own state root. If the
-/// file can't be opened, the stdout-only setup proceeds untouched.
+/// `<state root>/relay.log`, size-capped with one rotated generation
+/// (`relay::log_file`). If the file can't be opened, the stdout-only setup
+/// proceeds untouched.
+///
+/// The service units redirect stdout into that same `relay.log`, so when
+/// stdout IS the log file the stdout layer is left out: with both on, every
+/// line was written twice.
 fn init_tracing() {
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
 
-    let file_layer = open_relay_log().map(|file| {
+    let path = relay::paths::resolve_relay_log_path();
+    let file = open_relay_log(&path);
+    let stdout_is_log = file.is_some() && relay::log_file::stdout_is(&path);
+    let file_layer = file.map(|file| {
         tracing_subscriber::fmt::layer()
             .with_ansi(false) // plain text in a log file
-            .with_writer(std::sync::Mutex::new(file))
+            .with_writer(file)
     });
+    let stdout_layer = (!stdout_is_log).then(tracing_subscriber::fmt::layer);
     tracing_subscriber::registry()
         .with(relay_log_filter())
-        .with(tracing_subscriber::fmt::layer())
+        .with(stdout_layer)
         .with(file_layer)
         .init();
 }
 
 /// Open `<state root>/relay.log` for append, creating the state root if
 /// needed. Best-effort: on failure, note it on stderr and return None.
-fn open_relay_log() -> Option<std::fs::File> {
-    let path = relay::paths::resolve_relay_log_path();
-    let open = || {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        std::fs::OpenOptions::new()
-            .append(true)
-            .create(true)
-            .open(&path)
-    };
-    match open() {
+fn open_relay_log(path: &std::path::Path) -> Option<relay::log_file::RotatingFile> {
+    match relay::log_file::RotatingFile::open(path, relay::log_file::DEFAULT_MAX_BYTES) {
         Ok(file) => Some(file),
         Err(err) => {
             // tracing (not eprintln!): datestamped on stdout — which the
