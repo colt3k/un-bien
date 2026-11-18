@@ -224,6 +224,8 @@ async fn handle_peer(socket: WebSocket, peer_addr: SocketAddr, state: AppState) 
     // re-emits of `presence` (single cache slot — there's only one
     // subscription set per conn) and `rooms` (one slot per target peer).
     let mut last_presence_resp: Option<String> = None;
+    // Rate limit for the per-frame "dest not found" warning (see drop_log).
+    let mut drop_log = crate::drop_log::DropLog::default();
     let mut last_rooms_resp: HashMap<String, String> = HashMap::new();
 
     // ── 4. Routing loop ───────────────────────────────────────────────────
@@ -848,12 +850,17 @@ async fn handle_peer(socket: WebSocket, peer_addr: SocketAddr, state: AppState) 
                                                 );
                                             }
                                         }
-                                    } else {
+                                    } else if let Some(suppressed) = drop_log.note(
+                                        &dest_peer,
+                                        &dest_room,
+                                        std::time::Instant::now(),
+                                    ) {
                                         warn!(
                                             from = %peer_short,
                                             dest = %dest_tail,
                                             room = %dest_room,
                                             bytes = ct_len,
+                                            dropped_since_last = suppressed,
                                             "dest (peer, room) not found, dropping",
                                         );
                                     }

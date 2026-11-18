@@ -1,6 +1,8 @@
 pub mod auth;
+pub mod drop_log;
 pub mod handlers;
 mod identity;
+pub mod log_file;
 pub mod membership;
 pub mod mesh;
 pub mod metrics;
