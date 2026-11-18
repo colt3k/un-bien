@@ -60,13 +60,6 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return node
 }
 
-/** A compaction marker's label, mirroring the app's
- *  "Context compacted (N tokens)". Built from the marker's token count; the
- *  summary text is the stand-in for the folded history, not a caption. */
-function compactionCaption(item: TranscriptItem): string {
-  return `Context compacted (${item.tokensBefore ?? 0} tokens)`
-}
-
 export class App {
   private readonly transcript = $<HTMLElement>("transcript")
   private readonly drawer = $<HTMLElement>("drawer")
@@ -672,9 +665,10 @@ export class App {
       node.append(details)
     } else if (item.kind === "compaction") {
       // Just the caption, centred — the app shows no "compaction" header here.
-      // Built from the marker's token count; the summary is the stand-in text
-      // for the folded history, not a label, so it does not go here.
-      node.append(el("div", "body", compactionCaption(item)))
+      // The fold carries the wording (it is corpus-compared against the app's),
+      // and the summary stays on the item as the stand-in for the folded
+      // history rather than becoming a label.
+      node.append(el("div", "body", item.text))
     } else {
       node.append(el("div", "who", item.kind))
       node.append(el("div", "body", item.text))
@@ -688,9 +682,7 @@ export class App {
     node.classList.toggle("streaming", item.streaming)
     if (item.kind !== "tool") {
       const body = node.querySelector(".body")
-      const text =
-        item.kind === "compaction" ? compactionCaption(item) : item.text
-      if (body && body.textContent !== text) body.textContent = text
+      if (body && body.textContent !== item.text) body.textContent = item.text
       this.syncImages(node, item)
       return
     }

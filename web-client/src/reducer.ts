@@ -136,6 +136,14 @@ export interface ReducerSnapshot {
 
 type Frame = Record<string, unknown>
 
+/** The compaction row's label — mirrors core `CompactionMarker.caption`
+ *  (`TranscriptItem.swift`). It lives in the fold rather than in the view
+ *  because the conformance projection compares it: the wording is a contract
+ *  between clients, not each client's choice. */
+export function compactionCaption(tokensBefore: number): string {
+  return `Context compacted (${tokensBefore} tokens)`
+}
+
 function asFrame(value: unknown): Frame | null {
   return typeof value === "object" && value !== null ? (value as Frame) : null
 }
@@ -557,16 +565,17 @@ export class TranscriptReducer {
         if (!result) break
         const entryId =
           typeof rpc.entryId === "string" ? rpc.entryId : undefined
+        const tokens =
+          typeof result.tokensBefore === "number" ? result.tokensBefore : 0
         const item: TranscriptItem = {
           kind: "compaction",
           row: entryId ?? this.row("compaction", rowHint),
-          text: "",
+          text: compactionCaption(tokens),
           streaming: false,
           blocks: [],
           images: 0,
           replayStable: entryId !== undefined,
-          tokensBefore:
-            typeof result.tokensBefore === "number" ? result.tokensBefore : 0,
+          tokensBefore: tokens,
         }
         if (entryId) this.insertBeforeLiveTail(item)
         else this.push(item)

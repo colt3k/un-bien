@@ -1498,7 +1498,8 @@
     },
     {
       "kind" : "compaction",
-      "row" : "325f3ee4"
+      "row" : "325f3ee4",
+      "text" : "Context compacted (213920 tokens)"
     },
     {
       "blocks" : [
@@ -1509,9 +1510,14 @@
       "row" : "call_809df264d05b4a298687bf42",
       "state" : "ok",
       "tool" : "bash"
+    },
+    {
+      "kind" : "compaction",
+      "row" : "3d5bb86c",
+      "text" : "Context compacted (115425 tokens)"
     }
   ],
-  "leafId" : "0055dfad",
+  "leafId" : "3d5bb86c",
   "subagents" : [
 
   ],

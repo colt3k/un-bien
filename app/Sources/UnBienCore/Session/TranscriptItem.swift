@@ -208,6 +208,12 @@ public struct CompactionMarker: Equatable, Sendable {
         self.summary = summary
         self.tokensBefore = tokensBefore
     }
+
+    /// The row's label, in CORE rather than in a view (user, 2026-11-18): the
+    /// copy was SwiftUI-local, duplicated by every other client with nothing
+    /// comparing it. The conformance projection now emits it, so a client that
+    /// rewords or drops the caption fails the corpus instead of drifting.
+    public var caption: String { "Context compacted (\(tokensBefore) tokens)" }
 }
 
 extension Array where Element == TranscriptItem {

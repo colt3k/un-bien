@@ -59,7 +59,7 @@ struct TranscriptRow: View, Equatable {
                          displayPolicy: displayPolicy, hideInputRich: hideInputRich, store: cardUI,
                          themeID: themeID)
         case let .compaction(marker):
-            Label("Context compacted (\(marker.tokensBefore) tokens)", systemImage: "arrow.triangle.merge")
+            Label(marker.caption, systemImage: "arrow.triangle.merge")
                 .font(.caption).foregroundStyle(theme.secondaryText)
                 .frame(maxWidth: .infinity)
         case let .notice(notice):

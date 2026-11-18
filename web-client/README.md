@@ -137,6 +137,25 @@ Screenshot of a live turn: `/tmp/unbien-smoke/web-client-live.png`.
   the live frame, keyed on the entry id, as the reference does
   (`SessionState+BirthEntry.swift:18`). The row's kind survived; its content did
   not, which is the kind of bug a green projection can hide.
+- **`013` now carries both compaction producers.** A second entry, captured
+  from a native `/compact` (`fromHook: false`) rather than the pre-compact hook
+  (`fromHook: true`), re-parented onto the chain. The shape is identical
+  field-for-field — `summary`, `firstKeptEntryId`, `tokensBefore`,
+  `details{readFiles,modifiedFiles}`, `usage{…}`, `systemMessage` — so a client
+  that branches on `fromHook`, or hides hook compactions, diverges. Across all 72
+  compaction entries in the local logs every one carries all of those fields (66
+  hook, 6 native) and `tokensBefore` is always a real number (83,746–218,223);
+  the `tokensBefore: 0` we saw elsewhere is pi-durable's, not the SDK's. Its
+  `firstKeptEntryId` intentionally DANGLES (names an entry outside the fixture,
+  which is normal for a paged walk) — and nothing reads that field today in the
+  app, the extension or this client, so a future "context starts here" divider
+  must tolerate it pointing off-page.
+- **The compaction caption is now a compared string, not per-client copy.** It
+  was SwiftUI-local (`Label("Context compacted (\(marker.tokensBefore) tokens)")`)
+  and duplicated by this client's renderer with nothing checking either. It moved
+  to core (`CompactionMarker.caption`) and into the projection, so the wording
+  fails the corpus if a client rewords or drops it; the fold now carries it in
+  `item.text` and the renderer just draws that.
 - **`014` puts images on the replay plane** — a captured `chrome_screenshot`
   result whose content is `[image, text]`, image FIRST, then the
   "Screenshot 1024x578 png (42KB) saved to …" line, with

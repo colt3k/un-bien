@@ -105,6 +105,7 @@ public extension SessionState {
                 rows.append(.object([
                     "kind": .string("compaction"),
                     "row": rowID(kind: "compaction", id: marker.id, replayStable: true),
+                    "text": .string(Conformance.scrub(marker.caption)),
                 ]))
             case let .notice(notice):
                 rows.append(.object([
