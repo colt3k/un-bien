@@ -30,13 +30,13 @@ Both runners run every declared mode (an unknown mode name fails the harness
 rather than going inert); the interpreted state must be **identical across modes
 and across implementations**.
 
-Honest status: every scenario declares exactly one mode, and no scenario yet
-feeds the SAME history through both. So "identical across modes" is currently a
-design claim, not an asserted fact — 019 is the first `replay` fixture and pins
-entry folding against its own golden. The paired fixture (one session, both
-planes, one golden) is the next thing to capture, and it needs both planes
-recorded from the same session — the durable log alone cannot say what the live
-plane would have produced.
+Honest status: two scenarios now feed the SAME session through both planes —
+020 (an ordinary session: watch it, then arrive cold at the same instant) and
+021 (a session driven through the durable vocabulary: image result, failed card,
+120 KB read, `/compact`, a branch with its summary accepted, an Esc interrupt).
+So "identical across modes" is an asserted fact with one documented exception,
+spelled out under "Paired inputs": a branched session can show a watcher rows a
+cold arrival never sees, and the claim that survives that is containment.
 
 ## Normalized vocabulary (`expected.json`)
 
@@ -126,9 +126,18 @@ that arrives COLD — durable `get_entries` pages and the terminal active-leaf
 page, no live frames. `modes` then lists both `live` and `replay`, and a runner
 that never opens `replay.jsonl` is not testing the claim the scenario makes.
 
-There is still ONE golden — the connected run's projection — and the cold run is
-held to that same golden, since identical-across-modes is the point. Three parts
-of the projection are plane-specific by construction, so the cross-plane
+There is still ONE golden — the connected run's projection. The cold run is held
+to it by **containment**, not equality: every row a cold viewer sees must exist
+in the watched transcript with the same fields, and both runs must agree on the
+`leafId` they would resume from. 021 is why the direction matters. That session
+was BRANCHED in the tree: the watcher saw a stretch of turns, the leaf then moved
+to a different branch, and `get_entries` only ever serves the ACTIVE path (the
+derivation rule at "a block not on the derived path is absent"). So the cold run
+holds 41 of the 92 rows and cannot hold the rest — correct behaviour on both
+sides, not a fold disagreement. The extras are logged by both runners rather than
+asserted away, so a fixture that silently shrinks the comparison is visible.
+
+Four parts of the projection are plane-specific by construction, so the cross-plane
 comparison drops them. Dropping is a claim, so it is spelled out here rather than
 left to a filter:
 
@@ -137,6 +146,35 @@ left to a filter:
 | `panels`, `subagents`, `pendingAsks` | pi does not persist them: panels ride `{evt channel:"panel"}` frames, an ask is a moment rather than a record |
 | `reasoning` rows | pi persists `thinking` blocks ON the message entry, and neither fold turns a persisted block into a row — a client that attaches cold shows no thinking rows at all. 020 records this as a gap. The equality is not expressible in the vocabulary yet either: reasoning rows are keyed synthetic `reasoning#n` with `replayStable: false` |
 | the `hunks` block on a card | the diff sidecar rides the live `tool_execution_start` frame and nothing else, so a watched card settles to `[diff, hunks]` and a cold one to `[diff]` |
+
+### What 021 pinned, and what it found
+
+- A `compaction` ENTRY folds to the same `compaction` row a live
+  `compaction_end` frame does — text built from `tokensBefore`, row keyed by the
+  bare sequence number (`replayStable: false`). 103 812 tokens before, one row.
+- A `branch_summary` entry produced **no row at all**: its parent is an ancestor
+  of the old leaf, and the accepted summary sits on the branch that is no longer
+  the active path. Neither fold renders an off-path entry, so the durable summary
+  is invisible to a viewer unless the tree moves back to it. Not modelled as a
+  bug here — stated so nobody re-derives it.
+- 59 `custom` entries (an extension's own state blobs) fold to nothing in both
+  folds. One `custom_message`-derived notice DOES render: the pairing payload,
+  which is why `details` is length-scrubbed everywhere.
+- An image tool result reaches the cold plane as a `toolResult` message with an
+  `image` content block, and the cold card shows `images: 1` like the watched
+  one. `type`, `mimeType` and `toolCallId` are therefore structure that a scrub
+  must never touch — a first pass of 021's scrubber marked them and every card
+  sat at `running` with no image, which is the fixture earning its keep.
+- **A hand-written entry in a live session file reaches nobody.** `get_entries`
+  answers from pi's in-memory `fileEntries`, which a running session never
+  re-reads from disk. A `session_info` line appended out of band sits in the
+  JSONL, is ignored by pi's own `getSessionName()`, and is never served — so
+  `session_info` is deliberately NOT pinned by any fixture. Only a `/name` typed
+  at the prompt produces one a viewer can see.
+- **The client re-walks on a 6-second timer** whether or not anything changed:
+  81 walk runs / 136 pages in a ten-minute capture, the leaf beacon moving
+  through 23 ids. 021's `capture.py` collapses the interior runs (the final walk
+  carries the whole history); the cadence itself is a live-plane fact.
 
 ## Which build produced this
 

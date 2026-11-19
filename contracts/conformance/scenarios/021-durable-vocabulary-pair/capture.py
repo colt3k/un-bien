@@ -47,6 +47,25 @@ import json
 import sys
 
 MAX_READABLE = 48  # the projection's own readable cap (Conformance.textLimit)
+# Filler past this point buys nothing a length marker does not. Ordinary prose
+# (deltas, replies, thinking) stays length-preserving so the two planes' text is
+# string-comparable; a 120 KB tool output would add 120 KB of block-shade noise
+# per walk page that repeats it.
+# Field names that carry shape, not content, and are therefore NEVER replaced at
+# any length or nesting: a tool result's `type: "image"` is what makes a card
+# show an image, and a first cut that scrubbed it left 53 entries whose role read
+# "«10»" and whose cards sat at `running` forever.
+STRUCTURAL = {
+    "type", "role", "mimeType", "toolName", "toolCallId", "id", "parentId",
+    "timestamp", "stopReason", "sessionName", "customType", "toolCallName",
+}
+# IMPORTANT: length markers are only allowed where they cannot break the pair.
+# Row identity is a hash of MESSAGE content, and the projection prints a row's
+# text, so MESSAGE text stays length-preserving filler at any length: `«3190»` on
+# the durable plane never matches the 3 190 characters a watcher streamed, and
+# the row ends up keyed by entry id on one plane and `assistant#n` on the other.
+# This took two passes to get right — a MAX_FILLER backstop that applied to
+# everything long produced exactly that failure, on a reply of 3 190 characters.
 
 CONTENT_KEYS = {"text", "thinking", "summary", "delta", "errorMessage"}
 # Named at any length: they identify a real room/session on a real relay.
@@ -64,13 +83,18 @@ def mark_len(value):
     return f"\u00ab{len(value)}\u00bb"
 
 
-def scrub(node, key=None, inside_details=False):
+def scrub(node, key=None, inside_details=False, inside_result=False):
     if isinstance(node, dict):
+        # Only a toolResult's `content` is result prose; its other fields are
+        # structure. See the `inside_result` branch above.
+        isResult = node.get("role") == "toolResult"
         return {
-            k: scrub(v, k, inside_details or k == "details") for k, v in node.items()
+            k: scrub(v, k, inside_details or k == "details",
+                     inside_result or (isResult and k == "content"))
+            for k, v in node.items()
         }
     if isinstance(node, list):
-        return [scrub(v, key, inside_details) for v in node]
+        return [scrub(v, key, inside_details, inside_result) for v in node]
     if not isinstance(node, str):
         return node
     if inside_details:
@@ -78,6 +102,17 @@ def scrub(node, key=None, inside_details=False):
     if key in OPAQUE_KEYS:
         return mark(node)
     if key == "data" and len(node) > 64:  # a base64 image payload, not a field name
+        return mark_len(node)
+    if key in STRUCTURAL:
+        return node
+    if inside_result or key == "partialResult":
+        # A tool RESULT string: the projection draws a card's face from the
+        # result's shape, never from its prose, and row identity is computed from
+        # the message content, not the result — so a 120 KB HAR dump can become a
+        # length marker with nothing observable lost. ONLY the result's content
+        # reaches here: `role`, `toolCallId`, `toolCallName` and friends are
+        # structure, and a first cut that marked them produced 53 entries whose
+        # role read "«10»" — every card then sat at `running` forever.
         return mark_len(node)
     if key in CONTENT_KEYS or len(node) > MAX_READABLE:
         return mark(node)
@@ -106,7 +141,83 @@ def main():
                 out.write(json.dumps(scrub(frame), ensure_ascii=False) + "\n")
         print(f"{path}: {len(rows)} frames")
 
-    write("input.jsonl", frames)
+    # WALK COLLAPSE. The client re-syncs on a 6-second timer, so this capture
+    # holds 81 walk runs / 136 pages, and the later walks each re-send the whole
+    # history — 20 MB of the raw file is the same entries arriving again. Keep the
+    # FIRST walk and the FINAL walk and drop the runs in between: the final walk
+    # carries the complete history, so the live run still folds every entry, and
+    # first+final still exercises what matters (rows keyed by live ids getting
+    # re-keyed by a walk, and a walk re-folded over rows that already exist).
+    # This is a trim of an OBSERVED redundancy, and meta.json says so.
+    def is_page_(f):
+        return isinstance(f.get("rpc"), dict) and f.get("rpc").get("type") == "response" and f.get("rpc").get("command") == "get_entries"
+
+    runs, cur = [], []
+    for i, f in enumerate(frames):
+        if is_page_(f):
+            cur.append(i)
+        elif cur:
+            runs.append(cur)
+            cur = []
+    if cur:
+        runs.append(cur)
+    drop = set()
+    if len(runs) > 2:
+        for run in runs[1:-1]:
+            drop.update(run)
+    # DELTA TRIM. This session streamed 27 107 `message_update` frames — 10 MB of
+    # prose, most of it the session's ordinary tool-chatter turns. Deltas are the
+    # only frames trimmed here, and only for turns that carry NONE of this
+    # scenario's vocabulary; every `message_start` / `message_end` /
+    # `tool_execution_*` / `turn_*` frame is kept, so every row is still BIRTHED on
+    # the live plane, and every dropped turn's entry still arrives through the
+    # final walk page. What is kept: the deltas of the turns that pin the faces
+    # (image result, error result, the big read, the compaction, the branch, the
+    # abort), which is the last KEEP_TURNS turns plus any turn matching MARKERS.
+    MARKERS = ("red-16.png", "nope.txt", "ws.har")
+    KEEP_TURNS = 8
+    bounds, tstart = [], None
+    for i, f in enumerate(frames):
+        t = (f.get("rpc") or {}).get("type")
+        if t == "turn_start":
+            tstart = i
+        elif t == "turn_end" and tstart is not None:
+            bounds.append((tstart, i))
+            tstart = None
+    interesting = set()
+    for n, (a, b) in enumerate(bounds):
+        if n >= len(bounds) - KEEP_TURNS:
+            interesting.add(n)
+            continue
+        for f in frames[a : b + 1]:
+            rpc = f.get("rpc") or {}
+            if rpc.get("type") == "tool_execution_start":
+                args = rpc.get("args") or {}
+                if any(m in str(args.get("path", "")) or m in str(args.get("command", "")) for m in MARKERS):
+                    interesting.add(n)
+                    break
+            if rpc.get("type") in ("compaction_end", "session_compact"):
+                interesting.add(n)
+                break
+            if rpc.get("type") == "turn_end" and rpc.get("aborted") is True:
+                interesting.add(n)
+                break
+    def turn_of(i):
+        for n, (a, b) in enumerate(bounds):
+            if a <= i <= b:
+                return n
+        return None
+
+    delta_types = {"message_update", "tool_execution_update"}
+    for i, f in enumerate(frames):
+        if (f.get("rpc") or {}).get("type") in delta_types:
+            n = turn_of(i)
+            if n is not None and n not in interesting:
+                drop.add(i)
+    kept = [f for i, f in enumerate(frames) if i not in drop]
+    print(f"walk collapse: {len(runs)} runs, {len(runs) - 2 if len(runs) > 2 else 0} interior runs dropped")
+    print(f"delta trim: {len(bounds)} turns, deltas kept for {len(interesting)} -> {len(kept)} frames")
+    write("input.jsonl", kept)
 
     # The trailing run of walk pages: the capture ends on the client's post-turn
     # resync walk, so the last thing in it IS a cold arrival's whole view.

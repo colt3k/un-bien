@@ -330,6 +330,57 @@ toolCall]`, `tool_execution_start`/`_end` for a `read`, the toolResult
     the live plane gives the deltas that built it, and a marker per delta makes the
     two incomparable as strings. `capture.py` explains it at the top.
 
+- **The vocabulary fixture landed, and it moved the claim from equality to
+  containment.** Scenario `021` is one session driven by a human through the
+  durable entry types no fixture had fed through a page: read an image, read a
+  missing file, dump 120 KB of a HAR into context, `/compact` (103 812 tokens
+  before), branch the session in the tree and ACCEPT the summary, then interrupt a
+  long tool call with Esc. `input.jsonl` is 10 241 envelopes (11.5 MB),
+  `replay.jsonl` is one cold arrival: a 185-entry page plus the empty page with
+  leaf beacon `3d0107fa`. The reference folds both to 92 rows and 41 rows and
+  passes.
+
+  * **The pair assertion changed shape, and 021 is the reason.** Branching puts
+    entries off the active path, and `get_entries` only serves the active path, so
+    a client arriving afterwards CANNOT show rows a watcher saw. Equality would
+    have failed a fixture that is demonstrating the tree working. Both runners now
+    assert containment — every cold row exists in the watched transcript with the
+    same fields, same `leafId` — and log the rows only the watcher saw, rather
+    than filtering them away. See "Paired inputs" in vocab.md.
+  * **This client is SKIPPED on 021, for one named reason.** All 92 rows agree in
+    kind, face, state, image count and leaf, and the cold run holds the same 41
+    rows. Nine rows keep a synthetic key and the counters behind them differ: the
+    reference's are `user#1..4` / `assistant#1..6`, this client's are `user#6..9`
+    / `assistant#7..11`. Five rows are being birthed from live frames here and
+    anchored to an entry id later, where the reference appears to take the row
+    from the entry directly — content identical, only the id a UI keys an element
+    by differs. `SKIP_REASONS` in `test/corpus.test.ts` states it; fixing it means
+    finding where the two folds disagree about *when* a row is born, which is its
+    own change, not a rename to make a test pass.
+  * **What the durable vocabulary actually does:** a `compaction` entry folds to
+    the same row a live `compaction_end` does; a `branch_summary` entry renders
+    NOTHING in either fold (its parent is an ancestor of the old leaf, so the
+    summary lives on the abandoned branch — visible only if the tree moves back
+    there); 59 `custom` entries — an extension's state blobs — render nothing in
+    either fold; an image tool result arrives cold as an `image` content block and
+    the card shows `images: 1` exactly as the watched one does.
+  * **Two findings worth telling the owner.** (1) An entry appended to a live
+    session's JSONL out of band reaches nobody: `get_entries` answers from pi's
+    in-memory `fileEntries`, never re-read from disk, and pi's own
+    `getSessionName()` ignores it too. That is why `session_info` is not pinned by
+    any fixture — only a `/name` typed at the prompt produces one a viewer sees.
+    (2) The client re-walks on a 6-second timer regardless of activity: 81 walk
+    runs / 136 pages in ten minutes, 23 distinct leaf ids. `capture.py` collapses
+    the interior runs; the cadence is a live-plane fact.
+  * **Two scrub traps this fixture sprang on me, recorded so the next capture does
+    not re-earn them.** A `«length»` marker is fine for a 120 KB tool result and
+    fatal for MESSAGE text: row identity is a hash of message content, so marking
+    a 3 190-character reply made the durable plane's text unmatchable with what a
+    watcher streamed, and the row landed keyed by entry id on one plane and
+    `assistant#n` on the other. And scrubbing must never touch shape: marking
+    `role` / `type` / `mimeType` inside a `toolResult` gave 53 entries whose role
+    read `«10»` and 53 cards stuck at `running` with no image.
+
 - **The build the fixtures came from is now recorded, and the skew is measured.**
   The repo's extension source sits at 0.25.11 while the installed npm package is
   0.25.15, and npm has 0.25.13/14/15 with no commits or tags in this repository —

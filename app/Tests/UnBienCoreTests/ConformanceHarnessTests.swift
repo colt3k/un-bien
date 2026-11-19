@@ -95,6 +95,42 @@ final class ConformanceHarnessTests: XCTestCase {
     ///    `[diff, hunks]`.
     private let ephemeralKeys: Set<String> = ["panels", "subagents", "pendingAsks"]
 
+    /// Every row of `part` must exist in `whole` with the same fields, and the two
+    /// must agree on `leafId`. Used for the cold arrival of a paired scenario; see
+    /// the call site for why containment rather than equality is the claim.
+    private func assertContained(_ part: JSONValue, inRowsOf whole: JSONValue,
+                                 scenario: String, other: String,
+                                 file: StaticString = #filePath, line: UInt = #line) {
+        guard case .object(let p) = part, case .object(let w) = whole,
+              case .array(let sub)? = p["items"], case .array(let full)? = w["items"]
+        else {
+            XCTFail("scenario \(scenario): projections are not comparable", file: file, line: line)
+            return
+        }
+        var index: [String: JSONValue] = [:]
+        for item in full { index[rowKey(item)] = item }
+        var problems: [String] = []
+        for item in sub {
+            let key = rowKey(item)
+            guard let match = index[key] else {
+                problems.append("\(key): the cold arrival has this row and \(other) does not")
+                continue
+            }
+            if item != match { problems.append("\(key): fields differ from \(other)") }
+        }
+        if p["leafId"] != w["leafId"] {
+            problems.append("leafId \(p["leafId"]?.stringValue ?? "nil") != \(other)'s \(w["leafId"]?.stringValue ?? "nil")")
+        }
+        XCTAssertTrue(problems.isEmpty,
+                      "scenario \(scenario): cold arrival and \(other) disagree:\n" +
+                      problems.joined(separator: "\n"), file: file, line: line)
+    }
+
+    private func rowKey(_ item: JSONValue) -> String {
+        guard case .object(let o) = item else { return "?" }
+        return "\(o["kind"]?.stringValue ?? "?")@\(o["row"]?.stringValue ?? "?")"
+    }
+
     private func comparable(_ value: JSONValue) -> JSONValue {
         guard case .object(var obj) = value else { return value }
         for key in ephemeralKeys { obj[key] = nil }
@@ -139,13 +175,20 @@ final class ConformanceHarnessTests: XCTestCase {
             let replayURL = dir.appendingPathComponent("replay.jsonl")
             if FileManager.default.fileExists(atPath: replayURL.path) {
                 let cold = try replayLive(loadInput(replayURL)).conformanceProjection()
-                XCTAssertEqual(comparable(cold), comparable(projection),
-                               "scenario \(name): two arrivals at the same instant disagree — "
-                                  + "the connected run and the cold `get_entries` run must fold "
-                                  + "to the same rows (row keys included)")
+                // CONTAINMENT, not equality — and 021 is why. That session
+                // BRANCHED: the watcher saw a stretch of turns, then the tree
+                // moved the leaf elsewhere, and `get_entries` only ever serves the
+                // active path. So a client that arrives afterwards cannot show
+                // those rows — they are off the path — while a client that was
+                // there did. That is the tree working, not the folds disagreeing.
+                // The claim that must hold is the other direction: every row a
+                // cold viewer sees exists in the watched transcript with the same
+                // fields, and both runs agree on the leaf they would resume from.
+                assertContained(comparable(cold), inRowsOf: comparable(projection),
+                                scenario: name, other: "the connected run")
                 if let expected, !regenerate {
-                    XCTAssertEqual(comparable(cold), comparable(expected),
-                                   "scenario \(name): the cold-arrival run diverged from expected.json")
+                    assertContained(comparable(cold), inRowsOf: comparable(expected),
+                                    scenario: name, other: "expected.json")
                 }
             }
 

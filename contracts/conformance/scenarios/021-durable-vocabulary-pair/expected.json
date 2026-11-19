@@ -1,0 +1,800 @@
+{
+  "flags" : {
+    "ended" : false,
+    "streaming" : false
+  },
+  "items" : [
+    {
+      "code" : "custom",
+      "customType" : "un-bien:pair-code",
+      "details" : {
+        "expiresAt" : 1795104855700,
+        "name" : "░░░░░░░░░░░░░░",
+        "roomId" : "░░░░░░░░░░░░",
+        "token" : "░░░░░░░░░░░░░░░░░░░░░░",
+        "uri" : "░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░…"
+      },
+      "kind" : "notice",
+      "row" : "cust4dka3759f5fg",
+      "text" : "░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░…"
+    },
+    {
+      "images" : 0,
+      "kind" : "user",
+      "row" : "4fcb8791",
+      "text" : "░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░…"
+    },
+    {
+      "kind" : "reasoning",
+      "row" : "reasoning#1",
+      "streaming" : false,
+      "text" : "░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░…"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_a1958cacde944828ba9a852b",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "text"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_2d17fd9f4f5c4b25aa3fd0e0",
+      "state" : "ok",
+      "tool" : "mcp__mempalace__mempalace_status"
+    },
+    {
+      "kind" : "reasoning",
+      "row" : "reasoning#2",
+      "streaming" : false,
+      "text" : "░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░…"
+    },
+    {
+      "blocks" : [
+        "file"
+      ],
+      "images" : 1,
+      "kind" : "tool",
+      "row" : "call_e59cc0d8941c46098bcfb18e",
+      "state" : "ok",
+      "tool" : "read"
+    },
+    {
+      "kind" : "reasoning",
+      "row" : "reasoning#3",
+      "streaming" : false,
+      "text" : "░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░…"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_31d70cba10474c5d8a581657",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "images" : 0,
+      "kind" : "assistant",
+      "row" : "0e831400",
+      "streaming" : false,
+      "text" : "░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░…"
+    },
+    {
+      "images" : 0,
+      "kind" : "user",
+      "row" : "e268e794",
+      "text" : "░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░"
+    },
+    {
+      "kind" : "reasoning",
+      "row" : "reasoning#4",
+      "streaming" : false,
+      "text" : "░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░…"
+    },
+    {
+      "blocks" : [
+        "error"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_83575e1e4a754d1e88ffdc3f",
+      "state" : "failed",
+      "tool" : "read"
+    },
+    {
+      "images" : 0,
+      "kind" : "assistant",
+      "row" : "a04ef2a2",
+      "streaming" : false,
+      "text" : "░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░…"
+    },
+    {
+      "images" : 0,
+      "kind" : "user",
+      "row" : "cf5ef05d",
+      "text" : "░░░░░░░░░░░░░░░░░░"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_910c9e77c9754cc6a8266627",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_32d8a20ccae74211b10d1e6b",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_e53e1009d72c458fa26bea63",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_f89ea0ae7c9341d69edbb4cf",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_405d250be9fa41728ade0b38",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "images" : 0,
+      "kind" : "assistant",
+      "row" : "b4201e82",
+      "streaming" : false,
+      "text" : "░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░…"
+    },
+    {
+      "images" : 0,
+      "kind" : "user",
+      "row" : "01014591",
+      "text" : "░░░░░░░░░░░░░░░░░░░░░░░░░"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_2a55f876290a4381abe51d67",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "file"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_e6720631fe2c4bf19d1cca58",
+      "state" : "ok",
+      "tool" : "read"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_725643b0beca43e38d308a31",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_dfa7a34906a44f1f9a449ede",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_3077631327fc4c65ba97f9ec",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_0f20d70cd1f549bd864aff88",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "images" : 0,
+      "kind" : "assistant",
+      "row" : "234b929d",
+      "streaming" : false,
+      "text" : "░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░…"
+    },
+    {
+      "images" : 0,
+      "kind" : "user",
+      "row" : "30233485",
+      "text" : "░░░░░░░░░░░░░░░░░░░░░░░░░░░░░"
+    },
+    {
+      "images" : 0,
+      "kind" : "assistant",
+      "row" : "1812fcb1",
+      "streaming" : false,
+      "text" : "░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░…"
+    },
+    {
+      "blocks" : [
+        "error"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_6328215d6f044d00a9eab211",
+      "state" : "failed",
+      "tool" : "bash"
+    },
+    {
+      "images" : 0,
+      "kind" : "user",
+      "row" : "user#1",
+      "text" : "░░"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_13c2f5cd92004f9cb9c069e7",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_1f5bb41e9de642b8b0ebf2fe",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_fd00a75a95b3464fa7351989",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "images" : 0,
+      "kind" : "assistant",
+      "row" : "assistant#1",
+      "streaming" : false,
+      "text" : "░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░…"
+    },
+    {
+      "images" : 0,
+      "kind" : "user",
+      "row" : "user#2",
+      "text" : "░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░"
+    },
+    {
+      "blocks" : [
+        "text"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_eaf1bbe72fb24aaf860e13a5",
+      "state" : "ok",
+      "tool" : "tool_search"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_f0bb0519093446c590f32df4",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_e4231b13e9a043bea87abccc",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "images" : 0,
+      "kind" : "assistant",
+      "row" : "assistant#2",
+      "streaming" : false,
+      "text" : "░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░…"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_9844e876d1584db1941f4641",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_fff8f09a34fb4d26a14b37b3",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "images" : 0,
+      "kind" : "assistant",
+      "row" : "assistant#3",
+      "streaming" : false,
+      "text" : "░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░…"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_cd80f6bde7264dba83e7a6dd",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_ccb71bbad4ae4ec9bf20e903",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "images" : 0,
+      "kind" : "assistant",
+      "row" : "assistant#4",
+      "streaming" : false,
+      "text" : "░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░…"
+    },
+    {
+      "images" : 0,
+      "kind" : "user",
+      "row" : "user#3",
+      "text" : "░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░"
+    },
+    {
+      "kind" : "reasoning",
+      "row" : "reasoning#5",
+      "streaming" : false,
+      "text" : "░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░…"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_914df89f7c1448e2bfe53397",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_a57befe6cfe94971a17f1c30",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "kind" : "reasoning",
+      "row" : "reasoning#6",
+      "streaming" : false,
+      "text" : "░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░…"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_a25fd6581d59477ab3562ee6",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "images" : 0,
+      "kind" : "assistant",
+      "row" : "assistant#5",
+      "streaming" : false,
+      "text" : "░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░…"
+    },
+    {
+      "kind" : "compaction",
+      "row" : "1",
+      "text" : "Context compacted (103812 tokens)"
+    },
+    {
+      "images" : 0,
+      "kind" : "user",
+      "row" : "user#4",
+      "text" : "░░░░░░░░░░░░░░░░░░░"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_7681547b8ee94f138a669dae",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "file"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_6201eb041900488291265ae7",
+      "state" : "ok",
+      "tool" : "read"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_34b7f781909642feb6856523",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_72759022ccbe4737a55fdf1f",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "text"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_ce792d85448144538316958b",
+      "state" : "ok",
+      "tool" : "whoami"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_674d5d36cadf4fd98d847f10",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_8561a3098c4547d68a8a4445",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_c55ec71552cf4f169b2245a4",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_1f721ef46460468c919c6ce0",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_41b0fe2799964d64a5a9ba7e",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_13f5d12755b049c9a84672c9",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_d6ec62f0220048b6a53b18d6",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_fa3458a7abf54dc0b490af3c",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "images" : 0,
+      "kind" : "assistant",
+      "row" : "assistant#6",
+      "streaming" : false,
+      "text" : "░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░…"
+    },
+    {
+      "images" : 0,
+      "kind" : "user",
+      "row" : "c371cc40",
+      "text" : "░░░░░░"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_66add7b307c048128c6ba2e8",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_394973dd35244a19b7e3d8e8",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "kind" : "reasoning",
+      "row" : "reasoning#7",
+      "streaming" : false,
+      "text" : "░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░…"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_c3aba3e027fb42cbbaa8f7cc",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_677b34995cf142659144b3e3",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "kind" : "reasoning",
+      "row" : "reasoning#8",
+      "streaming" : false,
+      "text" : "░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░…"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_9a33c34f79f649bca26ac691",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "kind" : "reasoning",
+      "row" : "reasoning#9",
+      "streaming" : false,
+      "text" : "░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░…"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_f9a3a51e63924439be5e6509",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "kind" : "reasoning",
+      "row" : "reasoning#10",
+      "streaming" : false,
+      "text" : "░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░…"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_2a979a0b91574c838dc7aab3",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "kind" : "reasoning",
+      "row" : "reasoning#11",
+      "streaming" : false,
+      "text" : "░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░…"
+    },
+    {
+      "images" : 0,
+      "kind" : "assistant",
+      "row" : "cc7e3bcb",
+      "streaming" : false,
+      "text" : "░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░…"
+    },
+    {
+      "blocks" : [
+        "confirmation"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_157d87345d874b8eba0ee94f",
+      "state" : "ok",
+      "tool" : "write"
+    },
+    {
+      "kind" : "reasoning",
+      "row" : "reasoning#12",
+      "streaming" : false,
+      "text" : "░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░…"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_8f8891076412482cbc43e6fe",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "kind" : "reasoning",
+      "row" : "reasoning#13",
+      "streaming" : false,
+      "text" : "░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░…"
+    },
+    {
+      "blocks" : [
+        "terminal"
+      ],
+      "images" : 0,
+      "kind" : "tool",
+      "row" : "call_a295033bf63b463b8961506f",
+      "state" : "ok",
+      "tool" : "bash"
+    },
+    {
+      "kind" : "reasoning",
+      "row" : "reasoning#14",
+      "streaming" : false,
+      "text" : "░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░…"
+    },
+    {
+      "images" : 0,
+      "kind" : "assistant",
+      "row" : "afd0ac13",
+      "streaming" : false,
+      "text" : "░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░…"
+    }
+  ],
+  "leafId" : "3d0107fa",
+  "panels" : [
+
+  ],
+  "subagents" : [
+
+  ],
+  "version" : 3
+}
