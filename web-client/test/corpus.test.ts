@@ -567,13 +567,14 @@ describe("conformance corpus (kind + row)", () => {
               `${name}: rows a watcher sees but a cold arrival cannot`,
             ).toBe(expectedOffPath)
 
-          // TRIPWIRE for an open gap, not a comfort. Neither fold turns a
-          // persisted `thinking` block into a row (vocab.md drops `reasoning` from
-          // the cross-plane comparison and says why), so a viewer that arrives cold
-          // loses content that IS in the durable log — 020 measures 25 blocks, 021
-          // 50. This asserts the gap still exists. Make reasoning rows durable and
-          // it fails, which is the point: it gets deleted deliberately, together
-          // with vocab.md's exemption row, not discovered accidentally.
+          // The thinking split, pinned in BOTH directions because it is a DECISION
+          // (DESIGN.md §2): pi does not replay `thinking` blocks when a session is
+          // reloaded, so a viewer that arrives cold shows none either — even though
+          // the blocks are persisted on the message entry (020's log holds 25,
+          // 021's 50). So the watcher's reasoning rows must exist, and the cold
+          // arrival must render none. A fold that starts rendering persisted
+          // thinking fails here until this assertion, the runner comparison rule in
+          // vocab.md, and DESIGN.md §2 are changed together.
           const persistedThinking = thinkingBlocksIn(replayFrames)
           if (persistedThinking > 0) {
             const liveReasoning = gotItems.filter(
@@ -584,11 +585,11 @@ describe("conformance corpus (kind + row)", () => {
             ).length
             expect(
               liveReasoning,
-              `${name}: the watcher should still see reasoning rows (${persistedThinking} persisted thinking blocks in the log)`,
+              `${name}: a watcher should see reasoning rows (${persistedThinking} thinking blocks in the log, ${liveReasoning} rows on screen)`,
             ).toBeGreaterThan(0)
             expect(
               coldReasoning,
-              `${name}: the reasoning gap CLOSED (${liveReasoning} live rows, ${persistedThinking} persisted thinking blocks) — delete this tripwire and vocab.md's reasoning exemption, and make the pair hold`,
+              `${name}: a cold arrival rendered ${coldReasoning} reasoning rows from ${persistedThinking} persisted thinking blocks — pi replays neither, so if this is now wanted, change DESIGN.md §2, vocab.md's exemption and this assertion together`,
             ).toBe(0)
           }
           if (

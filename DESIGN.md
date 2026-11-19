@@ -49,6 +49,7 @@ own.
 | **Markdown: `gonzalezreal/swift-markdown-ui`** | CommonMark + GFM, SwiftUI-native, themeable, pluggable `CodeSyntaxHighlighter`. Apple's `AttributedString(markdown:)` is inline-only — insufficient.                         |
 | **Highlighting: `Highlightr`**                 | highlight.js under the hood → 180+ languages + themes. Agents emit arbitrary languages, so Splash (Swift-focused) is wrong; tree-sitter is a v2 quality pass.                |
 | **Reference impl is MIT**                      | Reuse/reference freely; lift its test vectors to verify the Swift codec + handshake byte-for-byte.                                                                           |
+| **Thinking notes are live-only — a cold viewer does not see them** | pi's own screen does not replay `thinking` blocks when a session is reloaded, so neither viewer should: a transcript that arrives cold shows the answer without the notes that produced it. The blocks ARE persisted on the message entry (021's log holds 50 of them), so this is a rendering decision, not missing data — and it means the two arrivals legitimately differ in this one dimension, stated in `contracts/conformance/vocab.md`. If pi ever replays thinking, revisit here first. |
 
 ---
 

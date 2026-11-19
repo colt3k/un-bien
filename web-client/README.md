@@ -314,17 +314,20 @@ toolCall]`, `tool_execution_start`/`_end` for a `read`, the toolResult
     says where it can bite: with an all-zero-`usage` model and adjacent frames
     sharing a `ts`, a legitimate repeat is indistinguishable from a redelivery —
     and the projection's 48-char text window hides the resulting loss.
-  * **A gap, not papered over:** pi persists `thinking` blocks ON the message
-    entry (25 in this session) and NEITHER fold turns a persisted block into a row.
-    So a client that attaches cold shows a transcript with every thinking row
-    missing — while the content is sitting in the durable record. The projection
-    cannot express that equality today either (`ConformanceProjection.swift:95`
-    keys reasoning rows synthetic `reasoning#n`, `replayStable: false`), which is
-    why the cross-plane comparison drops `reasoning` rows with the reason stated in
-    vocab.md and in the scenario's `meta.json`, rather than quietly ignoring them.
-    Fixing it properly means making reasoning row identity durable on both sides —
-    the next change I would make, and I did not want to smuggle it into a fixture
-    commit.
+  * **Thinking notes are live-only, and that is now a decision rather than a
+    finding.** pi persists `thinking` blocks ON the message entry (25 in this
+    session, 50 in 021's) and neither fold turns a persisted block into a row, so a
+    client that attaches cold shows none — while the content sits in the durable
+    record. It stayed that way on purpose: **pi's own screen does not replay
+    thinking blocks when you reload a session, so neither viewer should**
+    (DESIGN.md §2). The cross-plane comparison drops `reasoning` rows with the
+    reason stated in vocab.md and the scenario's `meta.json` rather than quietly
+    ignoring them, and the corpus now pins the split in both directions — the
+    watcher's rows exist, the cold arrival renders none — so anyone who wants
+    thinking back has to change the decision, the exemption and the assertion in
+    one go. (It is also unrepresentable in the vocabulary today:
+    `ConformanceProjection.swift:95` keys reasoning rows synthetic `reasoning#n`,
+    `replayStable: false`.)
   * The fixture's scrub is length-preserving filler rather than `«length»`
     markers, for this scenario only: the durable plane gives one content block and
     the live plane gives the deltas that built it, and a marker per delta makes the

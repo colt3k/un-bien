@@ -208,6 +208,17 @@ final class ConformanceHarnessTests: XCTestCase {
                         let key = rowKey(item)
                         return !rows(of: comparable(cold)).contains { rowKey($0) == key }
                     }
+                // Thinking notes are live-only BY DECISION (DESIGN.md §2): pi does
+                // not replay `thinking` blocks when a session reloads, so neither
+                // fold turns a persisted block into a row — even though the blocks
+                // are on the entry (020's log holds 25, 021's 50). The cold run must
+                // therefore render none. Reversing the decision means changing
+                // DESIGN.md §2, vocab.md's exemption row, and this line together.
+                let coldReasoningRows = rows(of: cold).filter {
+                    rowKey($0).hasPrefix("reasoning@")
+                }
+                XCTAssertTrue(coldReasoningRows.isEmpty,
+                              "scenario \(name): the cold arrival rendered \(coldReasoningRows.count) reasoning row(s) from persisted thinking — pi replays neither")
                 if let expectedOffPath = expectedOffPathRows[name] {
                     XCTAssertEqual(offPath.count, expectedOffPath,
                                    "scenario \(name): rows a watcher sees but a cold arrival cannot")
