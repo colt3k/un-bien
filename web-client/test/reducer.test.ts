@@ -1027,3 +1027,94 @@ describe("a custom message that arrives live and is later replayed as an entry",
     expect(reducer.snapshot().items.map((i) => i.kind)).toEqual(["user"])
   })
 })
+
+describe("row ids at the conformance boundary", () => {
+  // 021's divergence, pinned. The reference numbers the `<kind>#<seq>`
+  // placeholder when it PROJECTS a row, by order of appearance among the rows
+  // still standing (`ConformanceProjection.swift:66-121`). This fold allocates ids
+  // eagerly, because they are what the UI keys an element by — so a live row that
+  // a walk later re-keys to a pi entry id burns a number and leaves a gap. In 021
+  // that was five gaps: the client reported `user#6..9` for the reference's
+  // `user#1..4`.
+  it("leaves no hole where a live row was re-keyed to an entry id", () => {
+    const reducer = new TranscriptReducer()
+    // A user message arrives live: no pi id to key it by yet.
+    reducer.apply({
+      rpc: {
+        type: "message_end",
+        message: {
+          role: "user",
+          content: [{ type: "text", text: "asked live" }],
+        },
+      },
+    } as never)
+    // A walk carries that same message with its entry id: the row is re-keyed.
+    reducer.applyEntries(
+      [
+        {
+          type: "message",
+          id: "a1f0",
+          parentId: null,
+          timestamp: 1795040000000,
+          message: {
+            role: "user",
+            content: [{ type: "text", text: "asked live" }],
+          },
+        },
+      ],
+      "a1f0",
+    )
+    // A second message, still live-only: it keeps a placeholder.
+    reducer.apply({
+      rpc: {
+        type: "message_end",
+        message: {
+          role: "user",
+          content: [{ type: "text", text: "not in the log yet" }],
+        },
+      },
+    } as never)
+
+    // The UI keeps the ids the fold allocated. Renumbering them positionally would
+    // shift a row's key every time a row ABOVE it got anchored, and the element
+    // would remount mid-conversation.
+    expect(reducer.snapshot().items.map((i) => i.row)).toEqual([
+      "a1f0",
+      "user#2",
+    ])
+    // The vocabulary numbers placeholders by appearance, so there is no gap.
+    expect(reducer.conformanceItems().map((i) => i.row)).toEqual([
+      "a1f0",
+      "user#1",
+    ])
+  })
+
+  it("keys tool cards, compaction markers and notices by their own id, never a placeholder", () => {
+    const reducer = new TranscriptReducer()
+    reducer.apply({
+      rpc: {
+        type: "message_end",
+        message: { role: "user", content: [{ type: "text", text: "go" }] },
+      },
+    } as never)
+    reducer.apply({
+      rpc: {
+        type: "tool_execution_start",
+        toolCallId: "call_77",
+        toolName: "bash",
+        args: { command: "ls" },
+      },
+    } as never)
+    reducer.apply({
+      rpc: {
+        type: "compaction_end",
+        result: { summary: "folded", tokensBefore: 1200 },
+      },
+    } as never)
+    const rows = reducer.conformanceItems().map((i) => `${i.kind}@${i.row}`)
+    // The tool card is the CALL id (stable across planes even though the card was
+    // opened live); the live compaction marker is the bare sequence number, not
+    // `compaction#1` — reference `SyntheticID.compaction(seq:)`.
+    expect(rows).toEqual(["user@user#1", "tool@call_77", "compaction@1"])
+  })
+})

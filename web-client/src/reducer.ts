@@ -1341,6 +1341,38 @@ export class TranscriptReducer {
     this.pendingToasts = []
   }
 
+  /** Row ids as the CONFORMANCE vocabulary states them (vocab.md, "Row ids &
+   *  scrubbing"): a row's pi id when it is replay-stable, else a `<kind>#<seq>`
+   *  placeholder numbered BY ORDER OF APPEARANCE among the rows still standing.
+   *  The reference does that at projection time, per kind
+   *  (`ConformanceProjection.swift:66-121`): user/assistant keep their entry id
+   *  when replay-stable and take a placeholder otherwise; reasoning is ALWAYS a
+   *  placeholder; tool is always the tool call id; compaction and notice always
+   *  their own id (a live compaction marker's id is the bare sequence number).
+   *
+   *  This fold allocates its placeholders eagerly instead, and that leaves gaps:
+   *  021 branched, five live rows were later re-keyed to entry ids by a walk, and
+   *  those five burned five numbers — so this client reported `user#6..9` for what
+   *  the reference calls `user#1..4`. The fold keeps allocating its own ids,
+   *  because they are what the UI keys an element by: a positional placeholder
+   *  would shift every time a row ABOVE this one got anchored, and the row would
+   *  remount mid-conversation. */
+  conformanceItems(): TranscriptItem[] {
+    const seq: Partial<Record<ItemKind, number>> = {}
+    const placeholder = (kind: ItemKind) => {
+      const n = (seq[kind] ?? 0) + 1
+      seq[kind] = n
+      return `${kind}#${n}`
+    }
+    return this.items.map((item) => {
+      const synthetic =
+        item.kind === "reasoning" ||
+        ((item.kind === "user" || item.kind === "assistant") &&
+          !item.replayStable)
+      return synthetic ? { ...item, row: placeholder(item.kind) } : item
+    })
+  }
+
   snapshot(): ReducerSnapshot {
     return {
       items: this.items.slice(),

@@ -347,16 +347,22 @@ toolCall]`, `tool_execution_start`/`_end` for a `read`, the toolResult
     assert containment — every cold row exists in the watched transcript with the
     same fields, same `leafId` — and log the rows only the watcher saw, rather
     than filtering them away. See "Paired inputs" in vocab.md.
-  * **This client is SKIPPED on 021, for one named reason.** All 92 rows agree in
-    kind, face, state, image count and leaf, and the cold run holds the same 41
-    rows. Nine rows keep a synthetic key and the counters behind them differ: the
-    reference's are `user#1..4` / `assistant#1..6`, this client's are `user#6..9`
-    / `assistant#7..11`. Five rows are being birthed from live frames here and
-    anchored to an entry id later, where the reference appears to take the row
-    from the entry directly — content identical, only the id a UI keys an element
-    by differs. `SKIP_REASONS` in `test/corpus.test.ts` states it; fixing it means
-    finding where the two folds disagree about *when* a row is born, which is its
-    own change, not a rename to make a test pass.
+  * **One divergence found, and it was a rule about WHEN an id is decided.** All
+    92 rows agreed in kind, face, state, image count and leaf, and the cold run
+    held the same 41 rows. Nine rows kept synthetic keys, and this client's
+    counters sat five ahead: `user#6..9` / `assistant#7..11` where the reference
+    has `user#1..4` / `assistant#1..6`. Not a birth-order bug — a projection rule.
+    The reference numbers `<kind>#<seq>` **at projection time, by order of
+    appearance among the rows still standing** (`ConformanceProjection.swift:66-121`),
+    and numbers per kind with its own rules: reasoning is always a placeholder,
+    tool is always the tool call id, compaction and notice always their own id.
+    This fold baked the number in at allocation, so five live rows that a walk
+    later re-keyed to entry ids burned five numbers and left gaps behind them.
+    `TranscriptReducer.conformanceItems()` now applies the vocabulary's per-kind
+    rule at the comparison boundary. The fold keeps allocating its own ids,
+    because they are what the UI keys an element by: a positional placeholder
+    would shift every time a row above got anchored, and the element would remount
+    mid-conversation.
   * **What the durable vocabulary actually does:** a `compaction` entry folds to
     the same row a live `compaction_end` does; a `branch_summary` entry renders
     NOTHING in either fold (its parent is an ancestor of the old leaf, so the
@@ -493,9 +499,9 @@ at 920x2000. Multiply coordinates by 1.31…`. pi re-encodes and downscales, and
 ## What is not here
 
 - **Conformance covers the projection, not the pixels.** `test/corpus.test.ts`
-  runs all sixteen `contracts/conformance/` scenarios with no skips and compares,
-  in **render order**: `(kind, row)`, `text` (prefix — the corpus scrubs long
-  strings and escapes their newlines), `streaming`, `images`, `state`, `tool`,
+  runs all twenty-one `contracts/conformance/` scenarios with no skips and
+  compares, in **render order**: `(kind, row)`, `text` (prefix — the corpus scrubs
+  long strings and escapes their newlines), `streaming`, `images`, `state`, `tool`,
   `blocks` (the tool card's result face, `src/tool-faces.ts`), `flags`, `leafId`,
   `subagents`, `pendingAsks` and `plan`. Not compared: the face's CONTENTS (a
   terminal face's notices, a diff's hunks) — `blocks` names the face only, so

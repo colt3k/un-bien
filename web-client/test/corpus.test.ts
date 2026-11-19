@@ -57,24 +57,7 @@ const SCENARIO_DIR = join(
 
 /** Scenario → why it is out of this fold's reach, so a skip stays auditable.
  *  Keep this empty: an unexplained skip is how a client drifts. */
-const SKIP_REASONS: Record<string, string> = {
-  // 021 pins vocabulary no other fixture reaches: a `compaction` entry, a
-  // `branch_summary`, 59 `custom` entries, an image tool result, a failed tool
-  // card, an aborted turn, MCP tool names. My fold matches the reference on ALL
-  // of it — 92 rows, same kinds, same faces, same states, same leaf — and the
-  // cold arrival contains the same 41 rows. It differs on one thing only, and the
-  // corpus compares row keys, so it fails: NINE rows keep a synthetic key, and
-  // the counters behind those keys are offset. The reference's are
-  // `user#1..4` / `assistant#1..6`; mine are `user#6..9` / `assistant#7..11`. So
-  // this fold allocates five synthetic ids the reference does not — rows it
-  // births from live frames and later anchors to an entry id, where the reference
-  // appears to take the row from the entry directly. Content, state and faces are
-  // identical either way; only the id a UI would key an element by differs.
-  // Fixing it means finding where the two folds disagree about WHEN a row is
-  // born, which is a task of its own, not a rename to make a test pass.
-  "021-durable-vocabulary-pair":
-    "nine rows keep synthetic keys and my counters sit five ahead of the reference's (see SKIP_REASONS comment)",
-}
+const SKIP_REASONS: Record<string, string> = {}
 
 /** The conformance vocabulary this runner implements. The reference projects it
  *  (`ConformanceProjection`) and vocab.md documents it; version 2 added the
@@ -308,10 +291,15 @@ describe("conformance corpus (kind + row)", () => {
         // means the corpus grew a plane this fold has not read.
         expect(unrecognised).toBe(0)
         const got = reducer.snapshot()
-        expect(projections(got.items)).toEqual(projections(expected.items))
+        // Row ids are compared as the VOCABULARY defines them, not as this fold
+        // allocates them internally — see `conformanceItems()`. The reference
+        // projects `<kind>#<seq>` by order of appearance; allocating eagerly here
+        // leaves gaps once a walk re-keys live-born rows to entry ids.
+        const gotItems = reducer.conformanceItems()
+        expect(projections(gotItems)).toEqual(projections(expected.items))
 
         const problems: string[] = []
-        got.items.forEach((item, index) => {
+        gotItems.forEach((item, index) => {
           const want = expected.items[index] as Record<string, unknown>
           for (const problem of itemProblems(want, item))
             problems.push(`item[${index}] ${item.kind}@${item.row}: ${problem}`)
@@ -498,7 +486,7 @@ describe("conformance corpus (kind + row)", () => {
           const dropPlaneOnly = <T extends { kind?: unknown }>(rows: T[]) =>
             rows.filter((row) => row.kind !== "reasoning")
           const coldItems = dropPlaneOnly(
-            coldSnap.items as never as Record<string, unknown>[],
+            cold.conformanceItems() as never as Record<string, unknown>[],
           )
           const wantItems = dropPlaneOnly(expected.items)
           const noSidecar = (row: Record<string, unknown>) => ({

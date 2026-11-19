@@ -111,6 +111,14 @@ Version 3 = notice `customType` / `details` added.
   **deterministic placeholder** `"<kind>#<seq>"` numbered by order of appearance
   (live synthetic ids are UUIDs — nondeterministic across runs, so the
   projection replaces them; seq numbers make failures debuggable).
+  **Numbered at projection time, among the rows still standing** — not at
+  allocation. An implementation that bakes the number in when it births a row
+  leaves gaps: 021 branched, five live-born rows were re-keyed to entry ids by a
+  later walk, and the client that allocated eagerly reported `user#6..9` for what
+  the reference calls `user#1..4`. Per kind (`ConformanceProjection.swift:66-121`):
+  user/assistant keep the entry id when replay-stable; `reasoning` is ALWAYS a
+  placeholder; `tool` is ALWAYS the tool call id; `compaction` and `notice` keep
+  their own id (a live compaction marker's is the bare sequence number).
 - **Text scrub, in place, readable**: newlines → `\n` literals, truncate at
   48 chars with `…`. No hashing (george 2026-09-25: "scrubbed but readable is
   the right approach given it'll live in repo"). ANSI stripped.
