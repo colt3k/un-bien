@@ -249,6 +249,16 @@ describe("conformance corpus (kind + row)", () => {
 
   for (const name of scenarios) {
     const dir = join(SCENARIO_DIR, name)
+    // A scenario directory can be committed before its fixture exists (021 ships
+    // its capture recipe first, so the capture is reviewable). Only allowed when
+    // the directory says so — a `meta.json` that went missing must fail loudly.
+    if (!existsSync(join(dir, "meta.json"))) {
+      if (!existsSync(join(dir, "capture-steps.md")))
+        throw new Error(
+          `${name}: no meta.json and no capture-steps.md — a fixture that went missing, not one under construction`,
+        )
+      continue
+    }
     const meta = JSON.parse(
       readFileSync(join(dir, "meta.json"), "utf8"),
     ) as ScenarioMeta

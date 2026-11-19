@@ -16,8 +16,13 @@ runs) is imported directly, aliased through Vite so three node-isms don't drag
 pnpm --filter web-client dev            # vite dev server, bound to all interfaces
 pnpm --filter web-client build          # dist/ (88 kB JS, 30 kB gzip)
 pnpm --filter web-client preview        # serve dist/ — use THIS on a phone
-pnpm --filter web-client test           # 86 passing (see Conformance)
+pnpm --filter web-client test           # 113 passing (see Conformance)
 ```
+
+To build a conformance fixture from a real session, open the paired URL with
+`&capture=1` and call `__unbienDump("NNN")` in the console — it downloads every
+inbound envelope as JSONL. The tee is off unless the URL asks for it and nothing
+in the app reads the buffer (`web-client/src/app.ts`).
 
 On a phone, use `preview`, not `dev`: the dev server's HMR socket drops on a
 tailnet blip or a backgrounded tab and full-reloads the page, which looks exactly

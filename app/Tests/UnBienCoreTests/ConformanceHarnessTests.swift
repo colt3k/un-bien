@@ -23,6 +23,22 @@ final class ConformanceHarnessTests: XCTestCase {
             .appendingPathComponent("contracts/conformance/scenarios")
     }
 
+    /// A scenario directory can be committed BEFORE its fixture exists — 021 ships
+    /// its capture recipe first, so the capture is a reviewable plan rather than a
+    /// chat message. Such a directory must SAY so (`capture-steps.md`); a directory
+    /// whose `input.jsonl` simply went missing has to fail loudly.
+    private func isWorkInProgress(_ dir: URL) throws -> Bool {
+        let missing = !FileManager.default.fileExists(
+            atPath: dir.appendingPathComponent("input.jsonl").path)
+        guard missing else { return false }
+        let declared = FileManager.default.fileExists(
+            atPath: dir.appendingPathComponent("capture-steps.md").path)
+        XCTAssertTrue(declared,
+                      "\(dir.lastPathComponent): no input.jsonl and no capture-steps.md — "
+                          + "that is a fixture that went missing, not one under construction")
+        return true
+    }
+
     private func scenarioDirectories() throws -> [URL] {
         let root = scenariosRoot()
         let names = try FileManager.default.contentsOfDirectory(atPath: root.path)
@@ -102,6 +118,7 @@ final class ConformanceHarnessTests: XCTestCase {
         var ran = 0
         for dir in dirs {
             let name = dir.lastPathComponent
+            if try isWorkInProgress(dir) { continue }
             let frames = try loadInput(dir.appendingPathComponent("input.jsonl"))
             let reducer = try replayLive(frames)
             let projection = reducer.conformanceProjection()
@@ -166,6 +183,7 @@ final class ConformanceHarnessTests: XCTestCase {
     func testScenarioModesDeclared() throws {
         let known: Set<String> = ["live", "replay"]
         for dir in try scenarioDirectories() {
+            if try isWorkInProgress(dir) { continue }
             let raw = try String(contentsOf: dir.appendingPathComponent("meta.json"), encoding: .utf8)
             let meta = try JSONDecoder().decode(JSONValue.self, from: Data(raw.utf8))
             let modes = meta["modes"]?.arrayValue?.compactMap { $0.stringValue } ?? []

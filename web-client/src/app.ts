@@ -51,7 +51,23 @@ const CAPTURE_FRAMES = /(?:\?|&)capture=1(?:&|$)/.test(
 )
 const capturedFrames: EnvelopeMessage[] = []
 if (CAPTURE_FRAMES) {
-  ;(globalThis as Record<string, unknown>).__unbienFrames = capturedFrames
+  const store = globalThis as Record<string, unknown>
+  store.__unbienFrames = capturedFrames
+  // `__unbienDump()` downloads the capture as JSONL so a scenario can be built
+  // without pasting megabytes through a console. It also returns the count, which
+  // is the thing you actually want to see after driving a session: a capture with
+  // 3 frames means the client was not attached, not that the turn failed.
+  store.__unbienDump = (name = "capture") => {
+    const body = capturedFrames.map((f) => JSON.stringify(f)).join("\n") + "\n"
+    const a = document.createElement("a")
+    a.href = URL.createObjectURL(
+      new Blob([body], { type: "application/x-ndjson" }),
+    )
+    a.download = `${name}-${new Date().toISOString().replace(/[:.]/g, "-")}.jsonl`
+    a.click()
+    URL.revokeObjectURL(a.href)
+    return capturedFrames.length
+  }
 }
 
 interface ActiveSession {

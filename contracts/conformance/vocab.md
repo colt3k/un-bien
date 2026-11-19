@@ -182,3 +182,11 @@ behaviour change.
 Create the directory; both runners pick it up by convention. Zero runner
 changes. If a scenario needs new vocabulary, extend this spec first, both
 runners in the same commit.
+
+A directory may be committed BEFORE its fixture exists: a `capture-steps.md` that
+spells out how the capture will be made is reviewable on its own, and it puts the
+plan in the same place as the result. Both runners then skip such a directory —
+and both insist on the marker, because a directory with no `input.jsonl` and no
+`capture-steps.md` is a fixture that went missing, and that has to fail. Captures
+come from the web client's own tee: load it with `?capture=1`, then
+`__unbienDump("NNN")` in the console (see `web-client/src/app.ts`).
