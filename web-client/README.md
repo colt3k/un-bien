@@ -379,7 +379,12 @@ toolCall]`, `tool_execution_start`/`_end` for a `read`, the toolResult
     watcher streamed, and the row landed keyed by entry id on one plane and
     `assistant#n` on the other. And scrubbing must never touch shape: marking
     `role` / `type` / `mimeType` inside a `toolResult` gave 53 entries whose role
-    read `«10»` and 53 cards stuck at `running` with no image.
+    read `«10»` and 53 cards stuck at `running` with no image. And the size of a
+    capture is not where you'd guess: the 27 107 deltas were 4.2 MB, while pi's
+    `details.truncation.content` — a COPY of everything it truncated, 300 KB in one
+    `message_start` and again in `message_end`, `turn_end` and `agent_end` — was
+    most of the rest. Marking those (prose the projection never reads) took 11.5 MB
+    to 7.0 MB without dropping a frame.
 
 - **The build the fixtures came from is now recorded, and the skew is measured.**
   The repo's extension source sits at 0.25.11 while the installed npm package is

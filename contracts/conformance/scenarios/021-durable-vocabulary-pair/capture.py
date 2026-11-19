@@ -90,7 +90,13 @@ def scrub(node, key=None, inside_details=False, inside_result=False):
         isResult = node.get("role") == "toolResult"
         return {
             k: scrub(v, k, inside_details or k == "details",
-                     inside_result or (isResult and k == "content"))
+                     inside_result
+                     or (isResult and k == "content")
+                     # The LIVE plane's tool payload is a bare result object, not a
+                     # toolResult message, so it needs its own marker rule. Without
+                     # it this fixture was 11.5 MB: 4.6 MB of `tool_execution_end`
+                     # results (one frame 1.75 MB) plus 1.4 MB of streamed partials.
+                     or k in ("result", "partialResult"))
             for k, v in node.items()
         }
     if isinstance(node, list):
@@ -98,7 +104,13 @@ def scrub(node, key=None, inside_details=False, inside_result=False):
     if not isinstance(node, str):
         return node
     if inside_details:
-        return mark(node)
+        # Short detail values stay length-preserving filler, because the reference
+        # projects `details` with its own filler and the corpus compares the two.
+        # LONG ones become length markers: pi rides a copy of everything it
+        # truncated under `details.truncation.content`, and 300 KB of `░` per frame
+        # (in `message_start`, `message_end`, `turn_end` and `agent_end` alike) is
+        # where this fixture's 11.5 MB actually was.
+        return mark_len(node) if len(node) > MAX_READABLE else mark(node)
     if key in OPAQUE_KEYS:
         return mark(node)
     if key == "data" and len(node) > 64:  # a base64 image payload, not a field name
