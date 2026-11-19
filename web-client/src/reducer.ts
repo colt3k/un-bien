@@ -73,6 +73,11 @@ export interface TranscriptItem {
    *  "Context compacted (N tokens)"; the summary itself is the stand-in text for
    *  the folded history, not a label, so it is not shown. */
   tokensBefore?: number
+  /** The `summary` the marker was built from. Internal, never projected: it is
+   *  what lets a live `compaction_end` marker and the durable `compaction` entry
+   *  describing the SAME compaction recognize each other (see the match in the
+   *  `compaction_end` fold). */
+  summary?: string
   /** Edit-family diff hunks the extension rides in `env.aux` alongside the
    *  byte-faithful rpc frame. Not part of the corpus vocabulary. */
   hunks?: unknown[]
@@ -641,6 +646,34 @@ export class TranscriptReducer {
           typeof result.tokensBefore === "number"
             ? result.tokensBefore
             : undefined
+        const summary = typeof result.summary === "string" ? result.summary : ""
+        if (entryId !== undefined && tokens !== undefined) {
+          // ONE compaction, ONE row. The live `compaction_end` frame and the
+          // durable `compaction` ENTRY describe the same event but key
+          // differently — the bare sequence number against pi's entry id — and
+          // nothing linked the two, so a session compacted while the viewer
+          // watched grew a SECOND "Context compacted" row as soon as a walk
+          // brought the entry (found probing 022's capture; the reference
+          // duplicates the same way — `appendCompaction` dedups by row id only).
+          //
+          // The key is the token count, because that is what BOTH forms report
+          // identically and it is what the caption renders. Not the summary text:
+          // fixtures scrub it two different ways (the live frame's `«2122»`, the
+          // entry's length-preserving filler), so text equality would be a
+          // fixture artefact rather than a rule. Two compactions in one session
+          // sharing a `tokensBefore` would collide — the second marker would be
+          // read as the first — but the second count includes what the first
+          // compacted away, so in practice they differ.
+          const match = this.items.find(
+            (item) =>
+              item.kind === "compaction" && item.tokensBefore === tokens,
+          )
+          if (match) {
+            if (match.row !== entryId)
+              this.rekeyRow(match.row, entryId, "compaction")
+            break
+          }
+        }
         const item: TranscriptItem = {
           kind: "compaction",
           // Reference `SyntheticID.compaction(seq:)` (TranscriptItem.swift:36): a
@@ -656,6 +689,7 @@ export class TranscriptReducer {
           images: 0,
           replayStable: entryId !== undefined,
           tokensBefore: tokens,
+          summary,
         }
         if (entryId) this.insertBeforeLiveTail(item)
         else this.push(item)

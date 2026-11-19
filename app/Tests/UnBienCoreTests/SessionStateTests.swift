@@ -545,6 +545,45 @@ final class SessionStateTests: XCTestCase {
             XCTFail("expected an open assistant bubble")
         }
     }
+
+    // One compaction, ONE row (found probing the 022 capture). A compaction reaches a
+    // viewer twice: as a live `compaction_end` frame, and later as the durable
+    // `compaction` ENTRY a walk brings back. They key differently — the bare sequence
+    // number against pi's entry id — and nothing linked them, so the watched
+    // transcript grew a SECOND "Context compacted" row when the entry arrived. 021
+    // could not expose this: its branch moved the compaction entry off the active
+    // path. Shapes are 021's real frames (both report 103 812 tokens before); the
+    // summaries differ on purpose, because the fixture scrubs the live frame's to a
+    // `«2122»` marker and the entry's to filler — the match is the token count, the
+    // one thing both forms report identically.
+    func testLiveCompactionMarkerIsAnchoredWhenItsEntryArrivesLater() {
+        var state = SessionState()
+        state.applyRPC(.object(["type": .string("compaction_end"),
+                                "result": .object(["summary": .string("the folded history"),
+                                                   "tokensBefore": .number(103_812)])]))
+        XCTAssertEqual(state.items.count, 1)
+        guard case let .compaction(live) = state.items[0] else { return XCTFail("no marker") }
+        XCTAssertEqual(live.id, "1", "a live marker keys on the bare sequence number")
+
+        let entryID = "a6a2d52d-0000-0000-0000-000000000000"
+        state.applyEntries([.object(["type": .string("compaction"),
+                                     "id": .string(entryID),
+                                     "parentId": .null,
+                                     "timestamp": .number(1),
+                                     "summary": .string("the folded history, at length"),
+                                     "firstKeptEntryId": .string("e1"),
+                                     "tokensBefore": .number(103_812),
+                                     "fromHook": .bool(false)])],
+                           leafId: entryID)
+
+        let markers = state.items.compactMap { item -> CompactionMarker? in
+            guard case let .compaction(marker) = item else { return nil }
+            return marker
+        }
+        XCTAssertEqual(markers.count, 1, "one compaction must not become two rows")
+        XCTAssertEqual(markers.first?.id, entryID,
+                       "the row is anchored to pi's entry id, so a cold arrival lands on it")
+    }
 }
 
 // MARK: - Entry-born provider errors ride log position (run 2026-09-17:
@@ -695,4 +734,5 @@ final class EntryBornErrorNoticeTests: XCTestCase {
             if case let .notice(n) = $0 { return n.code == "branch" } else { return false }
         }, "divergence flags a branch notice")
     }
+
 }

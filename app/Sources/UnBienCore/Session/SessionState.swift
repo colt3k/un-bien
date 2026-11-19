@@ -407,6 +407,24 @@ public struct SessionState: Equatable, Sendable {
         // Entry-born markers ride the log position (before the live tail);
         // live ones append (a "now" event).
         if entryID != nil {
+            // ONE compaction, ONE row. A live `compaction_end` marker (seq id) and
+            // the durable `compaction` ENTRY (entry id) describe the same event,
+            // and keying alone cannot link them: without this, the viewer grows a
+            // SECOND "Context compacted" row the moment a walk brings the entry
+            // (found probing the 022 capture — the dedup above is by id only).
+            // Match on `tokensBefore`, the one thing both forms report identically
+            // — NOT the summary, which fixtures scrub two different ways — and
+            // re-key the row the viewer already has, keeping its position. Two
+            // compactions sharing a token count would collide; in a real session
+            // the second count includes what the first compacted away.
+            if let at = items.firstIndex(where: { item in
+                guard case .compaction(let marker) = item else { return false }
+                return marker.tokensBefore == tokensBefore
+            }), case .compaction(let existing) = items[at] {
+                items[at] = .compaction(CompactionMarker(id: id, summary: existing.summary,
+                                                         tokensBefore: tokensBefore))
+                return true
+            }
             return insertBeforeLiveTail(.compaction(CompactionMarker(id: id, summary: summary,
                                                                      tokensBefore: tokensBefore)))
         }

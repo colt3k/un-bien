@@ -333,6 +333,20 @@ toolCall]`, `tool_execution_start`/`_end` for a `read`, the toolResult
     the live plane gives the deltas that built it, and a marker per delta makes the
     two incomparable as strings. `capture.py` explains it at the top.
 
+- **022: turning up late at an already-compacted session.** A human compacted a
+  real session (85 963 tokens folded, `firstKeptEntryId` 59041a36) and only *then*
+  attached this client, so the compaction arrived purely as a durable entry — and
+  that entry was the leaf of the attach walk. Both folds render it correctly
+  (`compaction@d80b313f`, "Context compacted (85963 tokens)"); nothing before this
+  had proved a viewer can see a compaction it never watched. Probing the other half
+  found a real defect in **both** folds: the live marker and the entry-born marker
+  for the SAME compaction are different row keys and nothing linked them, so
+  watching a compaction and then taking a walk grew a second "Context compacted"
+  row. Now matched on `tokensBefore` and re-keyed instead —
+  `test/compaction-durability.test.ts` here,
+  `SessionStateTests.testLiveCompactionMarkerIsAnchoredWhenItsEntryArrivesLater` in
+  the reference; the rule is vocab.md's "One compaction, one row".
+
 - **The vocabulary fixture landed, and it moved the claim from equality to
   containment.** Scenario `021` is one session driven by a human through the
   durable entry types no fixture had fed through a page: read an image, read a

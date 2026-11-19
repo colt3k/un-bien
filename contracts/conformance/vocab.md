@@ -159,11 +159,31 @@ left to a filter:
 | `reasoning` rows | pi persists `thinking` blocks ON the message entry (020's log holds 25, 021's 50) and neither fold turns a persisted block into a row, so a client that attaches cold shows no thinking rows at all. **This is the settled behaviour, not a gap** — pi's own screen does not replay thinking blocks either, and a viewer that arrives late should see what pi shows (DESIGN.md §2). The two arrivals therefore differ in exactly this dimension, by decision: a watcher sees 6 (020) / 14 (021) reasoning rows, a cold arrival sees none. The corpus asserts the split holds in both directions — the watcher's rows exist, the cold run renders none — so a fold that starts rendering persisted thinking fails until this row, DESIGN.md §2, and the assertion are changed together. Vocabulary-wise it is also currently unrepresentable: `reasoning` is hard-coded non-replay-stable (`ConformanceProjection.swift:95`) and `ReasoningBlock` has no stability field |
 | the `hunks` block on a card | the diff sidecar rides the live `tool_execution_start` frame and nothing else, so a watched card settles to `[diff, hunks]` and a cold one to `[diff]` |
 
+### One compaction, one row
+
+A compaction reaches a viewer twice: as a live `compaction_end` frame (keyed on the
+bare sequence number, `SyntheticID.compaction(seq:)`) and later as the durable
+`compaction` ENTRY a walk brings back (keyed on pi's entry id). Dedup by row id
+cannot link the two, so a viewer that WATCHED a compaction grew a SECOND "Context
+compacted" row as soon as a walk brought the entry — in both implementations. 022's
+capture found it; 021 could not, because its branch moved the compaction entry off
+the active path. Both folds now match an entry-born marker to the live one on
+`tokensBefore` — the one thing both forms report identically, and what the caption
+renders — and re-key the existing row (keeping its position) instead of appending a
+second. Not the summary text: fixtures scrub it two ways (the live frame's
+`«2122»`, the entry's filler), so text equality there would be a fixture artefact
+rather than a rule. Two compactions sharing a token count would collide; in a real
+session the second count includes what the first compacted away. Pinned by
+`web-client/test/compaction-durability.test.ts` and the reference's
+`SessionStateTests.testLiveCompactionMarkerIsAnchoredWhenItsEntryArrivesLater`.
+
 ### What 021 pinned, and what it found
 
 - A `compaction` ENTRY folds to the same `compaction` row a live
-  `compaction_end` frame does — text built from `tokensBefore`, row keyed by the
-  bare sequence number (`replayStable: false`). 103 812 tokens before, one row.
+  `compaction_end` frame does — text built from `tokensBefore` (103 812 tokens
+  before, one row). Which key that row carries depends on the plane that brought it
+  — bare sequence number live, pi's entry id for the entry — and the two are now
+  linked rather than duplicated; see "One compaction, one row" above.
 - A `branch_summary` entry produced **no row at all**: its parent is an ancestor
   of the old leaf, and the accepted summary sits on the branch that is no longer
   the active path. Neither fold renders an off-path entry, so the durable summary
