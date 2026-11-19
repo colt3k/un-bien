@@ -325,6 +325,21 @@ toolCall]`, `tool_execution_start`/`_end` for a `read`, the toolResult
     the live plane gives the deltas that built it, and a marker per delta makes the
     two incomparable as strings. `capture.py` explains it at the top.
 
+- **The build the fixtures came from is now recorded, and the skew is measured.**
+  The repo's extension source sits at 0.25.11 while the installed npm package is
+  0.25.15, and npm has 0.25.13/14/15 with no commits or tags in this repository —
+  so "the wire does X, see `rpc_envelope.ts:405`" was a claim about a build that
+  might not be the one a capture came from. `npm pack` both versions and diff the
+  shipped `dist/`: exactly seven files moved 0.25.11 → 0.25.15, all of them
+  install/daemon plumbing or the broker join path. `index.js`, `routing.js`,
+  `session/rpc_envelope.js`, `durable.js`, `client.js`, `commands/pairing.js`,
+  `subagent_rooms.js` are byte-identical, so the envelope, paging and sidecar
+  behaviour the corpus and this README describe is the behaviour of the build that
+  made the captures. `meta.json → extensionVersion` now names the build per
+  fixture, and vocab.md says how to re-derive the comparison (and why `dist` line
+  numbers are not TS line numbers, and why the shipped maps cannot be turned back
+  into TS). Flag for the owner: three published versions exist only as tarballs.
+
 - **A pairing notice renders from its payload, not from its display text.**
   Conformance vocabulary **version 3** keeps `customType` and `details` on a
   custom-role notice (deep-scrubbed, structure intact — same rule as panel

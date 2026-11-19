@@ -2,6 +2,7 @@
   "origin": "captured (both planes, one session)",
   "source": "A real attached session (`01a1f0af-1716-\u2026`, room WF-jI-uORO6x) recorded by the web client itself: loaded with `?capture=1`, which tees every inbound envelope to `window.__unbienFrames` (web-client/src/app.ts). `raw.jsonl` is that dump \u2014 UNSCRUBBED, and deliberately not committed: it holds raw prompts, reasoning text and a pairing payload. `capture.py` turns it into the two committed inputs.",
   "captured": "2026-11-18",
+  "extensionVersion": "@geohar/un-bien 0.25.15 (the build installed in this pi). The repo's extension source is at 0.25.11, and npm carries 0.25.13/14/15 that have no commits or tags in this repository \u2014 see vocab.md, 'Which build produced this', for why that does not invalidate the fixture.",
   "modes": [
     "live",
     "replay"

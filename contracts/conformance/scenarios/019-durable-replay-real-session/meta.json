@@ -2,6 +2,7 @@
   "origin": "captured (durable plane)",
   "source": "Real pi session log `2026-11-18T22-02-48-983Z_01a1f0af-1716-\u2026jsonl` (52 entries), the session this repo's browser client was attached to while the panel/pairing work was being done. Built by `capture.py` in this directory \u2014 run it against that log to regenerate the input. Entries are verbatim (ids, parentIds, timestamps, types, roles, tool names, mimeTypes); content is length-marked `\u00abN\u00bb`, and everything under `details` is marked regardless of length, because a pairing token in a fixture is a credential in a repository.",
   "captured": "2026-11-18",
+  "extensionVersion": "@geohar/un-bien 0.25.15 (the build installed in this pi). The repo's extension source is at 0.25.11, and npm carries 0.25.13/14/15 that have no commits or tags in this repository \u2014 see vocab.md, 'Which build produced this', for why that does not invalidate the fixture.",
   "modes": [
     "replay"
   ],

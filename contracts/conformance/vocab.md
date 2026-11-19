@@ -138,6 +138,38 @@ left to a filter:
 | `reasoning` rows | pi persists `thinking` blocks ON the message entry, and neither fold turns a persisted block into a row — a client that attaches cold shows no thinking rows at all. 020 records this as a gap. The equality is not expressible in the vocabulary yet either: reasoning rows are keyed synthetic `reasoning#n` with `replayStable: false` |
 | the `hunks` block on a card | the diff sidecar rides the live `tool_execution_start` frame and nothing else, so a watched card settles to `[diff, hunks]` and a cold one to `[diff]` |
 
+## Which build produced this
+
+Every captured fixture names the extension build that produced it
+(`meta.json → extensionVersion`), because the published packages and this
+repository drift: the repo's `extension/package.json` sits at **0.25.11** while
+npm carries **0.25.13, 0.25.14, 0.25.15** with no matching commits or tags in
+this repository. So a claim cited against `extension/src` needs re-checking
+against the build that a fixture was captured from — from the artifacts, not from
+memory. The published package ships its compiled `dist/`:
+
+```sh
+npm pack @geohar/un-bien@0.25.11 @geohar/un-bien@<installed>
+diff -rq <a>/package/dist <b>/package/dist | grep -v '\.map'
+```
+
+As of 0.25.15 the answer for the whole wire path is *nothing*: `dist/index.js`,
+`routing.js`, `session/rpc_envelope.js`, `durable.js`, `client.js`,
+`commands/pairing.js`, `subagent_rooms.js`, `session/received_images.js`,
+`pi_binding/session_port.js` are byte-identical to 0.25.11. Exactly seven files
+moved — `commands/housekeeping.js`, `daemon/{cliInstall,install,launcherInstall,service_env}.js`
+(plus a new `daemon/packageManager.js`), `session/leader_election.js` and
+`session/peer.js`. Those are install/daemon plumbing and the broker join path (the
+unregistered liveness probe became `broker_ping`, and `register_ack` now waits
+through stray control frames instead of aborting on one). None of it reaches a
+viewer's frames, so what this spec and 019/020 claim still describes the machine
+that made them.
+
+Two cautions when you do this: `dist` line numbers are NOT the TypeScript line
+numbers — read `extension/src`, check behaviour in `dist`; and the source maps
+ship without `sourcesContent`, so a published build cannot be turned back into the
+TS that produced it.
+
 ## Golden regeneration
 
 `expected.json` files are committed. A runner may regenerate goldens when
