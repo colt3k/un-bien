@@ -57,6 +57,26 @@ const SCENARIO_DIR = join(
 
 /** Scenario → why it is out of this fold's reach, so a skip stays auditable.
  *  Keep this empty: an unexplained skip is how a client drifts. */
+/** How many `thinking` blocks the durable pages carry. Not folded into rows by
+ *  either implementation — the count is the size of the reasoning gap. */
+function thinkingBlocksIn(frames: Record<string, unknown>[]): number {
+  let count = 0
+  for (const frame of frames) {
+    const rpc = frame.rpc as Record<string, unknown> | undefined
+    const data = rpc?.data as Record<string, unknown> | undefined
+    const entries = data?.entries as Record<string, unknown>[] | undefined
+    if (!entries) continue
+    for (const entry of entries) {
+      if (entry.type !== "message") continue
+      const message = entry.message as Record<string, unknown> | undefined
+      const content = message?.content as Record<string, unknown>[] | undefined
+      if (!content) continue
+      count += content.filter((block) => block.type === "thinking").length
+    }
+  }
+  return count
+}
+
 const SKIP_REASONS: Record<string, string> = {}
 
 /** The conformance vocabulary this runner implements. The reference projects it
@@ -476,10 +496,14 @@ describe("conformance corpus (kind + row)", () => {
         const replayFile = join(dir, "replay.jsonl")
         if (existsSync(replayFile)) {
           const cold = new TranscriptReducer()
-          for (const line of readFileSync(replayFile, "utf8")
+          // The replay frames are kept, not just folded: the reasoning gap below
+          // counts the `thinking` blocks sitting in the durable log.
+          const replayFrames = readFileSync(replayFile, "utf8")
             .split("\n")
-            .filter((line) => line.trim().length > 0)) {
-            const env = toEnvelope(JSON.parse(line))
+            .filter((line) => line.trim().length > 0)
+            .map((line) => JSON.parse(line) as Record<string, unknown>)
+          for (const frame of replayFrames) {
+            const env = toEnvelope(frame)
             if (env) cold.apply(env)
           }
           const coldSnap = cold.snapshot()
@@ -526,13 +550,47 @@ describe("conformance corpus (kind + row)", () => {
                   `${row.kind}@${row.row}` === `${want.kind}@${want.row}`,
               ),
           )
-          if (offPath.length)
-            console.info(
-              `${name}: ${offPath.length} row(s) the watcher saw but a cold arrival cannot (${offPath
-                .slice(0, 3)
-                .map((row) => `${row.kind}@${row.row}`)
-                .join(", ")}${offPath.length > 3 ? ", …" : ""})`,
-            )
+          // Pinned numerically, because it is a behaviour, not an accident: 021
+          // branched, and the branch moved 37 comparable rows off the active path —
+          // visible to the client that watched them, invisible to one that arrives
+          // after. (92 rows watched, 41 cold; the extra 14 of the difference are
+          // reasoning rows, which the comparison drops on both sides.) If a fold
+          // ever renders off-path entries, or the derivation changes, this number
+          // moves and the change has to be argued about here.
+          const EXPECTED_OFF_PATH_ROWS: Record<string, number> = {
+            "021-durable-vocabulary-pair": 37,
+          }
+          const expectedOffPath = EXPECTED_OFF_PATH_ROWS[name]
+          if (expectedOffPath !== undefined)
+            expect(
+              offPath.length,
+              `${name}: rows a watcher sees but a cold arrival cannot`,
+            ).toBe(expectedOffPath)
+
+          // TRIPWIRE for an open gap, not a comfort. Neither fold turns a
+          // persisted `thinking` block into a row (vocab.md drops `reasoning` from
+          // the cross-plane comparison and says why), so a viewer that arrives cold
+          // loses content that IS in the durable log — 020 measures 25 blocks, 021
+          // 50. This asserts the gap still exists. Make reasoning rows durable and
+          // it fails, which is the point: it gets deleted deliberately, together
+          // with vocab.md's exemption row, not discovered accidentally.
+          const persistedThinking = thinkingBlocksIn(replayFrames)
+          if (persistedThinking > 0) {
+            const liveReasoning = gotItems.filter(
+              (item) => item.kind === "reasoning",
+            ).length
+            const coldReasoning = coldItems.filter(
+              (row) => row.kind === "reasoning",
+            ).length
+            expect(
+              liveReasoning,
+              `${name}: the watcher should still see reasoning rows (${persistedThinking} persisted thinking blocks in the log)`,
+            ).toBeGreaterThan(0)
+            expect(
+              coldReasoning,
+              `${name}: the reasoning gap CLOSED (${liveReasoning} live rows, ${persistedThinking} persisted thinking blocks) — delete this tripwire and vocab.md's reasoning exemption, and make the pair hold`,
+            ).toBe(0)
+          }
           if (
             "leafId" in expected &&
             coldSnap.leafId !== (expected.leafId ?? null)

@@ -126,9 +126,22 @@ final class ConformanceHarnessTests: XCTestCase {
                       problems.joined(separator: "\n"), file: file, line: line)
     }
 
+    /// Rows a branched session puts off the active path, per scenario. Pinned
+    /// numerically in BOTH runners: it is a behaviour (the derivation renders the
+    /// active path only), so a change to it must be argued about, not noticed.
+    private let expectedOffPathRows: [String: Int] = [
+        "021-durable-vocabulary-pair": 37,
+    ]
+
     private func rowKey(_ item: JSONValue) -> String {
         guard case .object(let o) = item else { return "?" }
         return "\(o["kind"]?.stringValue ?? "?")@\(o["row"]?.stringValue ?? "?")"
+    }
+
+    private func rows(of value: JSONValue) -> [JSONValue] {
+        guard case .object(let obj) = value, case .array(let items)? = obj["items"]
+        else { return [] }
+        return items
     }
 
     private func comparable(_ value: JSONValue) -> JSONValue {
@@ -186,6 +199,19 @@ final class ConformanceHarnessTests: XCTestCase {
                 // fields, and both runs agree on the leaf they would resume from.
                 assertContained(comparable(cold), inRowsOf: comparable(projection),
                                 scenario: name, other: "the connected run")
+                // The same numeric pin the web runner holds: how many rows the
+                // branch moved off the active path. A behaviour, not an accident —
+                // and if either implementation changes what the derivation renders,
+                // both runners say so.
+                let offPath = rows(of: comparable(projection))
+                    .filter { item in
+                        let key = rowKey(item)
+                        return !rows(of: comparable(cold)).contains { rowKey($0) == key }
+                    }
+                if let expectedOffPath = expectedOffPathRows[name] {
+                    XCTAssertEqual(offPath.count, expectedOffPath,
+                                   "scenario \(name): rows a watcher sees but a cold arrival cannot")
+                }
                 if let expected, !regenerate {
                     assertContained(comparable(cold), inRowsOf: comparable(expected),
                                     scenario: name, other: "expected.json")

@@ -142,7 +142,11 @@ was BRANCHED in the tree: the watcher saw a stretch of turns, the leaf then move
 to a different branch, and `get_entries` only ever serves the ACTIVE path (the
 derivation rule at "a block not on the derived path is absent"). So the cold run
 holds 41 of the 92 rows and cannot hold the rest — correct behaviour on both
-sides, not a fold disagreement. The extras are logged by both runners rather than
+sides, not a fold disagreement. **Both runners pin the number: 37 comparable rows**
+(the other 14 of the difference are reasoning rows, dropped on both sides), in
+`ConformanceHarnessTests.expectedOffPathRows` and the corpus's
+`EXPECTED_OFF_PATH_ROWS`. A fold that started rendering off-path entries would
+fail both. The extras are logged by both runners rather than
 asserted away, so a fixture that silently shrinks the comparison is visible.
 
 Four parts of the projection are plane-specific by construction, so the cross-plane
@@ -152,7 +156,7 @@ left to a filter:
 | dropped | why |
 | --- | --- |
 | `panels`, `subagents`, `pendingAsks` | pi does not persist them: panels ride `{evt channel:"panel"}` frames, an ask is a moment rather than a record |
-| `reasoning` rows | pi persists `thinking` blocks ON the message entry, and neither fold turns a persisted block into a row — a client that attaches cold shows no thinking rows at all. 020 records this as a gap. The equality is not expressible in the vocabulary yet either: reasoning rows are keyed synthetic `reasoning#n` with `replayStable: false` |
+| `reasoning` rows | pi persists `thinking` blocks ON the message entry, and neither fold turns a persisted block into a row — a client that attaches cold shows no thinking rows at all. Measured, not hand-waved: 020's log holds **25** thinking blocks and 021's **50**, and a cold arrival renders **0** reasoning rows where the watcher renders 6 and 14. Both runners assert that gap still exists (a tripwire that fails the day someone closes it, forcing this row and the exemption to be deleted deliberately). Closing it needs durable reasoning identity on BOTH sides — the projection hard-codes `reasoning` as non-replay-stable (`ConformanceProjection.swift:95`) and `ReasoningBlock` has no stability field at all |
 | the `hunks` block on a card | the diff sidecar rides the live `tool_execution_start` frame and nothing else, so a watched card settles to `[diff, hunks]` and a cold one to `[diff]` |
 
 ### What 021 pinned, and what it found
