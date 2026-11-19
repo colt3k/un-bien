@@ -280,11 +280,50 @@ toolCall]`, `tool_execution_start`/`_end` for a `read`, the toolResult
   authored (page boundaries — pi pages by its own byte budget and no capture ever
   contained a `get_entries` response, because the client sends that request
   itself).
-  One honesty note the corpus now records in vocab.md: every scenario declares
-  exactly **one** mode, and no scenario yet feeds the same history through both
-  planes, so "identical across modes" is still a design claim rather than an
-  asserted fact. An unknown mode name now fails the harness instead of going
-  inert.
+  One honesty note the corpus recorded in vocab.md at the time: every scenario
+  declared exactly **one** mode, and no scenario fed the same history through both
+  planes, so "identical across modes" was a design claim rather than an asserted
+  fact. (Scenario `020`, below, is the pair that closes that gap.) An unknown mode
+  name now fails the harness instead of going inert.
+
+- **The pair exists, and it found two real bugs plus one gap worth arguing
+  about.** Scenario `020` captures ONE real session twice: `input.jsonl` is every
+  envelope a connected client received (attach walk, a live 6-step tool turn with
+  streaming deltas and an `aux.hunks` sidecar, five post-turn resync walks, a
+  final walk — 859 frames), and `replay.jsonl` is only that final walk: 87 durable
+  entries plus the empty page carrying the leaf beacon `69be0624`. A client that
+  arrives cold sees nothing else. Both runners now hold the cold run to the same
+  golden, and they agree. What it took to get there:
+
+  * **Sidecar loss (fixed, pinned).** `aux.hunks` rides `tool_execution_start`,
+    but a streamed tool call usually opens its card earlier — from a
+    `toolcall_start` delta, which carries no aux. Attaching the sidecar only when
+    creating the card lost it for good: the reference projected `[diff, hunks]`
+    and this client `[diff]`. `startTool` now takes hunks onto an existing card.
+  * **Delta dedup was stricter here than in the reference (fixed).** Both folds
+    drop a `message_update` identical to the last one applied — a redelivery guard
+    the reference added after run 2026-09-18 ("every chunk repeats", and this
+    capture really does contain three byte-identical frames). This client compared
+    only `type|delta`, so it ate legitimate text the reference kept. It now uses
+    the same full-frame rule. The guard is still a heuristic, and 020's `meta.json`
+    says where it can bite: with an all-zero-`usage` model and adjacent frames
+    sharing a `ts`, a legitimate repeat is indistinguishable from a redelivery —
+    and the projection's 48-char text window hides the resulting loss.
+  * **A gap, not papered over:** pi persists `thinking` blocks ON the message
+    entry (25 in this session) and NEITHER fold turns a persisted block into a row.
+    So a client that attaches cold shows a transcript with every thinking row
+    missing — while the content is sitting in the durable record. The projection
+    cannot express that equality today either (`ConformanceProjection.swift:95`
+    keys reasoning rows synthetic `reasoning#n`, `replayStable: false`), which is
+    why the cross-plane comparison drops `reasoning` rows with the reason stated in
+    vocab.md and in the scenario's `meta.json`, rather than quietly ignoring them.
+    Fixing it properly means making reasoning row identity durable on both sides —
+    the next change I would make, and I did not want to smuggle it into a fixture
+    commit.
+  * The fixture's scrub is length-preserving filler rather than `«length»`
+    markers, for this scenario only: the durable plane gives one content block and
+    the live plane gives the deltas that built it, and a marker per delta makes the
+    two incomparable as strings. `capture.py` explains it at the top.
 
 - **A pairing notice renders from its payload, not from its display text.**
   Conformance vocabulary **version 3** keeps `customType` and `details` on a

@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs"
+import { existsSync, readFileSync, readdirSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import { TranscriptReducer, toEnvelope } from "../src/reducer.js"
@@ -439,6 +439,90 @@ describe("conformance corpus (kind + row)", () => {
                 ),
               )
           })
+        }
+
+        // A PAIRED scenario (020): the same session reached the other way — a
+        // client that arrives cold and only ever sees `get_entries` pages. It must
+        // fold to the same transcript, so it is held to the SAME golden with the
+        // same vocabulary rules (not to the connected run: the golden is the
+        // contract, and its scrub semantics are what make the two planes
+        // comparable at all). Three things in the projection are legitimately
+        // plane-specific and are dropped here, each with its reason:
+        //   * panels / subagents / pendingAsks — pi does not persist them, so a
+        //     cold arrival has none by construction;
+        //   * reasoning rows — pi persists `thinking` blocks ON the message entry
+        //     (25 in this session) and NEITHER fold turns a persisted block into a
+        //     row: thinking rows exist only where the deltas were watched. 020
+        //     records that as a gap, not as a pass (the reference's projection
+        //     cannot express the equality either — it keys reasoning rows synthetic
+        //     unconditionally, `ConformanceProjection.swift:95`);
+        //   * the `hunks` block on a card — the diff sidecar rides the live
+        //     `tool_execution_start` frame and nothing else.
+        const replayFile = join(dir, "replay.jsonl")
+        if (existsSync(replayFile)) {
+          const cold = new TranscriptReducer()
+          for (const line of readFileSync(replayFile, "utf8")
+            .split("\n")
+            .filter((line) => line.trim().length > 0)) {
+            const env = toEnvelope(JSON.parse(line))
+            if (env) cold.apply(env)
+          }
+          const coldSnap = cold.snapshot()
+          const dropPlaneOnly = <T extends { kind?: unknown }>(rows: T[]) =>
+            rows.filter((row) => row.kind !== "reasoning")
+          const coldItems = dropPlaneOnly(
+            coldSnap.items as never as Record<string, unknown>[],
+          )
+          const wantItems = dropPlaneOnly(expected.items)
+          const noSidecar = (row: Record<string, unknown>) => ({
+            ...row,
+            blocks: (Array.isArray(row.blocks) ? row.blocks : []).filter(
+              (block) => block !== "hunks",
+            ),
+          })
+          if (
+            projections(coldItems).join(",") !==
+            projections(wantItems).join(",")
+          )
+            problems.push(
+              `cold rows differ from golden:\n  cold:   ${projections(coldItems).join(",")}\n  golden: ${projections(wantItems).join(",")}`,
+            )
+          else
+            wantItems.forEach((want, i) => {
+              const mine = coldItems[i]
+              if (!mine) {
+                problems.push(
+                  `cold item[${i}] ${want.kind}@${want.row}: missing`,
+                )
+                return
+              }
+              problems.push(
+                ...itemProblems(
+                  noSidecar(want),
+                  noSidecar(mine) as unknown as TranscriptItem,
+                ).map(
+                  (problem) =>
+                    `cold item[${i}] ${want.kind}@${want.row}: ${problem}`,
+                ),
+              )
+            })
+          if (
+            "leafId" in expected &&
+            coldSnap.leafId !== (expected.leafId ?? null)
+          )
+            problems.push(
+              `cold leafId ${coldSnap.leafId} != ${expected.leafId ?? null}`,
+            )
+          if (expected.flags) {
+            if (coldSnap.flags.streaming !== expected.flags.streaming)
+              problems.push(
+                `cold flags.streaming ${coldSnap.flags.streaming} != ${expected.flags.streaming}`,
+              )
+            if (coldSnap.flags.ended !== expected.flags.ended)
+              problems.push(
+                `cold flags.ended ${coldSnap.flags.ended} != ${expected.flags.ended}`,
+              )
+          }
         }
 
         expect(problems).toEqual([])

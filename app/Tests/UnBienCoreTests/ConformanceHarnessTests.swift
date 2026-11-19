@@ -53,6 +53,48 @@ final class ConformanceHarnessTests: XCTestCase {
         return reducer
     }
 
+    /// What the two arrivals can be held to.
+    ///
+    /// A scenario may ship `replay.jsonl` — the same session reached cold — and
+    /// the pair is then asserted against each other. Three parts of the
+    /// projection cannot be compared across the planes, and each is dropped with
+    /// its reason rather than quietly ignored:
+    ///
+    ///  * `panels`, `subagents`, `pendingAsks` — not persisted. Panels ride
+    ///    `{evt channel:"panel"}` frames; an ask is a moment, not a record. A cold
+    ///    arrival has none of them by construction.
+    ///  * `reasoning` rows — 020's finding, and a real gap rather than a quirk of
+    ///    the comparison: pi persists `thinking` blocks ON the message entry (25
+    ///    of them in this session), and NEITHER fold turns a persisted thinking
+    ///    block into a row — reasoning rows exist only where the deltas were
+    ///    watched. The projection can't express the equality either: it keys
+    ///    reasoning rows as synthetic `reasoning#n` unconditionally
+    ///    (`ConformanceProjection.swift:95`, `replayStable: false`). So "arrive
+    ///    cold and lose every thinking row" is current, agreed behaviour on both
+    ///    sides, pinned by this scenario and flagged as a design question.
+    ///  * the `hunks` block on a tool card — the diff sidecar is rides the live
+    ///    `tool_execution_start` frame only (`extension/src/session/rpc_envelope.ts:420`:
+    ///    "only aux.hunks (an edit's input diff) rides live"), so a cold card
+    ///    legitimately resolves to `[diff]` where a watched one resolves to
+    ///    `[diff, hunks]`.
+    private let ephemeralKeys: Set<String> = ["panels", "subagents", "pendingAsks"]
+
+    private func comparable(_ value: JSONValue) -> JSONValue {
+        guard case .object(var obj) = value else { return value }
+        for key in ephemeralKeys { obj[key] = nil }
+        if case .array(let items)? = obj["items"] {
+            obj["items"] = .array(items.compactMap { item -> JSONValue? in
+                guard case .object(var row) = item else { return item }
+                if row["kind"]?.stringValue == "reasoning" { return nil }
+                if case .array(let blocks)? = row["blocks"] {
+                    row["blocks"] = .array(blocks.filter { $0.stringValue != "hunks" })
+                }
+                return .object(row)
+            })
+        }
+        return .object(obj)
+    }
+
     func testScenariosConform() throws {
         let dirs = try scenarioDirectories()
         XCTAssertGreaterThan(dirs.count, 0, "no conformance scenarios found")
@@ -65,6 +107,31 @@ final class ConformanceHarnessTests: XCTestCase {
             let projection = reducer.conformanceProjection()
 
             let expectedURL = dir.appendingPathComponent("expected.json")
+            // A new scenario has no golden yet — regeneration is what creates it.
+            let expected: JSONValue? = FileManager.default.fileExists(atPath: expectedURL.path)
+                ? try JSONDecoder().decode(JSONValue.self,
+                                           from: Data(contentsOf: expectedURL))
+                : nil
+
+            // The second arrival. A scenario may ship `replay.jsonl`: the SAME
+            // session reached the other way — a client that arrives cold and only
+            // ever sees `get_entries` pages. Both routes must land on one
+            // transcript, so the pair is asserted twice: the two runs against each
+            // other (the mode-independence claim itself), and the cold run against
+            // the golden.
+            let replayURL = dir.appendingPathComponent("replay.jsonl")
+            if FileManager.default.fileExists(atPath: replayURL.path) {
+                let cold = try replayLive(loadInput(replayURL)).conformanceProjection()
+                XCTAssertEqual(comparable(cold), comparable(projection),
+                               "scenario \(name): two arrivals at the same instant disagree — "
+                                  + "the connected run and the cold `get_entries` run must fold "
+                                  + "to the same rows (row keys included)")
+                if let expected, !regenerate {
+                    XCTAssertEqual(comparable(cold), comparable(expected),
+                                   "scenario \(name): the cold-arrival run diverged from expected.json")
+                }
+            }
+
             if regenerate {
                 // Sorted and indented, so a regeneration diff shows only what
                 // changed.
@@ -76,8 +143,11 @@ final class ConformanceHarnessTests: XCTestCase {
                 continue
             }
 
-            let expectedData = try Data(contentsOf: expectedURL)
-            let expected = try JSONDecoder().decode(JSONValue.self, from: expectedData)
+            guard let expected else {
+                XCTFail("scenario \(name): no expected.json — run with "
+                        + "UNBIEN_CONFORMANCE_REGENERATE=1 to mint one, then commit it")
+                continue
+            }
             XCTAssertEqual(
                 projection, expected,
                 "scenario \(name): interpreted state diverged from expected.json — "
@@ -105,6 +175,32 @@ final class ConformanceHarnessTests: XCTestCase {
                               "\(dir.lastPathComponent): unknown mode \"\(mode)\" — "
                                   + "a mode no runner implements would make this fixture inert")
             }
+            // Declaring a mode that no input exercises is the same trap in
+            // disguise: the fixture looks like it pins mode-independence and
+            // pins nothing.
+            if modes.contains("replay") {
+                let hasReplayInput = FileManager.default.fileExists(
+                    atPath: dir.appendingPathComponent("replay.jsonl").path)
+                let carriesPages = (try? String(contentsOf: dir.appendingPathComponent("input.jsonl"),
+                                                encoding: .utf8))?
+                    .contains("get_entries")
+                    ?? false
+                XCTAssertTrue(hasReplayInput || carriesPages,
+                              "\(dir.lastPathComponent): declares `replay` but no input feeds "
+                                  + "a `get_entries` page, so the mode is decorative")
+            }
         }
+    }
+
+    /// The paired scenario must actually be paired: a `replay.jsonl` that no
+    /// runner opens would make the mode-independence claim decorative.
+    func testPairedScenariosAreRun() throws {
+        let paired = try scenarioDirectories().filter {
+            FileManager.default.fileExists(
+                atPath: $0.appendingPathComponent("replay.jsonl").path)
+        }
+        XCTAssertFalse(paired.isEmpty,
+                       "no scenario ships replay.jsonl, so nothing tests that a connected "
+                           + "client and a cold one fold the same session to one transcript")
     }
 }

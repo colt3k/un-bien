@@ -37,6 +37,23 @@ import {
  * should not add a rendering dependency before the wire is proven.
  */
 
+/**
+ * Dev-only fixture capture, off unless the URL says `?capture=1`: tees every
+ * inbound envelope to `window.__unbienFrames`, so a conformance scenario can be
+ * built from a REAL session (live frames and `get_entries` pages from one
+ * attach) instead of hand-written frames. Frames are kept raw and unscrubbed —
+ * the scenario's own capture script is what scrubs, and it never sees this
+ * window's contents unless a human copies them out. Nothing else in the app
+ * reads it; the flag is not sticky across a reload.
+ */
+const CAPTURE_FRAMES = /(?:\?|&)capture=1(?:&|$)/.test(
+  typeof location === "object" ? location.search : "",
+)
+const capturedFrames: EnvelopeMessage[] = []
+if (CAPTURE_FRAMES) {
+  ;(globalThis as Record<string, unknown>).__unbienFrames = capturedFrames
+}
+
 interface ActiveSession {
   epk: string
   roomId: string
@@ -733,6 +750,7 @@ export class App {
   }
 
   private onEnvelope(env: EnvelopeMessage): void {
+    if (CAPTURE_FRAMES) capturedFrames.push(env)
     const ub = env.ub as unknown as Record<string, unknown> | undefined
     if (ub && typeof ub.type === "string") {
       // `ub` frames are protocol (handshake, sync terminator, launch result),

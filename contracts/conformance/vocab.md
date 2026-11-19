@@ -119,6 +119,25 @@ Version 3 = notice `customType` / `details` added.
   fidelity comes from the input frames; the expected file asserts the *shape*.
 - Timestamps, token counts, session-start times: omitted (unstable).
 
+## Paired inputs: one session, reached two ways
+
+A scenario may ship `replay.jsonl` beside `input.jsonl`: the frames of a client
+that arrives COLD — durable `get_entries` pages and the terminal active-leaf
+page, no live frames. `modes` then lists both `live` and `replay`, and a runner
+that never opens `replay.jsonl` is not testing the claim the scenario makes.
+
+There is still ONE golden — the connected run's projection — and the cold run is
+held to that same golden, since identical-across-modes is the point. Three parts
+of the projection are plane-specific by construction, so the cross-plane
+comparison drops them. Dropping is a claim, so it is spelled out here rather than
+left to a filter:
+
+| dropped | why |
+| --- | --- |
+| `panels`, `subagents`, `pendingAsks` | pi does not persist them: panels ride `{evt channel:"panel"}` frames, an ask is a moment rather than a record |
+| `reasoning` rows | pi persists `thinking` blocks ON the message entry, and neither fold turns a persisted block into a row — a client that attaches cold shows no thinking rows at all. 020 records this as a gap. The equality is not expressible in the vocabulary yet either: reasoning rows are keyed synthetic `reasoning#n` with `replayStable: false` |
+| the `hunks` block on a card | the diff sidecar rides the live `tool_execution_start` frame and nothing else, so a watched card settles to `[diff, hunks]` and a cold one to `[diff]` |
+
 ## Golden regeneration
 
 `expected.json` files are committed. A runner may regenerate goldens when

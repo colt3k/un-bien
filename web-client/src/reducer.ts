@@ -275,6 +275,19 @@ export function toEnvelope(line: unknown): EnvelopeMessage | null {
   return null
 }
 
+/** Key-sorted JSON, so two frames that carry the same facts in a different key
+ *  order compare equal. Used by the delta dedup guard. */
+function stableKey(value: unknown): string {
+  if (value === null || typeof value !== "object")
+    return JSON.stringify(value) ?? "null"
+  if (Array.isArray(value)) return `[${value.map(stableKey).join(",")}]`
+  const obj = value as Record<string, unknown>
+  return `{${Object.keys(obj)
+    .sort()
+    .map((k) => `${JSON.stringify(k)}:${stableKey(obj[k])}`)
+    .join(",")}}`
+}
+
 /** Blocking dialogs — the only `extension_ui_request` methods that become a
  *  pending ask. Mirrors the reference reducer's case list. */
 const ASK_METHODS = new Set(["select", "confirm", "input", "editor"])
@@ -693,12 +706,16 @@ export class TranscriptReducer {
   private applyMessageUpdate(rpc: Frame, rowHint?: string): void {
     const event = asFrame(rpc.assistantMessageEvent)
     if (!event) return
-    // Delta dedup: the wire's delta frames carry NO id, and duplicate delivery
-    // (reconnect, doubled subscription paths) would double every chunk — and the
-    // doubled pending text then fails the identify match at completion, birthing
-    // a twin row. An EXACT immediate repeat is a redelivery; real consecutive
-    // deltas are distinct by construction.
-    const signature = `${String(event.type)}|${String(event.delta ?? event.content ?? "")}`
+    // Delta dedup, matching the reference's rule (SessionState.swift:457 —
+    // "full-frame delta dedup: identical frames are redeliveries", added after
+    // run 2026-09-18 "every chunk repeats" under overlapping reconnects).
+    // This client used to compare only `type|delta`, which is STRICTER than the
+    // reference and ate legitimate text: a scrubbed capture of a real turn has
+    // three consecutive deltas that scrub to the same string, and the looser rule
+    // dropped two of them. Full-frame equality at least requires the timestamps
+    // and usage to match too. It is still a heuristic — see the 020 scenario's
+    // note for where it can bite.
+    const signature = stableKey(rpc)
     if (signature === this.lastDelta) return
     this.lastDelta = signature
 
@@ -858,7 +875,9 @@ export class TranscriptReducer {
         return
       }
       // An assistant entry with no prose and no image births NOTHING: its
-      // thinking is not a replay row, and its tool calls are cards.
+      // thinking is not a replay row (020 pins this gap: pi persists thinking
+      // blocks on the entry, and NEITHER fold turns them into rows on the
+      // durable plane), and its tool calls are cards.
       if (kind === "assistant" && text === "" && images === 0) {
         this.reconstructCards(calls, true)
         return
@@ -1001,6 +1020,15 @@ export class TranscriptReducer {
       // A replayed toolCall block can carry args the live frame did not, and the
       // face resolution needs them. A settled card is never re-opened.
       if (!existing.args && args) existing.args = args
+      // The diff sidecar rides `tool_execution_start`, and a streamed tool call
+      // usually opens its card earlier than that — from a `toolcall_start` delta,
+      // which has no aux at all. Returning here without taking the hunks loses
+      // them for good (020's real edit: the reference projected `[diff, hunks]`
+      // and this client `[diff]`).
+      if (!existing.hunks && hunks) {
+        existing.hunks = hunks
+        this.applyToolView(existing, existing.state ?? "running", undefined)
+      }
       return
     }
     const item: TranscriptItem = {

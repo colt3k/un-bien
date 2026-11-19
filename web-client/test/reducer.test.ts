@@ -228,6 +228,33 @@ describe("tool cards", () => {
     expect(reducer.snapshot().items[0]?.text).toBe("Edited a.ts: 1 line added")
   })
 
+  it("takes the aux hunks even when a streamed toolcall_start opened the card first", () => {
+    // The usual order on the wire: pi streams the tool call as message deltas,
+    // so the card opens from `toolcall_start` (which carries no aux), and the
+    // `tool_execution_start` frame that DOES carry the sidecar arrives second.
+    // Attaching hunks only when creating the card loses them for good — 020's
+    // real edit showed the reference at `[diff, hunks]` and this client at
+    // `[diff]`.
+    const reducer = new TranscriptReducer()
+    reducer.apply({
+      rpc: {
+        type: "message_update",
+        assistantMessageEvent: {
+          type: "toolcall_start",
+          id: "e2",
+          toolName: "edit",
+        },
+      },
+    })
+    expect(reducer.snapshot().items[0]?.row).toBe("e2")
+    reducer.apply({
+      rpc: { type: "tool_execution_start", toolCallId: "e2", toolName: "edit" },
+      aux: { hunks: [{ lines: [{ kind: "add", text: "+hi" }] }] },
+    } as never)
+    expect(reducer.snapshot().items[0]?.hunks).toHaveLength(1)
+    expect(reducer.snapshot().items[0]?.blocks).toEqual(["pending", "hunks"])
+  })
+
   it("marks a failed tool failed", () => {
     const snapshot = fold([
       text({
