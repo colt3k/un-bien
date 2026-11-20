@@ -1,0 +1,15 @@
+{
+  "origin": "captured (live plane joined mid-turn; cold plane is the post-turn walk)",
+  "source": "Second `?capture=1` tab attached ~2 s after a reasoning-heavy turn began in session `01a1f574\u2026` (cwd /private/tmp/unbien-capture); tee dump `__unbienDump(\"025-mid-turn-reasoning\")`. `raw.jsonl` unscrubbed, NOT retained.",
+  "captured": "2026-11-20",
+  "extensionVersion": "@geohar/un-bien 0.25.15 (the build installed in this pi).",
+  "modes": [
+    "live",
+    "replay"
+  ],
+  "scrub": "capture.py \u2014 the shared rules (see 021's note). Deltas are NOT coarsened here: the whole capture is 7.3 MB raw and 5.0 MB scrubbed, so full fidelity is affordable and preferred over a lossy policy.",
+  "description": "A viewer that joins while pi is THINKING. Attach landed after `turn_start` was already in flight but before `thinking_end`: the mid-turn viewer received 6572 `thinking_delta` frames (plus `thinking_start`/`thinking_end`), then 1182 `text_delta` frames, then `message_end`/`turn_end`/`agent_end`/`agent_settled`. The post-turn walk (84 entries, leaf beacon `84e7b28b`) is the cold plane.",
+  "pairing": "Same golden in both runners; cold rows contained in the watched rows with identical fields.",
+  "trims": "Walk collapse (6 runs to first+final); delta trim keeps the one turn's deltas in full; the capture's last two frames (`get_state` reply, `ub` heartbeat) are skipped as non-mutating so the cold plane ends on the walk's empty beacon page.",
+  "note": "What it pins: joining mid-reasoning must produce ONE thinking row and ONE answer row, with no duplication from the walk that follows; and a `turn_start` that arrives after the attach (the turn began first) must not corrupt the streaming/ended flags. Reasoning rows remain live-only by decision (DESIGN.md \u00a72), so this scenario is also the clearest case of the accepted asymmetry: the mid-turn viewer sees a thinking row, and a client that arrives afterwards sees none \u2014 the corpus drops `reasoning` rows on both sides and says why. The raw dump is NOT retained; re-drive via capture-steps.md."
+}

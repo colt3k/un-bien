@@ -234,11 +234,31 @@ def main():
     # The trailing run of walk pages: the capture ends on the client's post-turn
     # resync walk, so the last thing in it IS a cold arrival's whole view.
     end = len(frames)
-    if not is_get_entries_response(frames[-1]):
-        raise SystemExit(
-            "capture does not end on a get_entries page; a cold-arrival input has to "
-            "end where a walk ends (the empty terminal page carries the leaf beacon)"
-        )
+    # A dump lands whenever a human says "dump", so a capture can end on a
+    # heartbeat or a state poll that arrived AFTER the last walk. Those frames
+    # change nothing, so the cold-arrival input may end at the walk behind them.
+    # Only a whitelist of non-mutating frames qualifies: anything else is live
+    # traffic after the walk, and dropping it silently would hide it from the pair.
+    NON_MUTATING = {"ub", "get_state", "extension_ui_request", "rpc:get_state"}
+    skipped = []
+    while end > 0 and not is_get_entries_response(frames[end - 1]):
+        f = frames[end - 1]
+        rpc = f.get("rpc") or {}
+        # A `get_state` reply arrives as rpc.type=="response" with the command name,
+        # so the command is what identifies it — rpc.type alone would read every
+        # reply as the same opaque "response".
+        kind = ("rpc:" + rpc["command"]) if rpc.get("command") else (
+            rpc.get("type") or f.get("type") or (f.get("ub") or {}).get("type"))
+        if kind not in NON_MUTATING:
+            raise SystemExit(
+                "capture does not end on a get_entries page, and the frames behind it "
+                f"are not all non-mutating (last: {kind}); a cold-arrival input has to "
+                "end where a walk ends (the empty terminal page carries the leaf beacon)"
+            )
+        skipped.append(kind)
+        end -= 1
+    if skipped:
+        print(f"trailing non-mutating frames skipped: {len(skipped)} ({sorted(set(skipped))})")
     start = end
     while start > 0 and is_get_entries_response(frames[start - 1]):
         start -= 1
