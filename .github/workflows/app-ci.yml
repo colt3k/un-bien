@@ -6,9 +6,19 @@ name: App CI
   pull_request:
     branches: [main]
 
-# NOTE: no "paths" filter — required status checks must REPORT on every
-# PR, or a relay-/docs-only PR would block forever on "expected" checks
-# that never run (branch protection requires these two jobs).
+# NOTE: no "paths" filter — every job must REPORT on every push and PR, so a
+# relay-/docs-only change never leaves a check stuck at "expected".
+#
+# TRUTH CHECK (2026-11-20): this repo has NO branch protection rules and NO
+# rulesets — `Settings → Branches` offers only "Add branch ruleset" / "Add classic
+# branch protection rule". Nothing here is a REQUIRED check; every job runs and
+# reports, and a red suite does not block a merge. That is deliberate for a
+# single-owner repo that pushes straight to main: the suite is a loud alarm in
+# Actions within a minute of a push, and fixing forward is cheaper than gating.
+# If that ever changes, add a ruleset targeting `main`, toggle "Require status
+# checks to pass", and list spm-tests / extension-tests / web-client-tests — with
+# the owner in the bypass list, since a required check also rejects direct pushes
+# while checks are queued or failing. Update this note in the same change.
 
 concurrency:
   group: app-ci-${{ github.ref }}
