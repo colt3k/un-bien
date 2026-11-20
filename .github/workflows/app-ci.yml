@@ -61,6 +61,46 @@ jobs:
       - name: Vitest (extension suite, incl. conformance emit-direction)
         run: pnpm -C extension test
 
+  # The web client's vitest suite — including the conformance corpus (25
+  # scenarios) folded by THIS client, both planes (watched live + cold arrival),
+  # against the goldens the Swift reference mints. Until now no job touched
+  # web-client: the corpus was checked in CI only through the reference, so a
+  # web-only regression — a row boundary, a re-key, a late-birth ordering bug —
+  # passed CI green. Mirrors extension-tests (same pinned actions, pnpm from
+  # package.json's packageManager field).
+  #
+  # NOTE: running and REPORTING is not the same as REQUIRED. Making this a branch
+  # protection check is a repository-settings change; until that is done, a failure
+  # here is visible but does not block a merge.
+  web-client-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 25
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # The client imports `@geohar/un-bien/client` from the workspace package;
+      # build it so the client resolves the published entry points rather than
+      # assuming a source-only export condition.
+      - name: Build the workspace package the client imports
+        run: pnpm -C extension build
+
+      - name: Type check
+        run: pnpm -C web-client typecheck
+
+      - name: Vitest (web client, incl. the conformance corpus on both planes)
+        run: pnpm -C web-client test
+
   # The issue #2 regression suite, run INSIDE the app's test host on the
   # iOS simulator — the only place the real (entitled) keychain is
   # reachable in CI. Simulates fresh install -> pair -> restart at the

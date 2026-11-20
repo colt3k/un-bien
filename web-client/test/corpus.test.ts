@@ -94,7 +94,7 @@ const PINNED_CAPTURE_BUILD = (() => {
   }
 })()
 
-function assertCaptureBuild(name: string, meta: { extensionVersion?: string }): void {
+function assertCaptureBuild(name: string, meta: ScenarioMeta): void {
   const declared = meta.extensionVersion
   // The older reference-authored fixtures (001-018) declare no build; they were not
   // captured through a client, so there is nothing to agree with.
@@ -115,6 +115,10 @@ const VOCAB_VERSION = 3
 
 interface ScenarioMeta {
   modes?: string[]
+  /** Which published extension build recorded this scenario, when it was a client
+   *  capture rather than a reference-authored fixture. Checked against
+   *  `capture-build.json` by `assertCaptureBuild`. */
+  extensionVersion?: string
 }
 
 interface Expected {
