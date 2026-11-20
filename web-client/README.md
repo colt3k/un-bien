@@ -19,6 +19,12 @@ pnpm --filter web-client preview        # serve dist/ — use THIS on a phone
 pnpm --filter web-client test           # 113 passing (see Conformance)
 ```
 
+To run it against a real pi session — relay, pairing, the drawer, captures, troubleshooting —
+see **`USAGE.md`**.
+
+```sh
+```
+
 To build a conformance fixture from a real session, open the paired URL with
 `&capture=1` and call `__unbienDump("NNN")` in the console — it downloads every
 inbound envelope as JSONL. The tee is off unless the URL asks for it and nothing
