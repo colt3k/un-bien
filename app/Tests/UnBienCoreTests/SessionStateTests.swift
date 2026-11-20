@@ -584,6 +584,71 @@ final class SessionStateTests: XCTestCase {
         XCTAssertEqual(markers.first?.id, entryID,
                        "the row is anchored to pi's entry id, so a cold arrival lands on it")
     }
+
+    // The match key's two edges, pinned rather than left in a comment.
+    //
+    // (1) NO token count on either side. Older pi frames may report none, and the
+    // caption then says just "Context compacted". Two such compactions must stay TWO
+    // rows: an unguarded `Int? == Int?` is true when both are nil, which would
+    // silently drop a compaction the viewer should see.
+    func testCountlessCompactionsDoNotMergeIntoOneRow() {
+        var state = SessionState()
+        state.applyRPC(.object(["type": .string("compaction_end"),
+                                "result": .object(["summary": .string("the first fold")])]))
+        state.applyEntries([.object(["type": .string("compaction"),
+                                     "id": .string("e-countless"),
+                                     "parentId": .null,
+                                     "timestamp": .number(1),
+                                     "summary": .string("the second fold"),
+                                     "firstKeptEntryId": .string("e1"),
+                                     "fromHook": .bool(false)])],
+                           leafId: "e-countless")
+        let captions = state.items.compactMap { item -> String? in
+            guard case let .compaction(marker) = item else { return nil }
+            return marker.caption
+        }
+        // Two rows. The entry-born one lands AFTER the live marker, because this
+        // fold's boundary is defined by PENDING live rows and open streaming rows
+        // (`liveTailStartIndex`, `SessionState.swift:245`) and a live compaction
+        // marker is neither. The web fold inserts it BEFORE — a divergence in the
+        // boundary rule, recorded in vocab.md and pinned per implementation on
+        // purpose, so resolving it is a decision rather than a silent edit.
+        let keys = state.items.compactMap { item -> String? in
+            guard case let .compaction(marker) = item else { return nil }
+            return marker.id
+        }
+        XCTAssertEqual(captions, ["Context compacted", "Context compacted"],
+                       "two count-less compactions are two rows")
+        XCTAssertEqual(keys, ["1", "e-countless"],
+                       "no pending live row, so the boundary is the end of the list")
+    }
+
+    // (2) The collision the match key allows: two DIFFERENT compactions reporting the
+    // SAME `tokensBefore` read as one, and the second is re-keyed onto the first's
+    // row. Stated as a limitation, not hidden — in a real session the second count
+    // includes what the first compacted away, so the counts differ; if pi ever
+    // changes that, this test is the thing that has to change.
+    func testCompactionsWithIdenticalCountsReadAsTheOneRowTheViewerAlreadyHas() {
+        var state = SessionState()
+        state.applyRPC(.object(["type": .string("compaction_end"),
+                                "result": .object(["summary": .string("first fold"),
+                                                   "tokensBefore": .number(5_000)])]))
+        state.applyEntries([.object(["type": .string("compaction"),
+                                     "id": .string("e-second"),
+                                     "parentId": .null,
+                                     "timestamp": .number(1),
+                                     "summary": .string("a DIFFERENT fold, same count"),
+                                     "firstKeptEntryId": .string("e1"),
+                                     "tokensBefore": .number(5_000),
+                                     "fromHook": .bool(false)])],
+                           leafId: "e-second")
+        let markers = state.items.compactMap { item -> CompactionMarker? in
+            guard case let .compaction(marker) = item else { return nil }
+            return marker
+        }
+        XCTAssertEqual(markers.count, 1, "identical counts collapse to one row — the known limit")
+        XCTAssertEqual(markers.first?.id, "e-second")
+    }
 }
 
 // MARK: - Entry-born provider errors ride log position (run 2026-09-17:

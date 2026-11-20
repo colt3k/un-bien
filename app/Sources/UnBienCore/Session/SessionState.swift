@@ -417,10 +417,17 @@ public struct SessionState: Equatable, Sendable {
             // re-key the row the viewer already has, keeping its position. Two
             // compactions sharing a token count would collide; in a real session
             // the second count includes what the first compacted away.
-            if let at = items.firstIndex(where: { item in
-                guard case .compaction(let marker) = item else { return false }
-                return marker.tokensBefore == tokensBefore
-            }), case .compaction(let existing) = items[at] {
+            //
+            // Requires a count on BOTH sides. `Int? == Int?` is true when both are
+            // nil, so an unguarded match would fold two count-less compactions — a
+            // live frame from an older pi, say, and an entry that reported nothing —
+            // into ONE row, silently losing a compaction the viewer should see. The
+            // web fold guards the same way (`tokens !== undefined`).
+            if let tokensBefore,
+               let at = items.firstIndex(where: { item in
+                   guard case .compaction(let marker) = item else { return false }
+                   return marker.tokensBefore == tokensBefore
+               }), case .compaction(let existing) = items[at] {
                 items[at] = .compaction(CompactionMarker(id: id, summary: existing.summary,
                                                          tokensBefore: tokensBefore))
                 return true

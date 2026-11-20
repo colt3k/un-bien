@@ -119,3 +119,74 @@ describe("compaction marker durability", () => {
     ).toHaveLength(1)
   })
 })
+
+describe("the match key's two edges", () => {
+  // Both cases drive `compaction_end` with an `entryId`, which is exactly what
+  // `birthEntry` synthesizes for a durable `compaction` entry (reference
+  // `SessionState+BirthEntry.swift:18`, mirrored in `reducer.ts`) — so the fold is
+  // exercised on the same path a walk takes, without needing a full page.
+
+  const compactedRows = (reducer: TranscriptReducer) =>
+    reducer
+      .snapshot()
+      .items.filter((item) => item.kind === "compaction")
+      .map((item) => `${item.row}|${item.text}`)
+
+  it("two compactions that report no token count stay two rows", () => {
+    // Older pi frames may carry no `tokensBefore`. The caption says just "Context
+    // compacted", and an unguarded identity match (in Swift, `Int? == Int?` is true
+    // when both are nil) would fold them into ONE row and silently drop a
+    // compaction the viewer should see. The match requires a count on both sides.
+    const reducer = new TranscriptReducer()
+    reducer.apply({
+      rpc: { type: "compaction_end", result: { summary: "the first fold" } },
+    } as never)
+    reducer.apply({
+      rpc: {
+        type: "compaction_end",
+        result: { summary: "the second fold" },
+        entryId: "e-countless",
+      },
+    } as never)
+    // Two rows — and the entry-born one BEFORE the live marker, which is where this
+    // fold puts it. The reference puts it AFTER: its boundary (`liveTailStartIndex`,
+    // `SessionState.swift:245`) is defined by PENDING live rows and open streaming
+    // rows, and a live compaction marker is neither, so its boundary is the end of
+    // the list. Unresolved and recorded in vocab.md; unreachable from real logs,
+    // because every compaction entry in the session logs carries `tokensBefore`, so
+    // the two counts differ and the anchored case collapses to one row either way.
+    // Pinned per implementation on purpose: changing either order has to be a
+    // decision about the boundary rule, not a silent edit of a test.
+    expect(compactedRows(reducer)).toEqual([
+      "e-countless|Context compacted",
+      "1|Context compacted",
+    ])
+  })
+
+  it("two compactions reporting the SAME count read as one row — the known limit", () => {
+    // Stated, not hidden: `tokensBefore` is the only field both forms report
+    // identically, so it is also the only field that can collide. In a real session
+    // the second count includes what the first compacted away, so they differ; if pi
+    // ever changes that, this test is the thing that has to change — in both folds.
+    const reducer = new TranscriptReducer()
+    reducer.apply({
+      rpc: {
+        type: "compaction_end",
+        result: { summary: "first fold", tokensBefore: 5_000 },
+      },
+    } as never)
+    reducer.apply({
+      rpc: {
+        type: "compaction_end",
+        result: {
+          summary: "a DIFFERENT fold, same count",
+          tokensBefore: 5_000,
+        },
+        entryId: "e-second",
+      },
+    } as never)
+    expect(compactedRows(reducer)).toEqual([
+      "e-second|Context compacted (5000 tokens)",
+    ])
+  })
+})
