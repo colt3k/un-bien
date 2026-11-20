@@ -13,11 +13,17 @@ runs) is imported directly, aliased through Vite so three node-isms don't drag
 ## Run it
 
 ```sh
-pnpm --filter web-client dev            # vite dev server, bound to all interfaces
-pnpm --filter web-client build          # dist/ (88 kB JS, 30 kB gzip)
-pnpm --filter web-client preview        # serve dist/ — use THIS on a phone
-pnpm --filter web-client test           # 127 passing (see Conformance)
+web-client/scripts/start.sh             # dev server, with the URLs and the relay check
+pnpm -C web-client dev                  # vite dev server, bound to all interfaces
+pnpm -C web-client build                # dist/ (88 kB JS, 30 kB gzip)
+pnpm -C web-client preview              # serve dist/ — use THIS on a phone
+pnpm -C web-client test                 # 127 passing (see Conformance)
 ```
+
+`--filter web-client` is NOT a working filter here — the package is
+`@geohar/un-bien-web`, and pnpm matches filters by name, so `--filter web-client
+dev` reports "No projects matched the filters". Use `-C web-client` (or the script,
+which does this for you).
 
 To run it against a real pi session — relay, pairing, the drawer, captures,
 troubleshooting — see **`USAGE.md`**.
