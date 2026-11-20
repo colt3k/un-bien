@@ -218,3 +218,42 @@ describe("the anchor is causal, not content-based", () => {
     expect(rowsOf(reducer)).toEqual(["e-cold|Context compacted (85963 tokens)"])
   })
 })
+
+describe("the boundary is the reference's boundary", () => {
+  // Where an entry-born compaction goes when the only row on screen is a SETTLED
+  // live marker. The folds used to disagree — the reference appended, this fold
+  // inserted before — because "not replay-stable" is not the same boundary as
+  // "pending live row". Aligned on the reference's rule (`liveTailStartIndex`,
+  // `SessionState.swift:245`): the boundary is the first PENDING row or open
+  // streaming row, so a settled live row is history and the entry-born row lands
+  // after it. vocab.md records the resolution.
+  it("an entry-born compaction appends after a settled live marker", () => {
+    const reducer = new TranscriptReducer()
+    reducer.apply({
+      rpc: {
+        type: "compaction_end",
+        result: { summary: "watched", tokensBefore: 5_000 },
+      },
+    } as never)
+    reducer.apply({
+      rpc: {
+        type: "compaction_end",
+        result: { summary: "watched", tokensBefore: 5_100 },
+        entryId: "e-a",
+      },
+    } as never)
+    reducer.apply({
+      rpc: {
+        type: "compaction_end",
+        result: { summary: "another", tokensBefore: 9_000 },
+        entryId: "e-b",
+      },
+    } as never)
+    expect(
+      reducer
+        .snapshot()
+        .items.filter((item) => item.kind === "compaction")
+        .map((item) => item.row),
+    ).toEqual(["e-a", "e-b"])
+  })
+})

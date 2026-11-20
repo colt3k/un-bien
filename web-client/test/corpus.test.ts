@@ -77,6 +77,35 @@ function thinkingBlocksIn(frames: Record<string, unknown>[]): number {
   return count
 }
 
+/** The build every captured scenario was recorded through. Pinned in
+ *  `contracts/conformance/capture-build.json` (with the npm dist integrity) because
+ *  the repo's own extension source is OLDER than the build that wrote the goldens —
+ *  0.25.11 against 0.25.15, with 0.25.13/14/15 published and untagged here. A new
+ *  scenario captured against another build has to say so in its meta.json, and fails
+ *  here until the pin is changed on purpose. */
+const PINNED_CAPTURE_BUILD = (() => {
+  const file = new URL(
+    "../../contracts/conformance/capture-build.json",
+    import.meta.url,
+  )
+  return JSON.parse(readFileSync(file, "utf8")) as {
+    version: string
+    "dist.integrity": string
+  }
+})()
+
+function assertCaptureBuild(name: string, meta: { extensionVersion?: string }): void {
+  const declared = meta.extensionVersion
+  // The older reference-authored fixtures (001-018) declare no build; they were not
+  // captured through a client, so there is nothing to agree with.
+  if (!declared) return
+  expect(
+    declared.includes(`0.25.`) &&
+      declared.includes(PINNED_CAPTURE_BUILD.version),
+    `${name}: meta.json declares an extension build other than the pinned capture build ${PINNED_CAPTURE_BUILD.version} (${declared.slice(0, 60)}…) — either the fixture came from a new build (update capture-build.json deliberately) or the declaration is stale`,
+  ).toBe(true)
+}
+
 const SKIP_REASONS: Record<string, string> = {}
 
 /** The conformance vocabulary this runner implements. The reference projects it
@@ -282,6 +311,7 @@ describe("conformance corpus (kind + row)", () => {
     const meta = JSON.parse(
       readFileSync(join(dir, "meta.json"), "utf8"),
     ) as ScenarioMeta
+    assertCaptureBuild(name, meta)
     const expected = JSON.parse(
       readFileSync(join(dir, "expected.json"), "utf8"),
     ) as Expected

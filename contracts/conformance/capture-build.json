@@ -1,0 +1,8 @@
+{
+  "package": "@geohar/un-bien",
+  "version": "0.25.15",
+  "dist.integrity": "sha512-T5gGeXY+pRlRPhD3I0KLjzdNpK4F8LXnLnUjuFByt5ZVkaYZvf8q1/06NcB0QldZBtwusUbze0x+GtGZuWyX9g==",
+  "dist.shasum": "5795038b94e90067cefb718d23c95d1e34fb3104",
+  "why": "Every captured scenario (019 onward) was recorded through THIS published build, which is what `get_entries` served and what wrote the goldens. The repo's own `extension/package.json` says 0.25.11, and npm carries 0.25.13/14/15 with no matching commits or tags here \u2014 so a fresh clone cannot reproduce the capture path from source alone. To verify you are looking at the bytes the goldens came from: `npm view @geohar/un-bien@0.25.15 dist.integrity` and compare, or `npm pack @geohar/un-bien@0.25.15` and check the shasum. A new scenario captured against a DIFFERENT build must say so in its own meta.json, and test/corpus.test.ts fails if the two disagree.",
+  "scenariosAffected": "019-durable-replay-real-session onward (001-018 declare no build: they are older, reference-authored fixtures, not client captures)."
+}

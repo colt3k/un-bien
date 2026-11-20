@@ -1299,9 +1299,22 @@ export class TranscriptReducer {
    *  app's own bug class ("warnings drift to below the normal messages"). */
   private insertBeforeLiveTail(item: TranscriptItem): void {
     if (this.byRow.has(item.row)) return
+    // The boundary is the first PENDING live row (born from a live frame and not
+    // yet anchored to a durable entry id) or an open streaming row — mirroring the
+    // reference's `liveTailStartIndex` (`SessionState.swift:245`). It is NOT
+    // "whatever row isn't replay-stable": a settled live row — a compaction marker
+    // watched live, a settled notice — is history as far as the viewer is
+    // concerned, so an entry-born row belongs AFTER it. That difference is the
+    // divergence 023's edge tests caught (the reference appended, this fold
+    // inserted before).
     let at = this.items.length
     for (let i = 0; i < this.items.length; i++) {
-      if (!this.items[i]!.replayStable) {
+      const row = this.items[i]!.row
+      if (
+        this.pendingRows.has(row) ||
+        row === this.openAssistant ||
+        row === this.openReasoning
+      ) {
         at = i
         break
       }
