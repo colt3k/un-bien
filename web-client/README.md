@@ -16,14 +16,11 @@ runs) is imported directly, aliased through Vite so three node-isms don't drag
 pnpm --filter web-client dev            # vite dev server, bound to all interfaces
 pnpm --filter web-client build          # dist/ (88 kB JS, 30 kB gzip)
 pnpm --filter web-client preview        # serve dist/ — use THIS on a phone
-pnpm --filter web-client test           # 113 passing (see Conformance)
+pnpm --filter web-client test           # 127 passing (see Conformance)
 ```
 
-To run it against a real pi session — relay, pairing, the drawer, captures, troubleshooting —
-see **`USAGE.md`**.
-
-```sh
-```
+To run it against a real pi session — relay, pairing, the drawer, captures,
+troubleshooting — see **`USAGE.md`**.
 
 To build a conformance fixture from a real session, open the paired URL with
 `&capture=1` and call `__unbienDump("NNN")` in the console — it downloads every
