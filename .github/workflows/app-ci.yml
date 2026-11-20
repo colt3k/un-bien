@@ -25,15 +25,22 @@ name: App CI
 # the owner in the bypass list, since a required check also rejects direct pushes
 # while checks are queued or failing. Update this note in the same change.
 #
-# FORK CAVEAT — verify before trusting anything in this file. This repository is a
-# fork of `georgeharker/un-bien` (52 ahead, 18 behind as of 2026-11-20), and forks
-# arrive with a fork-level Actions disable that the Settings page does not obviously
-# clear: `Settings → Actions` already allowed all actions, yet the Actions tab showed
-# GitHub's "Workflows aren't being run on this forked repository" banner and the API
-# reported ZERO workflow runs ever on this fork — against ~281 App CI runs upstream.
-# So a green local suite is NOT evidence CI passed, and a merge here may never have
-# been evaluated at all. The check that matters after a push: does Actions list a run
-# for that commit?
+# DECISION (2026-11-20, owner): Actions stay DISABLED on this fork. Do not try to
+# re-enable them. This repository is a fork of `georgeharker/un-bien` (52 ahead,
+# 18 behind as of writing) and carries GitHub's fork-level disable — the Actions tab
+# shows "Workflows aren't being run on this forked repository" and the API reports
+# ZERO runs here, ever.
+#
+# Consequence, stated so nobody is surprised: nothing in this file gates anything on
+# this remote. These jobs are the recipe, and they run where the code lands with
+# Actions on (upstream has ~281 App CI runs). Here, the suite is what YOU run, before
+# pushing:
+#
+#   (cd web-client && pnpm test)      # 127 tests, incl. the 25-scenario corpus
+#   (cd app && swift test)            # 178 tests
+#
+# A green local run is not "CI passed" — there is no CI here to pass. `workflow_dispatch`
+# below exists so that if this decision ever flips, "did it start?" is one click.
 
 concurrency:
   group: app-ci-${{ github.ref }}
