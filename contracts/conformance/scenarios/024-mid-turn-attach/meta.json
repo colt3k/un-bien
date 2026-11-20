@@ -1,0 +1,15 @@
+{
+  "origin": "captured (live plane only \u2014 the viewer joined mid-turn)",
+  "source": "A second web-client tab (`?capture=1`) attached ~25 s into a 57 s turn in session `01a1f574\u2026` (cwd /private/tmp/unbien-capture), recorded by the tee, then `__unbienDump(\"024-mid-turn-attach\")`. `raw.jsonl` is unscrubbed and not committed.",
+  "captured": "2026-11-20",
+  "extensionVersion": "@geohar/un-bien 0.25.15 (the build installed in this pi).",
+  "modes": [
+    "live",
+    "replay"
+  ],
+  "scrub": "capture.py \u2014 the rules 020/021/022/023 worked out, unchanged (message content as length-preserving filler; tool-result prose, base64 `data`, `partialResult` and long `details.*` as `\u00ablength\u00bb`; structural keys never touched).",
+  "description": "A viewer that joins a turn already in flight. The turn was a 57-second bash loop printing a tick every 3 s. The mid-turn viewer's first `get_state` reported `isStreaming: true` with `messageCount` unchanged \u2014 the turn's message was not durable yet \u2014 and it received 17 `tool_execution_update` frames, then the tail of the turn (2 `message_start`/`message_end` pairs, 126 streamed deltas), then `turn_end` TWICE and a `turn_start` that arrived AFTER the attach (the turn began before the viewer joined, so the boundaries came out of order). The post-turn walk carried 78 entries with leaf beacon `208f46bb`.",
+  "pairing": "Same golden in both runners; cold rows contained in the watched rows with identical fields.",
+  "trims": "Walk collapse to the first and final run; deltas kept (one turn, 171 frames).",
+  "note": "What it pins: a viewer that attaches mid-session must end with ONE assistant row and ONE card \u2014 the post-turn walk must not re-birth what the live plane already built \u2014 and turn boundaries arriving out of order (a `turn_start` after join, two `turn_end`s) must not corrupt the streaming/ended flags. Observed on the real capture: no duplication (assistant row once, command once), and the session's three compactions folded to three rows."
+}
