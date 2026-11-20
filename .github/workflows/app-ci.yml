@@ -13,12 +13,23 @@ name: App CI
 # rulesets — `Settings → Branches` offers only "Add branch ruleset" / "Add classic
 # branch protection rule". Nothing here is a REQUIRED check; every job runs and
 # reports, and a red suite does not block a merge. That is deliberate for a
-# single-owner repo that pushes straight to main: the suite is a loud alarm in
-# Actions within a minute of a push, and fixing forward is cheaper than gating.
+# single-owner repo that pushes straight to main: the suite is meant to be a loud
+# alarm in Actions within a minute of a push, and fixing forward is cheaper than
+# gating. See the FORK CAVEAT below before relying on that alarm.
 # If that ever changes, add a ruleset targeting `main`, toggle "Require status
 # checks to pass", and list spm-tests / extension-tests / web-client-tests — with
 # the owner in the bypass list, since a required check also rejects direct pushes
 # while checks are queued or failing. Update this note in the same change.
+#
+# FORK CAVEAT — verify before trusting anything in this file. This repository is a
+# fork of `georgeharker/un-bien` (52 ahead, 18 behind as of 2026-11-20), and forks
+# arrive with a fork-level Actions disable that the Settings page does not obviously
+# clear: `Settings → Actions` already allowed all actions, yet the Actions tab showed
+# GitHub's "Workflows aren't being run on this forked repository" banner and the API
+# reported ZERO workflow runs ever on this fork — against ~281 App CI runs upstream.
+# So a green local suite is NOT evidence CI passed, and a merge here may never have
+# been evaluated at all. The check that matters after a push: does Actions list a run
+# for that commit?
 
 concurrency:
   group: app-ci-${{ github.ref }}
