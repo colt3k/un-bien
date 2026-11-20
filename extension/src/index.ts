@@ -499,12 +499,7 @@ function _refreshFooter(
   } catch {
     return
   }
-  if (
-    !ui ||
-    typeof ui.setStatus !== "function" ||
-    typeof ui.setTitle !== "function"
-  )
-    return
+  if (!ui || typeof ui.setStatus !== "function") return
   try {
     const state: FooterState = {
       session: _sessionName ?? undefined,
@@ -515,19 +510,17 @@ function _refreshFooter(
       // `/unbien status` line, not the footer slot).
       devicePaired: _anyPeerActive(relayDeps) ? _peerShort : undefined,
       hasPairings: _hasGlobalPairings,
-      agentName: _meshNode?.name(),
     }
     updateFooter(
       {
         ui: {
           setStatus: ui.setStatus.bind(ui),
-          setTitle: ui.setTitle.bind(ui),
         },
       },
       state,
     )
   } catch {
-    // setStatus/setTitle can also throw if the runner went stale mid-call.
+    // setStatus can also throw if the runner went stale mid-call.
   }
 }
 
