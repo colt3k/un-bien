@@ -49,7 +49,23 @@ web-client/scripts/start.sh           # dev server, and it prints the URLs you n
 web-client/scripts/start.sh doctor    # check node/pnpm/ports/relay, start nothing
 web-client/scripts/start.sh preview   # build + serve dist/ — what a phone should use
 web-client/scripts/start.sh stop      # stop only the servers THIS checkout started
+web-client/scripts/start.sh relay status|up|down
 ```
+
+`dev` and `preview` **bring the relay up if it is not answering** — that is the
+"only when needed" trigger — and `relay down` takes it away. The relay is a launchd
+job (`~/Library/LaunchAgents/com.georgeharker.unbien.relay.plist`) with
+`RunAtLoad=false` and `KeepAlive={Crashed, SuccessfulExit=false}`: launchd supervises
+it and restarts a crash, but a deliberate stop stays stopped and **nothing starts it
+at login**. State lives in `~/.local/state/un-bien` (keypair, pairing DB) — never in
+`/tmp`, and the keypair is what every client's relay pin is bound to, so don't delete
+it. If you ever want it always-on instead, set `RunAtLoad` back to true or run
+`/unbien install relay`, then `launchctl bootout` + `bootstrap` to apply.
+
+Caveat worth knowing: pi's extension and the launcher are also relay clients. With the
+relay down, `/unbien pair` says *"Pair requires the relay to be connected"* and the
+launcher retries silently every few seconds. Bring it up with
+`start.sh relay up` (or just run `dev`).
 
 The script resolves pnpm for you (it is often not on PATH — it falls back to
 `corepack`, then to `npx pnpm@<the pinned version>`), refuses to double-start a

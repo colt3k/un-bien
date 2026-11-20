@@ -6,6 +6,11 @@
 #   scripts/start.sh preview      # build + serve dist/ — use this on a phone
 #   scripts/start.sh doctor       # check everything, start nothing
 #   scripts/start.sh stop         # kill the dev/preview servers this repo started
+#   scripts/start.sh relay status|up|down
+#
+# The relay is supervised by launchd (com.georgeharker.unbien.relay) but is NOT
+# started at login: `dev`/`preview` bring it up, and `relay down` takes it down.
+# Staying down after `relay down` is the point — it is not a KeepAlive-always job.
 #
 # It never starts a relay: that is pi's job (`/unbien pair` bootstraps the
 # services). If no relay is answering, doctor tells you exactly that, so you do
@@ -116,10 +121,58 @@ already_running() { # port
   fi
 }
 
+# --- relay control -------------------------------------------------------------
+# The LaunchAgent is installed with RunAtLoad=false + KeepAlive={Crashed,
+# SuccessfulExit=false}: launchd supervises it, restarts a crash, and does NOT
+# fight a deliberate stop. bootstrap loads the job; kickstart starts/restarts it.
+RELAY_LABEL="com.georgeharker.unbien.relay"
+RELAY_PLIST="$HOME/Library/LaunchAgents/$RELAY_LABEL.plist"
+
+relay_loaded() { launchctl print "gui/$(id -u)/$RELAY_LABEL" >/dev/null 2>&1; }
+relay_up_cmd()   {
+  if [[ ! -f "$RELAY_PLIST" ]]; then
+    warn "no LaunchAgent at $RELAY_PLIST — run /unbien install relay (or recreate it)"
+    return 1
+  fi
+  relay_loaded || launchctl bootstrap "gui/$(id -u)" "$RELAY_PLIST" >/dev/null 2>&1 \
+    || { warn "launchctl bootstrap failed"; return 1; }
+  launchctl kickstart -k "gui/$(id -u)/$RELAY_LABEL" >/dev/null 2>&1 || true
+  for _ in 1 2 3 4 5 6 7 8 9 10; do relay_up && break; sleep 0.5; done
+  relay_up && ok "relay up on :${RELAY_PORT}" || warn "relay did not answer on :${RELAY_PORT}"
+}
+relay_down_cmd() {
+  if relay_loaded; then
+    launchctl bootout "gui/$(id -u)/$RELAY_LABEL" >/dev/null 2>&1 && ok "relay stopped (launchd job removed)" || warn "bootout failed"
+  elif listening "$RELAY_PORT"; then
+    warn ":${RELAY_PORT} is answered by a process launchd does not own (pid $(listener_pid "$RELAY_PORT")) — not touching it"
+  else
+    say "relay already down"
+  fi
+}
+relay_status_cmd() {
+  if relay_loaded; then
+    ok "launchd job loaded (pid $(launchctl print "gui/$(id -u)/$RELAY_LABEL" 2>/dev/null | sed -n 's/.*pid = \([0-9]*\).*/\1/p' | head -1))"
+  else
+    say "launchd job not loaded"
+  fi
+  relay_up && ok "answering on :${RELAY_PORT}" || say "not answering on :${RELAY_PORT}"
+}
+
+if [[ "${1:-}" == "relay" ]]; then
+  case "${2:-status}" in
+    up)    relay_up_cmd ;;
+    down)  relay_down_cmd ;;
+    status) relay_status_cmd ;;
+    *) bad "usage: start.sh relay [status|up|down]"; exit 2 ;;
+  esac
+  exit 0
+fi
+
 MODE="${1:-dev}"
 case "$MODE" in
   dev)
     already_running "$DEV_PORT"
+    relay_up || relay_up_cmd
     cd "$ROOT"
     say "dev server on :${DEV_PORT} (strictPort — if the port is taken Vite refuses, it does not pick another)"
     show_urls "$DEV_PORT"
@@ -127,6 +180,7 @@ case "$MODE" in
     ;;
   preview)
     already_running "$PREVIEW_PORT"
+    relay_up || relay_up_cmd
     cd "$ROOT"
     say "building dist/ …"
     $(pnpm_cmd) -C web-client build
