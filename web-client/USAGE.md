@@ -42,9 +42,29 @@ pnpm install --frozen-lockfile
 
 ## 2. Start it
 
+### The short way
+
 ```sh
-pnpm --filter web-client dev        # http://localhost:5173  (strictPort)
+web-client/scripts/start.sh           # dev server, and it prints the URLs you need
+web-client/scripts/start.sh doctor    # check node/pnpm/ports/relay, start nothing
+web-client/scripts/start.sh preview   # build + serve dist/ — what a phone should use
+web-client/scripts/start.sh stop      # stop only the servers THIS checkout started
 ```
+
+The script resolves pnpm for you (it is often not on PATH — it falls back to
+`corepack`, then to `npx pnpm@<the pinned version>`), refuses to double-start a
+server, and prints the tailnet URL for the page **and** the relay URL to paste into
+the drawer. It does not start a relay; if none is answering it says so, because that
+is pi's job (`/unbien pair`).
+
+### The long way (what the script runs)
+
+```sh
+pnpm -C web-client dev              # http://localhost:5173  (strictPort)
+```
+
+`--filter web-client` does **not** work here: pnpm filters match the package name
+(`@geohar/un-bien-web`), so that form dies with "No projects matched the filters".
 
 Vite binds every interface and allows `*.ts.net`, so a phone on your tailnet can
 open `http://<your-host>.tail5f1ece.ts.net:5173`. Pairing crypto is Ed25519 from
@@ -54,7 +74,7 @@ relay transport (`ws://` vs `wss://`) is the thing to think about, not the page.
 **On a phone, use `preview`, not `dev`:**
 
 ```sh
-pnpm --filter web-client build && pnpm --filter web-client preview   # :4173
+pnpm -C web-client build && pnpm -C web-client preview   # :4173
 ```
 
 The dev server's HMR socket drops on a tailnet blip or a backgrounded tab and
@@ -139,8 +159,8 @@ only in `raw.jsonl` (gitignored), never in the repo.
 ## 7. Tests
 
 ```sh
-pnpm --filter web-client test        # 127 tests, incl. the 25-scenario conformance corpus
-pnpm --filter web-client typecheck
+pnpm -C web-client test        # 127 tests, incl. the 25-scenario conformance corpus
+pnpm -C web-client typecheck
 ```
 
 The corpus runs **both planes** per scenario (watched live frames, and cold arrival
