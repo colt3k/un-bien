@@ -190,7 +190,9 @@ is what a cold arrival shows, even though it differs from what the live frame
 reported. A live marker with no entry behind it stays unanchored; an entry with no
 live marker waiting just inserts at the log position. Pinned by 023 in both runners,
 by `web-client/test/compaction-durability.test.ts`, and by the reference's
-`SessionStateTests`.
+`SessionStateTests`. The upstream ask — carry `entryId` on the live
+`compaction_end` frame, which would replace inference with identity — is written up
+in `docs/pi-compaction-identity.md`.
 
 ### What 021 pinned, and what it found
 
