@@ -347,6 +347,17 @@ toolCall]`, `tool_execution_start`/`_end` for a `read`, the toolResult
   `SessionStateTests.testLiveCompactionMarkerIsAnchoredWhenItsEntryArrivesLater` in
   the reference; the rule is vocab.md's "One compaction, one row".
 
+- **023: watched a compaction AND walked it — which destroyed the fix I had just
+  made.** The live `compaction_end` reported `tokensBefore` 127 248; the entry that
+  IS that compaction recorded 127 749; and the previous compaction's entry recorded
+  127 248 with a **byte-identical** summary. So neither the count nor the text
+  identifies a compaction, and my count-based anchor moved the live marker onto the
+  wrong one — four "Context compacted" rows for three compactions, on a real screen.
+  Both folds now anchor by causality (oldest unanchored live marker, entry's caption,
+  row position kept); 023 is the fixture that holds them to it, and
+  `test/compaction-durability.test.ts` runs its real frames on both planes. See
+  vocab.md's "One compaction, one row — anchored by causality, never by content".
+
 - **The vocabulary fixture landed, and it moved the claim from equality to
   containment.** Scenario `021` is one session driven by a human through the
   durable entry types no fixture had fed through a page: read an image, read a

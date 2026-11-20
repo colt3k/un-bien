@@ -157,26 +157,40 @@ left to a filter:
 | --- | --- |
 | `panels`, `subagents`, `pendingAsks` | pi does not persist them: panels ride `{evt channel:"panel"}` frames, an ask is a moment rather than a record |
 | `reasoning` rows | pi persists `thinking` blocks ON the message entry (020's log holds 25, 021's 50) and neither fold turns a persisted block into a row, so a client that attaches cold shows no thinking rows at all. **This is the settled behaviour, not a gap** — pi's own screen does not replay thinking blocks either, and a viewer that arrives late should see what pi shows (DESIGN.md §2). The two arrivals therefore differ in exactly this dimension, by decision: a watcher sees 6 (020) / 14 (021) reasoning rows, a cold arrival sees none. The corpus asserts the split holds in both directions — the watcher's rows exist, the cold run renders none — so a fold that starts rendering persisted thinking fails until this row, DESIGN.md §2, and the assertion are changed together. Vocabulary-wise it is also currently unrepresentable: `reasoning` is hard-coded non-replay-stable (`ConformanceProjection.swift:95`) and `ReasoningBlock` has no stability field |
-| where an entry-born compaction lands when a live marker is the only row there | the boundary rule differs: the reference's `liveTailStartIndex` (`SessionState.swift:245`) cuts before PENDING live rows and open streaming rows only, so a live compaction marker (never pending) leaves the boundary at the end and the entry-born row appends AFTER it; the web fold inserts it BEFORE. Unreachable from real logs — every compaction entry in the session logs carries `tokensBefore`, so distinct compactions differ in count and the anchored case collapses to one row either way — which is why no scenario has surfaced it. Each fold pins its own order (web `compaction-durability.test.ts`, `SessionStateTests.testCountlessCompactionsDoNotMergeIntoOneRow`); resolving it means deciding what "the live tail" means for a row that can never anchor |
+| where an entry-born compaction lands when an UNANCHORED live marker is not present | the boundary rule differs: the reference's `liveTailStartIndex` (`SessionState.swift:245`) cuts before PENDING live rows and open streaming rows only, so a live compaction marker (never pending) leaves the boundary at the end and the entry-born row appends AFTER it; the web fold inserts it BEFORE. Unreachable from real logs — every compaction entry in the session logs carries `tokensBefore`, so distinct compactions differ in count and the anchored case collapses to one row either way — which is why no scenario has surfaced it. Each fold pins its own order (web `compaction-durability.test.ts`, `SessionStateTests.testCountlessCompactionsDoNotMergeIntoOneRow`); resolving it means deciding what "the live tail" means for a row that can never anchor |
 | the `hunks` block on a card | the diff sidecar rides the live `tool_execution_start` frame and nothing else, so a watched card settles to `[diff, hunks]` and a cold one to `[diff]` |
 
-### One compaction, one row
+### One compaction, one row — anchored by causality, never by content
 
-A compaction reaches a viewer twice: as a live `compaction_end` frame (keyed on the
-bare sequence number, `SyntheticID.compaction(seq:)`) and later as the durable
-`compaction` ENTRY a walk brings back (keyed on pi's entry id). Dedup by row id
-cannot link the two, so a viewer that WATCHED a compaction grew a SECOND "Context
-compacted" row as soon as a walk brought the entry — in both implementations. 022's
-capture found it; 021 could not, because its branch moved the compaction entry off
-the active path. Both folds now match an entry-born marker to the live one on
-`tokensBefore` — the one thing both forms report identically, and what the caption
-renders — and re-key the existing row (keeping its position) instead of appending a
-second. Not the summary text: fixtures scrub it two ways (the live frame's
-`«2122»`, the entry's filler), so text equality there would be a fixture artefact
-rather than a rule. Two compactions sharing a token count would collide; in a real
-session the second count includes what the first compacted away. Pinned by
-`web-client/test/compaction-durability.test.ts` and the reference's
-`SessionStateTests.testLiveCompactionMarkerIsAnchoredWhenItsEntryArrivesLater`.
+A compaction reaches a viewer twice: as a live `compaction_end` frame and, later,
+as the durable `compaction` ENTRY a walk brings back. Dedup by row id cannot link
+them, so the watched transcript grows a second "Context compacted" row — in both
+implementations. 022 showed the cold half; **023 shows the live half and kills the
+obvious way to fix it.** From 023's wire, for ONE compaction:
+
+| | `tokensBefore` | summary |
+| --- | --- | --- |
+| live `compaction_end` | **127 248** | 1840 chars |
+| its own entry `8663f793` | **127 749** | byte-identical |
+| the PREVIOUS compaction's entry `4156e442` | **127 248** | byte-identical |
+
+The two forms disagree about the count of the same event, and pi regenerated an
+identical summary for two different compactions. So no field identifies a
+compaction: a count match anchors the live marker to the wrong compaction, and a
+summary match is ambiguous by construction. (Fixture scrubbing makes summary
+matching even worse — the live frame's `«2122»` and the entry's filler are not the
+same string.) The symptom on a real screen: four "Context compacted" rows for three
+compactions.
+
+Both folds therefore anchor by **causality**. Compactions are strictly sequential
+in the log, and a walk births entries in log order, so an entry-born compaction
+anchors the OLDEST live marker not yet anchored: it re-keys that row to pi's entry
+id, keeps its position, and takes the ENTRY's caption — the count the log recorded
+is what a cold arrival shows, even though it differs from what the live frame
+reported. A live marker with no entry behind it stays unanchored; an entry with no
+live marker waiting just inserts at the log position. Pinned by 023 in both runners,
+by `web-client/test/compaction-durability.test.ts`, and by the reference's
+`SessionStateTests`.
 
 ### What 021 pinned, and what it found
 

@@ -331,6 +331,14 @@ export class TranscriptReducer {
   private pendingToasts: Toast[] = []
   /** Row renames awaiting the next render — see `ReducerSnapshot.rekeys`. */
   private rekeyLog: { from: string; to: string }[] = []
+  /** Live-born `compaction` markers that have not been anchored to a durable entry
+   *  yet, in the order they appeared. An entry-born compaction anchors the OLDEST
+   *  of these, because compactions are strictly sequential in the log and a walk
+   *  births entries in log order — so the entry that matches a live marker is the
+   *  first entry-born compaction to arrive after it. Matched by causality, NOT by
+   *  content: see the `compaction_end` fold for what 023's wire did to the idea of
+   *  a content key. */
+  private unanchoredLiveCompactions: string[] = []
   private leafId: string | null = null
   private streaming = false
   /** pi's own answer to `get_state` (or a `room_meta` equivalent): "a turn is in
@@ -414,6 +422,7 @@ export class TranscriptReducer {
   private resetRows(): void {
     this.items.length = 0
     this.byRow.clear()
+    this.unanchoredLiveCompactions = []
     this.toolsById.clear()
     this.identifyIndex.clear()
     this.pendingRows.clear()
@@ -647,31 +656,29 @@ export class TranscriptReducer {
             ? result.tokensBefore
             : undefined
         const summary = typeof result.summary === "string" ? result.summary : ""
-        if (entryId !== undefined && tokens !== undefined) {
-          // ONE compaction, ONE row. The live `compaction_end` frame and the
-          // durable `compaction` ENTRY describe the same event but key
-          // differently — the bare sequence number against pi's entry id — and
-          // nothing linked the two, so a session compacted while the viewer
-          // watched grew a SECOND "Context compacted" row as soon as a walk
-          // brought the entry (found probing 022's capture; the reference
-          // duplicates the same way — `appendCompaction` dedups by row id only).
-          //
-          // The key is the token count, because that is what BOTH forms report
-          // identically and it is what the caption renders. Not the summary text:
-          // fixtures scrub it two different ways (the live frame's `«2122»`, the
-          // entry's length-preserving filler), so text equality would be a
-          // fixture artefact rather than a rule. Two compactions in one session
-          // sharing a `tokensBefore` would collide — the second marker would be
-          // read as the first — but the second count includes what the first
-          // compacted away, so in practice they differ.
-          const match = this.items.find(
-            (item) =>
-              item.kind === "compaction" && item.tokensBefore === tokens,
-          )
-          if (match) {
-            if (match.row !== entryId)
-              this.rekeyRow(match.row, entryId, "compaction")
-            break
+        if (entryId !== undefined) {
+          // ONE compaction, ONE row, matched by CAUSALITY — not by content. 023's
+          // real wire killed the content key: the live `compaction_end` reported
+          // `tokensBefore` 127 248 while its OWN entry recorded 127 749, and the
+          // PREVIOUS compaction's entry reported 127 248 with a byte-identical
+          // summary (pi regenerated the same text). So the count is not the entry's
+          // count, and the summary is not unique either — neither field can identify
+          // a compaction. Order can: compactions are strictly sequential in the log,
+          // a walk births entries in log order, so the entry that belongs to a live
+          // marker is the first entry-born compaction to arrive after it.
+          const anchor = this.unanchoredLiveCompactions.shift()
+          if (anchor !== undefined) {
+            if (this.rekeyRow(anchor, entryId, "compaction") !== null) {
+              // The entry's caption wins: a cold arrival sees the count the LOG
+              // recorded, which may differ from what the live frame reported.
+              const anchored = this.byRow.get(entryId)
+              if (anchored) {
+                anchored.text = compactionCaption(tokens)
+                anchored.tokensBefore = tokens
+                anchored.summary = summary
+              }
+              break
+            }
           }
         }
         const item: TranscriptItem = {
@@ -692,7 +699,10 @@ export class TranscriptReducer {
           summary,
         }
         if (entryId) this.insertBeforeLiveTail(item)
-        else this.push(item)
+        else {
+          this.push(item)
+          this.unanchoredLiveCompactions.push(item.row)
+        }
         break
       }
       case "turn_start":
@@ -1355,6 +1365,7 @@ export class TranscriptReducer {
   reset(): void {
     this.items.length = 0
     this.byRow.clear()
+    this.unanchoredLiveCompactions = []
     this.toolsById.clear()
     this.tree.reset()
     this.identifyIndex.clear()

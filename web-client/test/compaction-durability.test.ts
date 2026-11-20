@@ -120,73 +120,101 @@ describe("compaction marker durability", () => {
   })
 })
 
-describe("the match key's two edges", () => {
+describe("the anchor is causal, not content-based", () => {
   // Both cases drive `compaction_end` with an `entryId`, which is exactly what
   // `birthEntry` synthesizes for a durable `compaction` entry (reference
-  // `SessionState+BirthEntry.swift:18`, mirrored in `reducer.ts`) — so the fold is
-  // exercised on the same path a walk takes, without needing a full page.
+  // `SessionState+BirthEntry.swift:18`, mirrored in `reducer.ts`) — the same path a
+  // walk takes, without needing a full page.
 
-  const compactedRows = (reducer: TranscriptReducer) =>
+  const rowsOf = (reducer: TranscriptReducer) =>
     reducer
       .snapshot()
       .items.filter((item) => item.kind === "compaction")
       .map((item) => `${item.row}|${item.text}`)
 
-  it("two compactions that report no token count stay two rows", () => {
-    // Older pi frames may carry no `tokensBefore`. The caption says just "Context
-    // compacted", and an unguarded identity match (in Swift, `Int? == Int?` is true
-    // when both are nil) would fold them into ONE row and silently drop a
-    // compaction the viewer should see. The match requires a count on both sides.
+  it("anchors a live marker to its entry even though NEITHER field matches (023)", () => {
+    // The regression 023 caught, driven by that scenario's own real frames: the
+    // live plane's watched compaction, then the cold plane's real pages. The live
+    // frame reported tokensBefore 127 248; the entry that IS that compaction
+    // recorded 127 749; and the PREVIOUS compaction's entry recorded 127 248 with a
+    // byte-identical summary. Any content key picks the wrong entry or none, and the
+    // viewer sees four "Context compacted" rows for three compactions. Order picks
+    // the right one, and the entry's count becomes the caption — what a cold arrival
+    // shows. (Entries go in as whole pages: a page of loose entries looks truncated,
+    // and the derive defers a truncated page rather than guessing.)
+    const live = frames(
+      `${scenario("023-live-compaction-pair")}/input.jsonl`,
+    ).find(
+      (frame) =>
+        (frame.rpc as { type?: string } | undefined)?.type === "compaction_end",
+    )
+    const pages = frames(`${scenario("023-live-compaction-pair")}/replay.jsonl`)
+      .map(
+        (frame) =>
+          frame.rpc as
+            | {
+                command?: string
+                data?: { entries?: unknown[]; leafId?: string }
+              }
+            | undefined,
+      )
+      .filter((rpc) => rpc?.command === "get_entries")
+
     const reducer = new TranscriptReducer()
-    reducer.apply({
-      rpc: { type: "compaction_end", result: { summary: "the first fold" } },
-    } as never)
-    reducer.apply({
-      rpc: {
-        type: "compaction_end",
-        result: { summary: "the second fold" },
-        entryId: "e-countless",
-      },
-    } as never)
-    // Two rows — and the entry-born one BEFORE the live marker, which is where this
-    // fold puts it. The reference puts it AFTER: its boundary (`liveTailStartIndex`,
-    // `SessionState.swift:245`) is defined by PENDING live rows and open streaming
-    // rows, and a live compaction marker is neither, so its boundary is the end of
-    // the list. Unresolved and recorded in vocab.md; unreachable from real logs,
-    // because every compaction entry in the session logs carries `tokensBefore`, so
-    // the two counts differ and the anchored case collapses to one row either way.
-    // Pinned per implementation on purpose: changing either order has to be a
-    // decision about the boundary rule, not a silent edit of a test.
-    expect(compactedRows(reducer)).toEqual([
-      "e-countless|Context compacted",
-      "1|Context compacted",
+    reducer.apply(live!)
+    expect(rowsOf(reducer)).toEqual(["1|Context compacted (127248 tokens)"])
+
+    for (const page of pages)
+      reducer.applyEntries(page!.data?.entries ?? [], page!.data?.leafId)
+
+    expect(rowsOf(reducer)).toEqual([
+      "d80b313f|Context compacted (85963 tokens)",
+      "4156e442|Context compacted (127248 tokens)",
+      "8663f793|Context compacted (127749 tokens)",
     ])
   })
 
-  it("two compactions reporting the SAME count read as one row — the known limit", () => {
-    // Stated, not hidden: `tokensBefore` is the only field both forms report
-    // identically, so it is also the only field that can collide. In a real session
-    // the second count includes what the first compacted away, so they differ; if pi
-    // ever changes that, this test is the thing that has to change — in both folds.
+  it("two live compactions then two entries pair up in order, one row each", () => {
+    // Compactions are strictly sequential, so FIFO pairing across the planes is the
+    // rule. Nothing in the content would tell them apart — pi can and did emit the
+    // same summary twice and the same count twice.
+    const reducer = new TranscriptReducer()
+    const live = (tokens: number) =>
+      reducer.apply({
+        rpc: {
+          type: "compaction_end",
+          result: { summary: "the same text", tokensBefore: tokens },
+        },
+      } as never)
+    const entry = (id: string, tokens: number) =>
+      reducer.apply({
+        rpc: {
+          type: "compaction_end",
+          result: { summary: "the same text", tokensBefore: tokens },
+          entryId: id,
+        },
+      } as never)
+    live(5_000)
+    live(9_000)
+    entry("e-a", 5_100)
+    entry("e-b", 9_100)
+    expect(rowsOf(reducer)).toEqual([
+      "e-a|Context compacted (5100 tokens)",
+      "e-b|Context compacted (9100 tokens)",
+    ])
+  })
+
+  it("an entry-born compaction with no live marker waiting just appends", () => {
+    // The cold plane: nothing was watched, so nothing is anchored — the entry-born
+    // rows ride the log position, ahead of any live tail.
     const reducer = new TranscriptReducer()
     reducer.apply({
       rpc: {
         type: "compaction_end",
-        result: { summary: "first fold", tokensBefore: 5_000 },
+        result: { summary: "cold fold", tokensBefore: 85_963 },
+        entryId: "e-cold",
       },
     } as never)
-    reducer.apply({
-      rpc: {
-        type: "compaction_end",
-        result: {
-          summary: "a DIFFERENT fold, same count",
-          tokensBefore: 5_000,
-        },
-        entryId: "e-second",
-      },
-    } as never)
-    expect(compactedRows(reducer)).toEqual([
-      "e-second|Context compacted (5000 tokens)",
-    ])
+    expect(rowsOf(reducer)).toEqual(["e-cold|Context compacted (85963 tokens)"])
   })
 })

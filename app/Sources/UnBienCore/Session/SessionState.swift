@@ -136,6 +136,13 @@ public struct SessionState: Equatable, Sendable {
         renderPendingPathEntries()
     }
     private var compactionSeq = 0
+    /// Live-born `compaction` markers not yet anchored to a durable entry, in the
+    /// order they appeared. An entry-born compaction anchors the OLDEST of these:
+    /// compactions are strictly sequential in the log and a walk births entries in
+    /// log order, so the entry belonging to a live marker is the first entry-born
+    /// compaction to arrive after it. Matched by CAUSALITY, not content — see
+    /// `appendCompaction` for what 023's real wire did to the idea of a content key.
+    var unanchoredLiveCompactionIDs: [String] = []
     private var noticeSeq = 0
     /// LAST message_update frame applied — full-frame delta dedup: identical
     /// frames are redeliveries (a real event's usage.output increments).
@@ -171,6 +178,7 @@ public struct SessionState: Equatable, Sendable {
     public mutating func resetTranscript() {
         RenderActivity.transcriptReset += 1
         items.removeAll()
+        unanchoredLiveCompactionIDs.removeAll()
         appendedIDs.removeAll()
         rowIndex.removeAll()
         identifyIndex.removeAll()
@@ -406,35 +414,34 @@ public struct SessionState: Equatable, Sendable {
         let id = entryID ?? SyntheticID.compaction(seq: compactionSeq)
         // Entry-born markers ride the log position (before the live tail);
         // live ones append (a "now" event).
-        if entryID != nil {
-            // ONE compaction, ONE row. A live `compaction_end` marker (seq id) and
-            // the durable `compaction` ENTRY (entry id) describe the same event,
-            // and keying alone cannot link them: without this, the viewer grows a
-            // SECOND "Context compacted" row the moment a walk brings the entry
-            // (found probing the 022 capture — the dedup above is by id only).
-            // Match on `tokensBefore`, the one thing both forms report identically
-            // — NOT the summary, which fixtures scrub two different ways — and
-            // re-key the row the viewer already has, keeping its position. Two
-            // compactions sharing a token count would collide; in a real session
-            // the second count includes what the first compacted away.
-            //
-            // Requires a count on BOTH sides. `Int? == Int?` is true when both are
-            // nil, so an unguarded match would fold two count-less compactions — a
-            // live frame from an older pi, say, and an entry that reported nothing —
-            // into ONE row, silently losing a compaction the viewer should see. The
-            // web fold guards the same way (`tokens !== undefined`).
-            if let tokensBefore,
-               let at = items.firstIndex(where: { item in
-                   guard case .compaction(let marker) = item else { return false }
-                   return marker.tokensBefore == tokensBefore
-               }), case .compaction(let existing) = items[at] {
-                items[at] = .compaction(CompactionMarker(id: id, summary: existing.summary,
-                                                         tokensBefore: tokensBefore))
-                return true
+                if entryID != nil {
+            // ONE compaction, ONE row, matched by CAUSALITY — not by content.
+            // 023's real wire killed the content key: the live `compaction_end`
+            // reported `tokensBefore` 127 248 while its OWN entry recorded 127 749,
+            // and the PREVIOUS compaction's entry recorded 127 248 with a
+            // byte-identical summary (pi regenerated the same text). So the count is
+            // not the entry's count, and the summary is not unique either — neither
+            // field identifies a compaction. Order does: pop the oldest unanchored
+            // live marker, re-key it to this entry, keep its position, and take the
+            // ENTRY's caption — a cold arrival shows the count the log recorded.
+            if let anchor = unanchoredLiveCompactionIDs.first {
+                unanchoredLiveCompactionIDs.removeFirst()
+                // Match the MARKER's own id, not `TranscriptItem.id`, which is the
+                // row key (`RowID.compaction(marker.id)`) — comparing a bare marker
+                // id to that never matches, and the row duplicates.
+                if let at = items.firstIndex(where: { item in
+                    guard case .compaction(let marker) = item else { return false }
+                    return marker.id == anchor
+                }) {
+                    items[at] = .compaction(CompactionMarker(id: id, summary: summary,
+                                                             tokensBefore: tokensBefore))
+                    return true
+                }
             }
             return insertBeforeLiveTail(.compaction(CompactionMarker(id: id, summary: summary,
                                                                      tokensBefore: tokensBefore)))
         }
+        unanchoredLiveCompactionIDs.append(id)
         return append(.compaction(CompactionMarker(id: id, summary: summary,
                                                    tokensBefore: tokensBefore)))
     }
