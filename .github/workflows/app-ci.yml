@@ -5,6 +5,10 @@ name: App CI
     branches: [main]
   pull_request:
     branches: [main]
+  # Manual run, for the case this repo keeps hitting: a push that produced no
+  # workflow run at all (fork-level Actions disable). Run it by hand and Actions
+  # either lists a run or you have proof the suite is not running here.
+  workflow_dispatch:
 
 # NOTE: no "paths" filter — every job must REPORT on every push and PR, so a
 # relay-/docs-only change never leaves a check stuck at "expected".
