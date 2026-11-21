@@ -23,6 +23,14 @@ import {
   type Inline,
 } from "./markdown.js"
 import { bodyRenderKey, wantsMarkdown } from "./body-render.js"
+import {
+  LOAD_MORE,
+  growWindow,
+  hiddenBefore,
+  nextWindow,
+  sliceWindow,
+  type TranscriptWindow,
+} from "./transcript-window.js"
 import { parseInvite } from "./invite.js"
 import { describeError, toastMessage } from "./notice.js"
 import {
@@ -324,6 +332,10 @@ export class App {
    *  rebuilding the list on every one of the hundreds of delta frames a turn
    *  produces. */
   private readonly rowEls = new Map<string, HTMLElement>()
+  /** Which slice of the transcript is drawn. Null until the first render. */
+  private window: TranscriptWindow | null = null
+  /** Rows in the last render's item list, for the "load earlier" control. */
+  private lastItemCount = 0
   private active: ActiveSession | null = null
   private busy = false
   /** Debounce for the post-turn re-read (a turn ends with several frames). */
@@ -372,6 +384,11 @@ export class App {
     $("showControlRooms").addEventListener("change", () =>
       this.renderPeerList(),
     )
+    $("loadEarlierBtn").addEventListener("click", () => {
+      if (!this.window) return
+      this.window = growWindow(this.window, this.lastItemCount, LOAD_MORE)
+      this.render()
+    })
     this.sendBtn.addEventListener("click", () => this.send("auto"))
     $("queueBtn").addEventListener("click", () => this.send("queue"))
     this.stopBtn.addEventListener("click", () => this.client?.abort())
@@ -736,6 +753,7 @@ export class App {
     // obviously right beats clever and duplicated — see README's gap list.
     this.reducer.reset()
     this.rowEls.clear()
+    this.window = null
     this.transcript.replaceChildren()
 
     // The first frame to a trusted peer is what triggers the extension's
@@ -932,11 +950,33 @@ export class App {
       this.rowEls.set(to, node)
       node.dataset.row = to
     }
-    const live = new Set(items.map((item) => item.row))
-    for (const item of items) {
+    // Only the window is drawn. A replay of a big session has to cost roughly a
+    // screenful, not the whole history: this is the difference between a tab
+    // that paints and one that freezes for minutes (14 MB / 8571 entries / 244
+    // base64 image blocks is a real session here, not a hypothetical).
+    this.window = nextWindow(this.window, items.length, followTail)
+    this.lastItemCount = items.length
+    const shown = sliceWindow(items, this.window)
+    this.syncLoadEarlier(items.length)
+    const live = new Set(shown.map((item) => item.row))
+    // Place rows in window order rather than appending: growing the window
+    // toward the top adds rows ABOVE the current first row, and an append would
+    // drop them at the bottom of the log.
+    let previous: HTMLElement | null = null
+    for (const item of shown) {
       const existing = this.rowEls.get(item.row)
-      if (existing) this.patchItem(existing, item)
-      else this.transcript.append(this.buildItem(item))
+      let node: HTMLElement
+      if (existing) {
+        this.patchItem(existing, item)
+        node = existing
+      } else {
+        node = this.buildItem(item)
+      }
+      const expected: Node | null = previous
+        ? previous.nextSibling
+        : this.transcript.firstChild
+      if (node !== expected) this.transcript.insertBefore(node, expected)
+      previous = node
     }
     // Rows that left the transcript (a derive reset, a truncation that dropped
     // a branch): remove the element, or it sits there as a ghost the reducer
@@ -963,6 +1003,17 @@ export class App {
     // Not following the tail: hold the anchor row visually still, whatever grew
     // or moved above it.
     this.transcript.scrollTop += anchor.getBoundingClientRect().top - anchorTop!
+  }
+
+  /** The control that pulls earlier history into the window. */
+  private syncLoadEarlier(total: number): void {
+    const bar = $<HTMLElement>("loadEarlier")
+    const hidden = this.window ? hiddenBefore(this.window, total) : 0
+    bar.hidden = hidden === 0
+    if (hidden === 0) return
+    const ask = Math.min(LOAD_MORE, hidden)
+    $<HTMLButtonElement>("loadEarlierBtn").textContent =
+      `load ${ask} earlier rows · ${hidden} above not shown`
   }
 
   /** The row at the top edge of the scroll area — the thing the reader is

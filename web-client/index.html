@@ -109,6 +109,14 @@
         </div>
       </dialog>
 
+      <!-- History lives in the reducer; this pulls more of it into the drawn
+           window. Without it, a big session's early rows are unreachable. -->
+      <div id="loadEarlier" class="load-earlier" hidden>
+        <button id="loadEarlierBtn" class="pill" type="button">
+          load earlier rows
+        </button>
+      </div>
+
       <main id="transcript" class="transcript" aria-live="polite"></main>
 
       <div id="panels" class="panels" hidden></div>

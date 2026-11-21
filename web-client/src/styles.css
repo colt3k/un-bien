@@ -625,3 +625,12 @@ details[open] > .collapsed {
   text-transform: none;
   letter-spacing: 0;
 }
+
+/* The history handle above the transcript. */
+.load-earlier {
+  display: flex;
+  justify-content: center;
+  padding: 6px 12px 8px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
