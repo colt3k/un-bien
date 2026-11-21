@@ -634,3 +634,38 @@ details[open] > .collapsed {
   border-bottom: 1px solid var(--line);
   background: var(--panel);
 }
+
+/* Markdown tables. pi's TUI draws these aligned; in the browser they used to be
+   a wall of pipes. */
+.md-table-wrap {
+  overflow-x: auto;
+  margin: 8px 0;
+}
+
+.body table.md-table {
+  border-collapse: collapse;
+  font-size: 13px;
+  width: max-content;
+  max-width: 100%;
+}
+
+.body .md-table th,
+.body .md-table td {
+  border: 1px solid var(--line);
+  padding: 4px 9px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.body .md-table th {
+  background: var(--panel);
+  font-weight: 600;
+}
+
+.body .md-table .align-center {
+  text-align: center;
+}
+
+.body .md-table .align-right {
+  text-align: right;
+}

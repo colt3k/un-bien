@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest"
-import { MARKDOWN_BUDGET, parseInline, parseMarkdown } from "../src/markdown.js"
+import {
+  MARKDOWN_BUDGET,
+  parseInline,
+  parseMarkdown,
+  type Block,
+  type Inline,
+} from "../src/markdown.js"
 
 describe("the markdown subset the transcript uses", () => {
   it("keeps fenced code verbatim, fences and all inside", () => {
@@ -96,5 +102,78 @@ describe("emphasis boundaries", () => {
     expect(tokens.map((t) => ("text" in t ? t.text : "")).join("")).toBe(
       "max_tokens here",
     )
+  })
+})
+
+/** A table block, or the test fails loudly instead of on a property of undefined. */
+function tableOf(text: string): Extract<Block, { type: "table" }> {
+  const block = parseMarkdown(text)[0]
+  if (!block || block.type !== "table")
+    throw new Error(`expected a table, got ${block?.type}`)
+  return block
+}
+
+const cellText = (cell: Inline[]): string =>
+  cell.map((token) => token.text).join("")
+
+describe("pipe tables", () => {
+  it("parses a header, delimiter and body into a table block", () => {
+    const table = tableOf(
+      [
+        "| room | caps |",
+        "| --- | ---: |",
+        "| un-bien | 9 |",
+        "| ctrl | 3 |",
+      ].join("\n"),
+    )
+    expect(table.align).toEqual([null, "right"])
+    expect(table.header.map(cellText)).toEqual(["room", "caps"])
+    expect(table.rows).toHaveLength(2)
+    expect(cellText(table.rows[0]?.[1] ?? [])).toBe("9")
+  })
+
+  it("does not turn prose containing a bar into a table", () => {
+    const blocks = parseMarkdown("run `a | b` then c\nd more text here")
+    expect(blocks.every((b) => b.type === "para")).toBe(true)
+  })
+
+  it("keeps a pipe inside a code span within one cell", () => {
+    const table = tableOf(
+      ["| cmd | note |", "| --- | --- |", "| `ls | wc -l` | one cell |"].join(
+        "\n",
+      ),
+    )
+    expect(table.align).toHaveLength(2)
+    const code = table.rows[0]?.[0]?.find((token) => token.type === "code")
+    expect(code?.text).toBe("ls | wc -l")
+  })
+
+  it("treats an escaped bar as text, not a cell break", () => {
+    const table = tableOf(
+      ["| a | b |", "| --- | --- |", "| x \\| y | z |"].join("\n"),
+    )
+    expect(table.rows[0]?.[0]?.[0]?.text).toBe("x | y")
+  })
+
+  it("pads short rows and drops cells past the delimiter's count", () => {
+    const table = tableOf(
+      [
+        "| a | b | c |",
+        "| --- | --- | --- |",
+        "| 1 |",
+        "| 1 | 2 | 3 | 4 |",
+      ].join("\n"),
+    )
+    expect(table.rows[0]).toHaveLength(3)
+    expect(table.rows[1]).toHaveLength(3)
+  })
+
+  it("ends at a blank line and leaves the following block alone", () => {
+    const blocks = parseMarkdown(
+      ["| a | b |", "| --- | --- |", "| 1 | 2 |", "", "after the table"].join(
+        "\n",
+      ),
+    )
+    expect(blocks.map((b) => b.type)).toEqual(["table", "para"])
   })
 })

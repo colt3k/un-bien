@@ -27,8 +27,16 @@ export type Inline =
   | { type: "em"; text: string }
   | { type: "link"; text: string; href: string }
 
+export type Align = "left" | "center" | "right" | null
+
 export type Block =
   | { type: "code"; lang: string | null; text: string }
+  | {
+      type: "table"
+      align: Align[]
+      header: Inline[][]
+      rows: Inline[][][]
+    }
   | { type: "heading"; level: number; inline: Inline[] }
   | { type: "list"; ordered: boolean; items: Inline[][] }
   | { type: "quote"; inline: Inline[] }
@@ -115,6 +123,19 @@ export function parseMarkdown(text: string): Block[] {
       }
       blocks.push({ type: "list", ordered, items })
       continue
+    }
+
+    // Pipe table. Recognised only with a delimiter row, because "contains a |"
+    // is otherwise far too eager: prose, diff dumps and shell pipelines all have
+    // bars. pi's TUI draws these as tables; leaving them as a paragraph made the
+    // browser show the raw pipes.
+    if (index + 1 < lines.length && isDelimiterRow(at(index + 1))) {
+      const table = readTable(lines, at, index)
+      if (table) {
+        blocks.push(table.block)
+        index = table.next
+        continue
+      }
     }
 
     // Paragraph: consecutive plain lines, kept as one block so a wrapped
@@ -205,4 +226,102 @@ export function parseInline(text: string): Inline[] {
     else merged.push(token)
   }
   return merged
+}
+
+/** The `|---|:--:|` row that makes a pipe table a table rather than prose. */
+function isDelimiterRow(line: string): boolean {
+  if (!line.includes("-")) return false
+  const cells = splitCells(line)
+  return (
+    cells.length >= 1 &&
+    cells.every((cell) => /^:?-{1,}:?$/.test(cell.trim())) &&
+    line.includes("|")
+  )
+}
+
+/**
+ * Split a row into cells on the pipes that are actually structure.
+ *
+ * Two things must not end a cell: an escaped `\|`, and a pipe inside a code
+ * span — `` `a | b` `` is one cell, which matters because the transcript is full
+ * of code that contains bars (shell pipelines, cron fields, regexes).
+ */
+function splitCells(line: string): string[] {
+  const cells: string[] = []
+  let current = ""
+  let inCode = 0
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i] ?? ""
+    if (ch === "\\" && line[i + 1] === "|") {
+      current += "|"
+      i++
+      continue
+    }
+    if (ch === "`") {
+      let run = 1
+      while (line[i + run] === "`") run++
+      inCode = inCode === 0 ? run : 0
+      current += ch.repeat(run)
+      i += run - 1
+      continue
+    }
+    if (ch === "|" && inCode === 0) {
+      cells.push(current)
+      current = ""
+      continue
+    }
+    current += ch
+  }
+  cells.push(current)
+  // GFM ignores the empty cells an optional leading/trailing pipe produces.
+  if (cells.length > 1 && cells[0]?.trim() === "") cells.shift()
+  if (cells.length > 0 && cells.at(-1)?.trim() === "") cells.pop()
+  return cells
+}
+
+function alignOf(cell: string): Align {
+  const text = cell.trim()
+  const left = text.startsWith(":")
+  const right = text.endsWith(":")
+  if (left && right) return "center"
+  if (right) return "right"
+  if (left) return "left"
+  return null
+}
+
+/**
+ * Read a table starting at `start`. Returns null (and leaves the cursor alone)
+ * when the header does not line up with the delimiter, so a stray pipe line
+ * still falls through to the paragraph path.
+ */
+function readTable(
+  lines: string[],
+  at: (i: number) => string,
+  start: number,
+): { block: Block; next: number } | null {
+  const headerCells = splitCells(at(start))
+  const delimCells = splitCells(at(start + 1))
+  if (headerCells.length === 0 || headerCells.length !== delimCells.length)
+    return null
+
+  const align = delimCells.map(alignOf)
+  // A row is a list of cells, and a cell is a run of inline tokens. Ragged rows
+  // are padded or truncated to the delimiter's column count, as GFM does.
+  const rowCells = (raw: string[]): Inline[][] => {
+    const cells = raw.slice(0, align.length)
+    while (cells.length < align.length) cells.push("")
+    return cells.map((cell) => parseInline(cell.trim()))
+  }
+
+  const header = rowCells(headerCells)
+  const rows: Inline[][][] = []
+  let index = start + 2
+  while (index < lines.length) {
+    const line = at(index)
+    if (line.trim() === "" || !line.includes("|")) break
+    rows.push(rowCells(splitCells(line)))
+    index += 1
+  }
+  if (rows.length === 0) return null
+  return { block: { type: "table", align, header, rows }, next: index }
 }

@@ -288,6 +288,39 @@ export function blockNodes(blocks: Block[]): Node[] {
         nodes.push(list)
         break
       }
+      case "table": {
+        // Wrapped in a scroller: a wide table must not widen the transcript, and
+        // on a phone it has to scroll sideways inside its own block.
+        const wrap = el("div", "md-table-wrap")
+        const table = el("table", "md-table")
+        const head = document.createElement("thead")
+        const headRow = document.createElement("tr")
+        block.header.forEach((cell, i) => {
+          const th = document.createElement("th")
+          th.scope = "col"
+          const align = block.align[i]
+          if (align) th.className = `align-${align}`
+          th.append(...inlineNodes(cell))
+          headRow.append(th)
+        })
+        head.append(headRow)
+        const body = document.createElement("tbody")
+        for (const row of block.rows) {
+          const tr = document.createElement("tr")
+          row.forEach((cell, i) => {
+            const td = document.createElement("td")
+            const align = block.align[i]
+            if (align) td.className = `align-${align}`
+            td.append(...inlineNodes(cell))
+            tr.append(td)
+          })
+          body.append(tr)
+        }
+        table.append(head, body)
+        wrap.append(table)
+        nodes.push(wrap)
+        break
+      }
       case "quote": {
         const quote = el("blockquote")
         quote.append(...inlineNodes(block.inline))
