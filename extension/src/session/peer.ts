@@ -1,5 +1,6 @@
 import type { Socket } from "node:net"
 import { lstatSync } from "node:fs"
+import { lifecycleLog } from "./lifecycle_log.js"
 import { setTimeout as delay } from "node:timers/promises"
 import {
   type Envelope,
@@ -69,18 +70,6 @@ export interface AckResult {
   target?: string
   error?: `transport_error: ${TransportErrorReason}`
   reason?: TransportErrorReason
-}
-
-/** A broker reply to an unregistered liveness probe (broker.ts
- *  _tryBrokerPing / _tryObserverProbe), never a register_ack. */
-function _isProbeReply(raw: unknown): boolean {
-  const env = raw as { from?: unknown; to?: unknown; body?: { type?: unknown } } | null
-  const type = env?.body?.type
-  return (
-    env?.from === "broker" &&
-    env?.to === "observer" &&
-    (type === "broker_pong" || type === "list_peers_reply")
-  )
 }
 
 export class MeshTransportError extends Error {
@@ -387,6 +376,7 @@ export class SessionPeer {
   }
 
   async leave(): Promise<void> {
+    lifecycleLog("mesh_leave", { name: this.assignedAddress, role: this.role, socket: this.socket ? "open" : "none" })
     this.leftFlag = true
     await this._teardownConn()
   }
@@ -398,6 +388,22 @@ export class SessionPeer {
       this.opts.sockPath,
       this.opts.electionLimits,
     )
+    // leave() can land while the election runs (a failover or displacement
+    // re-election takes a probe round trip, longer when a leader is busy).
+    // leave() had no socket of its own to close, so registering now would
+    // leave a broker connection nothing references or closes: a ghost peer
+    // for the life of the process, which pushes this agent's next join to
+    // name#N. Give up the election's result instead.
+    if (this.leftFlag) {
+      lifecycleLog("mesh_join_abandoned", { name: this.opts.name, stage: "election", role: result.role })
+      try {
+        if (result.role === "leader") result.server.close()
+        else result.socket.destroy()
+      } catch {
+        /* best effort */
+      }
+      throw new Error("peer left while joining")
+    }
     if (result.role === "leader") {
       this.role = "leader"
       this.broker = new Broker({
@@ -409,13 +415,26 @@ export class SessionPeer {
       // internal API: easiest is to open a real client connection back to
       // our own server.
       const assigned = await this._registerAsClient()
+      await this._abandonIfLeft()
       this._startDisplacementWatch()
       return assigned
     } else {
       this.role = "follower"
       this._wireSocket(result.socket)
-      return this._registerOver(result.socket)
+      const assigned = await this._registerOver(result.socket)
+      await this._abandonIfLeft()
+      return assigned
     }
+  }
+
+  /** leave() during the register round trip already closed this.socket
+   *  (_teardownConn), but a leader's broker can be left serving; tear down
+   *  whatever the join just set up, so nothing outlives the leave. */
+  private async _abandonIfLeft(): Promise<void> {
+    if (!this.leftFlag) return
+    lifecycleLog("mesh_join_abandoned", { name: this.assignedAddress, stage: "registered" })
+    await this._teardownConn()
+    throw new Error("peer left while joining")
   }
 
   private async _registerAsClient(): Promise<string> {
@@ -492,6 +511,7 @@ export class SessionPeer {
    *  thief is a real broker we become its follower; if it was a transient
    *  bind we may lead again — either way exactly one registry survives. */
   private async _reelectAfterDisplacement(): Promise<void> {
+    lifecycleLog("mesh_failover", { name: this.assignedAddress, cause: "broker socket displaced" })
     this._stopDisplacementWatch()
     try {
       await this._teardownConn()
@@ -504,6 +524,7 @@ export class SessionPeer {
     if (this.leftFlag) return
     try {
       await this._joinOrLead()
+      lifecycleLog("mesh_rejoined", { name: this.assignedAddress, role: this.role, after: "displacement" })
       for (const h of this.reconnectHandlers) {
         try {
           h()
@@ -511,9 +532,10 @@ export class SessionPeer {
           /* handler errors don't break peer */
         }
       }
-    } catch {
+    } catch (err) {
       /* election failed; peer stuck disconnected until the socket-close
          failover path can retry */
+      lifecycleLog("mesh_rejoin_failed", { name: this.opts.name, after: "displacement", error: String(err) })
     }
   }
 
@@ -530,20 +552,25 @@ export class SessionPeer {
 
   private _registerOver(sock: Socket): Promise<string> {
     return new Promise<string>((resolve, reject) => {
-      // The first inbound line MUST be the register_ack. Buffer-aware.
-      const wait = setTimeout(
-        () => reject(new Error("register_ack timeout")),
-        5_000,
-      )
+      // `register_ack` is the ONLY line that settles this window. Anything else
+      // arriving here is a stray control frame — historically the join probe's
+      // roster reply landing after the pong and before our ack — and must not
+      // abort the join: nobody can address an envelope to a peer the broker
+      // hasn't registered yet, so there is nothing to lose by ignoring it. The
+      // timeout is the failure signal, and it reports the stray line so the
+      // cause stays diagnosable.
+      let stray: string | null = null
+      const wait = setTimeout(() => {
+        this._preAckListener = null
+        reject(
+          new Error(
+            stray === null
+              ? "register_ack timeout"
+              : `register_ack timeout (ignored: ${stray.slice(0, 200)})`,
+          ),
+        )
+      }, 5_000)
       const onceListener = (raw: unknown) => {
-        // A follower's socket comes from the leader-election probe, which
-        // asks twice (broker_ping, plus list_peers for pre-ping brokers). A
-        // current broker answers both and the probe settles on the first, so
-        // the second reply can still arrive ahead of the register_ack. Those
-        // replies are addressed to the synthetic "observer": skip them and
-        // keep waiting.
-        if (_isProbeReply(raw)) return
-        clearTimeout(wait)
         // plan/38: a new broker returns `address_assigned` (canonical key) +
         // `name_assigned` (clean leaf). Read both with cross-fallback so we work
         // against either a new broker OR a legacy one (only `name_assigned`,
@@ -567,15 +594,14 @@ export class SessionPeer {
           typeof name === "string" &&
           typeof address === "string"
         ) {
+          clearTimeout(wait)
           this.assignedName = name
           this.assignedAddress = address
           this._preAckListener = null
           resolve(name)
-        } else {
-          reject(
-            new Error(`expected register_ack, got: ${JSON.stringify(raw)}`),
-          )
+          return
         }
+        stray = JSON.stringify(raw)
       }
       this._preAckListener = onceListener
       const req =
@@ -592,6 +618,7 @@ export class SessionPeer {
         sock.write(req)
       } catch (e) {
         clearTimeout(wait)
+        this._preAckListener = null
         reject(e as Error)
       }
     })
@@ -767,12 +794,14 @@ export class SessionPeer {
     // `!== closedSock`, so we skip. Genuine leader death: `this.socket` is still
     // the (now-closed) follower socket → identity matches → we re-elect.
     if (this.socket !== closedSock) return
+    lifecycleLog("mesh_failover", { name: this.assignedAddress, cause: "broker connection closed" })
     // Attempt to re-elect once. New leader will bind sockPath; we either
     // become leader ourselves or rejoin as follower.
     await delay(FAILOVER_RETRY_MS)
     if (this.leftFlag || this.socket !== closedSock) return
     try {
       await this._joinOrLead()
+      lifecycleLog("mesh_rejoined", { name: this.assignedAddress, role: this.role, after: "failover" })
       // The new broker's peers map starts fresh — consumers must re-query
       // any cached state (peer count, etc.) that depended on the old broker.
       for (const h of this.reconnectHandlers) {
@@ -782,8 +811,9 @@ export class SessionPeer {
           /* handler errors don't break peer */
         }
       }
-    } catch {
+    } catch (err) {
       /* election failed; peer stuck in disconnected state */
+      lifecycleLog("mesh_rejoin_failed", { name: this.opts.name, after: "failover", error: String(err) })
     }
   }
 

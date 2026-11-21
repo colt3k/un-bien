@@ -274,7 +274,7 @@ machine's paired identity and relay config, and spawns a `pi` window via
 `tmux` (or `herdr`) when the app asks. Remote launch is **opt-in per
 directory** — set `allow_remote_launch: true` in `<cwd>/.pi/un-bien/config.json`,
 or machine-wide via `defaults.allow_remote_launch` in
-`~/.pi/extensions/un-bien.json`. See the
+`~/.pi/agent/extensions/un-bien.json`. See the
 [launcher README](../launcher/README.md) and
 [Remote launch](../extension/README.md#remote-launch) for details.
 
@@ -312,6 +312,16 @@ surfaces: `GET /` (WebSocket upgrade), `GET /health`, and `GET|POST
 /mesh/<owner_pk_hash>` (signed membership). The SQLite membership DB lives at
 `/data/mesh.db` — the `-v un-bien-data:/data` volume keeps it across upgrades.
 Verify with `curl http://<docker-host>:3000/health`.
+
+Both images run as an unprivileged user, not root: the relay as uid/gid
+`10001`, the launcher image as the `node` user (`1000`). A volume first
+created by an older image, which ran as root, still holds root-owned files.
+Chown it once before starting the new image, or the relay can't open its
+databases:
+
+```bash
+docker run --rm -v un-bien-data:/data debian:bookworm-slim chown -R 10001:10001 /data
+```
 
 **2. Working machine** — identical to Flow A step 4 (Pi + extension +
 `/unbien set-relay http://<docker-host>:3000` + `/unbien pair` + optional
@@ -373,21 +383,48 @@ QR.
 `/unbien install` bakes the installing shell's environment into the service
 units. Three consequences worth knowing:
 
-**Node upgrades orphan the launcher.** The launcher unit pins the exact node
-binary that ran the install (`process.execPath`), so the service never depends
-on `PATH` resolution at boot. When you upgrade node (nvm, Homebrew, system),
-the pinned path can disappear — re-run `unbien-admin install` (idempotent) to
-re-pin. Same after moving the extension or the unbien-cli install.
+**The runtime is pinned.** The launcher unit names an absolute runtime
+binary, so the service never depends on `PATH` resolution at boot. By default
+it's the one that ran the install (`process.execPath`); `service.runtime` in
+`un-bien.json` picks `"node"`, `"bun"` or an absolute path instead (a name is
+resolved on `PATH` when installing, and an install fails if it can't be
+found). When that binary moves (an nvm, Homebrew or bun change), re-run
+`unbien-admin install` (idempotent) to re-pin. Same after moving the
+extension or the unbien-cli install.
 
-**Env changes need a re-run.** `PATH`, `PI_CODING_AGENT_DIR`, and every
-`UNBIEN_*` variable present at install time are snapshotted into the unit —
+**Env changes need a re-run.** `PATH`, `PI_CODING_AGENT_DIR`,
+`PI_CODING_AGENT_SESSION_DIR`, every `UNBIEN_*` variable, and the names in
+`service.env` present at install time are snapshotted into the unit —
 deliberately: launchd/systemd run with a sparse environment, and without the
-snapshot the daemons would fall back to defaults your shell doesn't use. If
-you change your relay URL, state dir, or agent config location, re-run the
-install to refresh the snapshot.
+snapshot the daemons would fall back to defaults your shell doesn't use.
+`service.env` defaults to `XDG_CONFIG_HOME`, `XDG_DATA_HOME`,
+`XDG_STATE_HOME`, `XDG_CACHE_HOME`, `BUN_INSTALL` and `BUN_INSTALL_CACHE_DIR`
+(only the ones set are written); `UNBIEN_SERVICE_ENV` (comma separated) adds
+more. If you change your relay URL, state dir, agent config location or any of
+those variables, re-run the install from a shell that has them.
 
-**The CLI needs a fresh terminal.** `unbien` lands in the npm global bin dir;
-a terminal opened before the install won't have it on `$PATH` yet.
+**Which copy runs, and which package manager.** un-bien's global installs
+use, in order: `package_manager` (`"npm"`, `"bun"` or `"pnpm"`) in
+`un-bien.json`; else the package manager pi's global `npmCommand` names
+(resolved as pi does, and run through pi's wrapper when it names the same
+manager, e.g. `bun-as-npm -- bun add -g`); else npm. With either setting,
+installs always run from that package manager's global copy of
+`@geohar/un-bien`: `/unbien install` inside pi installs this version there,
+then runs that copy's `unbien-admin install`, so the service never runs pi's
+own copy of the extension (which moves on every extension update and only
+resolves its host packages inside pi). The package manager links
+`unbien-admin`; un-bien doesn't, and never replaces one a package manager
+installed. With neither, `/unbien install` runs from pi's copy and links
+`unbien-admin` into `~/.local/bin`, as before. The `unbien` and
+`unbien-launcher` bins land in that package manager's global bin dir, so a
+terminal opened before the install won't have them on `$PATH` yet.
+
+```json
+{
+  "package_manager": "bun",
+  "service": { "runtime": "bun" }
+}
+```
 
 **Startup order doesn't matter.** Both daemons reconnect on their own: the
 launcher retries the relay every 3 seconds (single in-flight chain), and the
@@ -519,7 +556,7 @@ The same targets work as slash commands inside pi: `/unbien install [target]`,
 
 | What                                                  | Path                                                                                                               |
 | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Global extension settings (relay URL, launch backend) | `~/.pi/extensions/un-bien.json`                                                                                    |
+| Global extension settings (relay URL, launch backend) | `~/.pi/agent/extensions/un-bien.json`                                                                                    |
 | Per-directory config (incl. `allow_remote_launch`)    | `<cwd>/.pi/un-bien/config.json`                                                                                    |
 | State (sessions, identity, peers, logs)               | `~/.local/state/un-bien/` (`UNBIEN_STATE_DIR` relocates)                                                           |
 | Launcher service (Linux / macOS)                      | `~/.config/systemd/user/unbien-launcher.service` · `~/Library/LaunchAgents/com.georgeharker.unbien.launcher.plist` |

@@ -8,9 +8,16 @@
  * from the user's shell has to be written into it. The runtime is pinned to
  * an absolute path for the same reason.
  */
+import { execFileSync } from "node:child_process"
 import { existsSync } from "node:fs"
+import { homedir } from "node:os"
 import { delimiter, isAbsolute, join } from "node:path"
 import type { UnBienConfig } from "../config.js"
+import {
+  globalInstallCommand as piInstallCommand,
+  packageManagerName,
+  readPiNpmCommand,
+} from "./packageManager.js"
 
 /** Copied into the service unless `service.env` says otherwise: the XDG
  *  base-dir variables (tools that read config/data dirs from them, e.g.
@@ -97,19 +104,123 @@ export function resolveServiceRuntime(
 
 export type PackageManager = "npm" | "bun" | "pnpm"
 
-/** The configured package manager for un-bien's own global installs. */
-export function packageManager(config: UnBienConfig): PackageManager {
+/** Where the package manager came from: un-bien.json `package_manager`,
+ *  pi's global `npmCommand`, or neither (npm by default). */
+export type PackageManagerSource = "config" | "pi" | "default"
+
+/** The package manager for un-bien's own global installs: `package_manager`
+ *  in un-bien.json, else the one pi's `npmCommand` names (so pi and un-bien
+ *  install into one tree), else npm. `npmCommand` is pi's setting, read when
+ *  not given; pass null for "pi sets none". */
+export function resolvePackageManager(
+  config: UnBienConfig,
+  npmCommand: readonly string[] | null = readPiNpmCommand() ?? null,
+): { pm: PackageManager; source: PackageManagerSource } {
   const pm = config.package_manager
-  return pm === "bun" || pm === "pnpm" ? pm : "npm"
+  if (pm === "npm" || pm === "bun" || pm === "pnpm") return { pm, source: "config" }
+  if (npmCommand && npmCommand.length > 0) {
+    try {
+      return { pm: packageManagerName(npmCommand), source: "pi" }
+    } catch {
+      /* an ambiguous wrapper: fall through to npm */
+    }
+  }
+  return { pm: "npm", source: "default" }
 }
 
-/** The global-install command for `spec` under `pm`. */
+/** The package manager for un-bien's own global installs (see
+ *  resolvePackageManager). */
+export function packageManager(
+  config: UnBienConfig,
+  npmCommand: readonly string[] | null = readPiNpmCommand() ?? null,
+): PackageManager {
+  return resolvePackageManager(config, npmCommand).pm
+}
+
+/** The global-install command for `spec` under `pm`. When pi's
+ *  `npmCommand` names that same manager it is used as is, wrapper included
+ *  (`bun-as-npm -- bun add -g …`); otherwise the bare manager. */
 export function globalInstallCommand(
   pm: PackageManager,
   spec: string,
+  npmCommand: readonly string[] | null = readPiNpmCommand() ?? null,
 ): { cmd: string; args: string[]; display: string } {
+  let sameManager = false
+  try {
+    sameManager = !!npmCommand && npmCommand.length > 0 && packageManagerName(npmCommand) === pm
+  } catch {
+    sameManager = false
+  }
+  if (sameManager) {
+    const c = piInstallCommand(spec, npmCommand)
+    return { cmd: c.command, args: c.args, display: c.display }
+  }
   const win = process.platform === "win32"
   const args = pm === "npm" ? ["install", "-g", spec] : ["add", "-g", spec]
   const cmd = pm === "bun" ? "bun" : win ? `${pm}.cmd` : pm
   return { cmd, args, display: `${pm} ${args.join(" ")}` }
+}
+
+/** Whether a package manager is chosen (un-bien.json `package_manager`, or
+ *  pi's `npmCommand`). When one is, `/unbien install` installs and runs
+ *  un-bien from that package manager's global tree instead of pi's own copy
+ *  of the extension. With neither, installs keep the original behaviour. */
+export function packageManagerConfigured(
+  config: UnBienConfig,
+  npmCommand: readonly string[] | null = readPiNpmCommand() ?? null,
+): boolean {
+  return resolvePackageManager(config, npmCommand).source !== "default"
+}
+
+function _ask(cmd: string, args: string[]): string | null {
+  try {
+    const out = execFileSync(cmd, args, { encoding: "utf8", timeout: 15_000, stdio: ["ignore", "pipe", "ignore"] })
+    const line = out.split("\n").map((l) => l.trim()).find(Boolean)
+    return line ?? null
+  } catch {
+    return null
+  }
+}
+
+/** The global directory `bun pm -g ls` reports on its first line
+ *  (`<dir> node_modules (N installed)`), which honours a bunfig globalDir. */
+export function _bunGlobalDirFrom(firstLine: string | null): string | null {
+  const m = firstLine?.match(/^(.+?) node_modules \(/)
+  return m?.[1] ? join(m[1], "node_modules") : null
+}
+
+/** The package manager's global `node_modules` (where `add -g` / `install
+ *  -g` puts packages), or null when it cannot be determined. Bun is asked
+ *  (`bun pm -g ls`, which follows bunfig's globalDir); only if that fails is
+ *  it taken to be `$BUN_INSTALL/install/global/node_modules`. */
+export function globalPackageRoot(
+  pm: PackageManager,
+  env: NodeJS.ProcessEnv = process.env,
+  ask: (cmd: string, args: string[]) => string | null = _ask,
+): string | null {
+  if (pm === "bun") {
+    const reported = _bunGlobalDirFrom(ask("bun", ["pm", "-g", "ls"]))
+    if (reported) return reported
+    const base = env["BUN_INSTALL"] || join(homedir(), ".bun")
+    return join(base, "install", "global", "node_modules")
+  }
+  return _ask(process.platform === "win32" ? `${pm}.cmd` : pm, ["root", "-g"])
+}
+
+/** The directory the package manager links global bins into, or null. */
+export function globalBinDir(pm: PackageManager): string | null {
+  const win = process.platform === "win32"
+  if (pm === "bun") return _ask("bun", ["pm", "bin", "-g"])
+  if (pm === "pnpm") return _ask(win ? "pnpm.cmd" : "pnpm", ["bin", "-g"])
+  const prefix = _ask(win ? "npm.cmd" : "npm", ["prefix", "-g"])
+  return prefix ? (win ? prefix : join(prefix, "bin")) : null
+}
+
+/** Run `bin` from the package manager's global bin dir (falling back to
+ *  PATH when the dir is unknown), so a check reports the copy just
+ *  installed rather than another one earlier on PATH. */
+export function globalBinPath(pm: PackageManager, bin: string): string {
+  const name = process.platform === "win32" ? `${bin}.cmd` : bin
+  const dir = globalBinDir(pm)
+  return dir ? join(dir, name) : name
 }

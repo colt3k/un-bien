@@ -1,7 +1,9 @@
 import { describe, expect, test, vi } from "vitest"
 import { updateFooter, type FooterContext, type FooterState } from "./footer.js"
 
-function makeMockCtx(): FooterContext & {
+// The mock still offers setTitle (pi's ui has it) to prove the footer
+// never calls it.
+function makeMockCtx(): { ui: FooterContext["ui"] & { setTitle(title: string): void } } & {
   statusCalls: Array<{ key: string; value: string | undefined }>
   titleCalls: string[]
 } {
@@ -51,59 +53,11 @@ describe("updateFooter — footer slots ('local' rendering)", () => {
   })
 })
 
-describe("updateFooter — terminal title (post-2026-05-24 two-part format)", () => {
-  test("title is `<agent> · On` when relay is up", () => {
+describe("updateFooter — terminal title", () => {
+  test("leaves the terminal title to pi", () => {
     const ctx = makeMockCtx()
-    updateFooter(ctx, {
-      session: "local",
-      peerCount: 2,
-      relayOn: true,
-      agentName: "backend",
-    })
-    expect(ctx.titleCalls.at(-1)).toBe("backend · On")
-  })
-
-  test("title is `<agent> · Off` when relay is down", () => {
-    const ctx = makeMockCtx()
-    updateFooter(ctx, {
-      session: "local",
-      peerCount: 1,
-      relayOn: false,
-      agentName: "backend",
-    })
-    expect(ctx.titleCalls.at(-1)).toBe("backend · Off")
-  })
-
-  test("broker-assigned name with #N suffix flows through verbatim", () => {
-    // Two Pis in the same cwd: the second gets "backend#2" from the broker.
-    const ctx = makeMockCtx()
-    updateFooter(ctx, {
-      session: "local",
-      peerCount: 2,
-      relayOn: true,
-      agentName: "backend#2",
-    })
-    expect(ctx.titleCalls.at(-1)).toBe("backend#2 · On")
-  })
-
-  test("title falls back to 'Pi' when no agentName configured", () => {
-    const ctx = makeMockCtx()
-    updateFooter(ctx, {
-      session: "local",
-      peerCount: 1,
-      relayOn: false,
-    })
-    expect(ctx.titleCalls.at(-1)).toBe("Pi · Off")
-  })
-
-  test("title never includes the session name (pre-2026-05-24 had `· local ·`)", () => {
-    const ctx = makeMockCtx()
-    updateFooter(ctx, {
-      session: "local",
-      peerCount: 0,
-      relayOn: true,
-      agentName: "foo",
-    })
-    expect(ctx.titleCalls.at(-1)).not.toContain("local")
+    updateFooter(ctx, { session: "local", peerCount: 2, relayOn: true })
+    updateFooter(ctx, { session: "local", peerCount: 1, relayOn: false })
+    expect(ctx.titleCalls).toEqual([])
   })
 })

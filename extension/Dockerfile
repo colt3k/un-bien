@@ -48,10 +48,18 @@ RUN npm install -g \
 
 # pi's settings: load the un-bien extension in every pi session this
 # container launches (the machine-bootstrap equivalent of the packages
-# entry in ~/.config/pi/agent/settings.json).
-RUN mkdir -p /config/pi/agent /data && \
+# entry in ~/.config/pi/agent/settings.json). pi reads settings.json from
+# PI_CODING_AGENT_DIR itself (/config/pi, below).
+#
+# The daemon and the pi sessions it launches run as the image's `node`
+# user (uid/gid 1000), not root, so /data and /config belong to it. A
+# volume created by an older (root) image keeps root-owned files: chown it
+# once before upgrading, e.g.
+#   docker run --rm -v <vol>:/v node:22-slim chown -R 1000:1000 /v
+RUN mkdir -p /config/pi /data && \
     printf '{\n  "packages": ["npm:@geohar/un-bien"]\n}\n' \
-      > /config/pi/agent/settings.json
+      > /config/pi/settings.json && \
+    chown -R node:node /config /data
 
 ENV UNBIEN_STATE_DIR=/data
 # PI's own config/state under the mounted volume too (sessions + logs).
@@ -63,4 +71,6 @@ VOLUME ["/data", "/config"]
 # Liveness is observable in the mesh itself: the paired relay shows the
 # machine present with its control room (and its launch caps) as long
 # as this process is up.
+USER node
+
 CMD ["unbien-launcher"]

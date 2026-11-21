@@ -13,12 +13,12 @@
  */
 
 import { execFile } from "node:child_process"
-import { readFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { join } from "node:path"
 import { promisify } from "node:util"
 import { loadConfig } from "../config.js"
-import { globalInstallCommand, packageManager } from "./service_env.js"
+import { globalBinPath, globalInstallCommand, globalPackageRoot, packageManager } from "./service_env.js"
 
 const execFileAsync = promisify(execFile)
 
@@ -86,7 +86,9 @@ export async function installLauncherPackage(
   // Verify: `unbien-launcher --version` (win32: npm writes unbien.cmd shims).
   let version: string | null = null
   try {
-    const bin = process.platform === "win32" ? "unbien-launcher.cmd" : "unbien-launcher"
+    // From the package manager's own bin dir: a different copy earlier on
+    // PATH (e.g. an older npm install) would otherwise answer.
+    const bin = globalBinPath(pm, "unbien-launcher")
     const { stdout: vOut } = await execFileAsync(bin, ["--version"], {
       timeout: 15_000,
     })
@@ -117,4 +119,69 @@ export async function installLauncherPackage(
   }
 
   return { version, log }
+}
+
+/** The running extension's own version, or null when unreadable. */
+export function extVersion(): string | null {
+  try {
+    const here = fileURLToPath(import.meta.url)
+    const pkg = JSON.parse(
+      readFileSync(join(here, "..", "..", "..", "package.json"), "utf8"),
+    ) as { version?: string }
+    return typeof pkg.version === "string" ? pkg.version : null
+  } catch {
+    return null
+  }
+}
+
+/** The published extension package (it carries the launcher daemon's
+ *  entry, dist/bin/launcher.js, and the unbien-admin bin). */
+export const EXTENSION_PACKAGE = "@geohar/un-bien"
+
+export interface ExtensionGlobalInstall {
+  /** The launcher entry in the package manager's global copy. */
+  launcherScript: string
+  version: string | null
+  log: string[]
+}
+
+/** Install this extension's own version globally with the configured
+ *  package manager, and return the launcher entry in that copy, for a
+ *  service that must not run pi's copy of the extension: pi's copy moves on
+ *  every extension update and only resolves its host packages inside pi.
+ *  The package manager also links unbien-admin. */
+export async function installExtensionGlobally(
+  onLog?: (line: string) => void,
+): Promise<ExtensionGlobalInstall> {
+  const log: string[] = []
+  const push = (l: string) => {
+    log.push(l)
+    onLog?.(l)
+  }
+  const pm = packageManager(loadConfig())
+  const version = extVersion()
+  const spec = version ? `${EXTENSION_PACKAGE}@${version}` : EXTENSION_PACKAGE
+  const install = globalInstallCommand(pm, spec)
+  push(`${install.display} …`)
+  const { stdout, stderr } = await execFileAsync(install.cmd, install.args, {
+    timeout: 5 * 60_000,
+    maxBuffer: 4 * 1024 * 1024,
+  }).catch((err) => {
+    const detail =
+      (err as { stderr?: string; message?: string }).stderr ??
+      (err as { message?: string }).message ??
+      String(err)
+    throw new Error(`${install.display} failed: ${detail}`)
+  })
+  for (const line of `${stdout}\n${stderr}`.split("\n")) {
+    if (line.trim()) push(line.trim())
+  }
+  const root = globalPackageRoot(pm)
+  if (!root) throw new Error(`could not find ${pm}'s global package directory`)
+  const launcherScript = join(root, EXTENSION_PACKAGE, "dist", "bin", "launcher.js")
+  if (!existsSync(launcherScript)) {
+    throw new Error(`installed, but ${launcherScript} is missing`)
+  }
+  push(`launcher entry: ${launcherScript}`)
+  return { launcherScript, version, log }
 }

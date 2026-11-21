@@ -9,8 +9,11 @@ import {
   resolveServiceRuntime,
   serviceEnv,
   serviceEnvNames,
+  globalPackageRoot,
+  resolvePackageManager,
+  packageManagerConfigured,
 } from "./service_env.js"
-import { _foreignBinOwner } from "./install.js"
+import { _foreignBinOwner, unlinkCliBinaries } from "./install.js"
 
 describe("service env", () => {
   test("defaults to the XDG and bun variables, plus UNBIEN_SERVICE_ENV", () => {
@@ -51,11 +54,31 @@ describe("service runtime", () => {
 
 describe("package manager", () => {
   test("defaults to npm; bun and pnpm use add -g", () => {
-    expect(packageManager({})).toBe("npm")
-    expect(packageManager({ package_manager: "bun" })).toBe("bun")
-    expect(globalInstallCommand("npm", "@geohar/x").display).toBe("npm install -g @geohar/x")
-    expect(globalInstallCommand("bun", "@geohar/x")).toMatchObject({ cmd: "bun", args: ["add", "-g", "@geohar/x"] })
-    expect(globalInstallCommand("pnpm", "@geohar/x").args).toEqual(["add", "-g", "@geohar/x"])
+    expect(packageManager({}, null)).toBe("npm")
+    expect(packageManager({ package_manager: "bun" }, null)).toBe("bun")
+    expect(globalInstallCommand("npm", "@geohar/x", null).display).toBe("npm install -g @geohar/x")
+    expect(globalInstallCommand("bun", "@geohar/x", null)).toMatchObject({ cmd: "bun", args: ["add", "-g", "@geohar/x"] })
+    expect(globalInstallCommand("pnpm", "@geohar/x", null).args).toEqual(["add", "-g", "@geohar/x"])
+  })
+
+  test("un-bien.json wins; else pi's npmCommand; else npm", () => {
+    const wrapped = ["bun-as-npm", "--", "bun"]
+    expect(resolvePackageManager({ package_manager: "pnpm" }, wrapped)).toEqual({ pm: "pnpm", source: "config" })
+    expect(resolvePackageManager({}, wrapped)).toEqual({ pm: "bun", source: "pi" })
+    expect(resolvePackageManager({}, null)).toEqual({ pm: "npm", source: "default" })
+    // an ambiguous wrapper is not a choice
+    expect(resolvePackageManager({}, ["wrap", "npm", "bun"])).toEqual({ pm: "npm", source: "default" })
+    expect(packageManagerConfigured({}, wrapped)).toBe(true)
+    expect(packageManagerConfigured({}, null)).toBe(false)
+  })
+
+  test("pi's wrapper is kept when it names the same manager, dropped otherwise", () => {
+    const wrapped = ["bun-as-npm", "--", "bun"]
+    expect(globalInstallCommand("bun", "@geohar/x", wrapped)).toMatchObject({
+      cmd: "bun-as-npm",
+      args: ["--", "bun", "add", "-g", "@geohar/x"],
+    })
+    expect(globalInstallCommand("pnpm", "@geohar/x", wrapped)).toMatchObject({ cmd: "pnpm", args: ["add", "-g", "@geohar/x"] })
   })
 })
 
@@ -96,5 +119,32 @@ describe("unbien-admin link: which existing bins are kept", () => {
     const broken = join(home, "broken")
     symlinkSync(join(home, "gone"), broken)
     expect(_foreignBinOwner(broken, home)).toBeNull()
+  })
+})
+
+describe("package manager global tree", () => {
+  test("only an explicit package_manager counts as configured", () => {
+    expect(packageManagerConfigured({}, null)).toBe(false)
+    expect(packageManagerConfigured({ package_manager: "bun" }, null)).toBe(true)
+  })
+  test("bun's global dir comes from bun (bunfig globalDir), else BUN_INSTALL", () => {
+    const told = () => "/g/custom node_modules (12 installed)"
+    expect(globalPackageRoot("bun", {}, told)).toBe("/g/custom/node_modules")
+    expect(globalPackageRoot("bun", { BUN_INSTALL: "/b" }, () => null)).toBe("/b/install/global/node_modules")
+  })
+})
+
+describe("unbien-admin unlink", () => {
+  test("keeps a package manager's link", () => {
+    const home = mkdtempSync(join(tmpdir(), "svc-unlink-"))
+    const global = join(home, "bun", "index.js")
+    mkdirSync(join(global, ".."), { recursive: true })
+    writeFileSync(global, "")
+    mkdirSync(join(home, ".local", "bin"), { recursive: true })
+    const bin = join(home, ".local", "bin", "unbien-admin")
+    symlinkSync(global, bin)
+    const r = unlinkCliBinaries(home)
+    expect(r.removed[0]?.existed).toBe(false)
+    expect(_foreignBinOwner(bin, home)).toBe(global)
   })
 })

@@ -18,9 +18,17 @@ import {
   installService,
   uninstallService,
   propagatedUnbienEnv,
+  findLauncherScript,
   linkCliBinaries,
   unlinkCliBinaries,
 } from "../daemon/install.js"
+import { loadConfig } from "../config.js"
+import {
+  globalBinPath,
+  globalPackageRoot,
+  packageManager,
+  packageManagerConfigured,
+} from "../daemon/service_env.js"
 import {
   RELAY_LAUNCHD_LABEL,
   RELAY_SYSTEMD_UNIT,
@@ -29,7 +37,11 @@ import {
   uninstallRelayService,
 } from "../daemon/relayService.js"
 import { installCliPackage } from "../daemon/cliInstall.js"
-import { installLauncherPackage } from "../daemon/launcherInstall.js"
+import {
+  EXTENSION_PACKAGE,
+  installExtensionGlobally,
+  installLauncherPackage,
+} from "../daemon/launcherInstall.js"
 import {
   defaultAgentName,
   localConfigExists,
@@ -45,7 +57,7 @@ import {
   writeFileSync,
 } from "node:fs"
 import { tmpdir } from "node:os"
-import { dirname, join, resolve } from "node:path"
+import { dirname, join, resolve, sep } from "node:path"
 import { createInterface } from "node:readline"
 import { fileURLToPath } from "node:url"
 
@@ -197,12 +209,63 @@ export function parseInstallTarget(raw: string): InstallTarget | null {
  *  Raw package-manager output (cargo/npm lines) streams as transient toasts
  *  and is NOT copied into the summary — the component result lines carry the
  *  verdict. */
+/** Whether this code is the configured package manager's global copy of
+ *  the extension (the copy installs should run from). */
+function _runningFromGlobalCopy(): boolean {
+  const root = globalPackageRoot(packageManager(loadConfig()))
+  if (!root) return false
+  const own = resolve(root, EXTENSION_PACKAGE)
+  return findLauncherScript().startsWith(own + sep)
+}
+
+/** With a configured package manager, installs and uninstalls run from its
+ *  global copy of the extension, whichever copy was asked (pi's copy, behind
+ *  /unbien install, moves on every extension update and only resolves its
+ *  host packages inside pi). From another copy: make sure the global copy
+ *  is installed at this version (install only), then run its
+ *  `unbien-admin <verb> <target>` and report its output. Returns null when
+ *  the caller should do the work itself. */
+async function _delegateToGlobalCopy(
+  ctx: Pick<ExtensionContext, "ui">,
+  verb: "install" | "uninstall",
+  target: InstallTarget,
+): Promise<boolean | null> {
+  const config = loadConfig()
+  if (!packageManagerConfigured(config) || _runningFromGlobalCopy()) return null
+  const pm = packageManager(config)
+  if (verb === "install") {
+    try {
+      await installExtensionGlobally((l) => ctx.ui.notify(`[un-bien] ${l}`, "info"))
+    } catch (err) {
+      ctx.ui.notify(`[un-bien] ${String(err)}`, "error")
+      return false
+    }
+  }
+  const admin = globalBinPath(pm, "unbien-admin")
+  ctx.ui.notify(`[un-bien] running ${admin} ${verb} ${target} (${pm}'s global copy)…`, "info")
+  const r = spawnSync(admin, [verb, target], {
+    encoding: "utf8",
+    timeout: 10 * 60_000,
+    maxBuffer: 8 * 1024 * 1024,
+  })
+  const out = `${r.stdout ?? ""}${r.stderr ?? ""}`.trim()
+  const ok = r.status === 0
+  ctx.ui.notify(
+    (ok ? "" : `[un-bien] ${admin} ${verb} failed${r.error ? `: ${String(r.error)}` : ""}\n`) + out,
+    ok ? "info" : "error",
+  )
+  return ok
+}
+
 export async function _cmdInstallTarget(
   ctx: Pick<ExtensionContext, "ui">,
   target: InstallTarget,
   opts: { linkCli?: boolean } = {},
 ): Promise<boolean> {
-  const linkCli = opts.linkCli ?? false
+  const delegated = await _delegateToGlobalCopy(ctx, "install", target)
+  if (delegated !== null) return delegated
+  // A configured package manager links unbien-admin itself.
+  const linkCli = (opts.linkCli ?? false) && !packageManagerConfigured(loadConfig())
   const summary: string[] = []
   let ok = true
 
@@ -361,6 +424,7 @@ export async function _cmdUninstallTarget(
   target: InstallTarget,
   opts: { linkCli?: boolean } = {},
 ): Promise<void> {
+  if ((await _delegateToGlobalCopy(ctx, "uninstall", target)) !== null) return
   // Same launcher-first order as install (see _cmdInstallTarget).
   const want =
     target === "all" ? (["launcher", "relay"] as const) : ([target] as const)

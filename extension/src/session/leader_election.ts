@@ -41,7 +41,7 @@ type LeaderProbe =
 
 /**
  * UDS-based leader election. Probes the current occupant of `sockPath` at the
- * APPLICATION level (an unregistered `list_peers` probe the broker answers);
+ * APPLICATION level (an unregistered `broker_ping` probe the broker answers);
  * only a live ack joins as follower, only a kernel-level refusal (stale file)
  * cleans up and binds. A connect-without-ack ("busy": the leader exists but
  * its event loop is starved) is waited out, never displaced.
@@ -155,10 +155,11 @@ function _tryConnect(sockPath: string): Promise<Socket | null> {
  *
  * A `node:net` connect succeeding is kernel-level evidence only — the backlog
  * accepts while the owner's event loop is starved. The broker answers an
- * UNREGISTERED `list_peers` probe (no name assigned, no broadcasts, connection
- * left free for a later `register` handshake — see broker.ts
- * `_tryObserverProbe`), so an acked probe proves the broker is actually
- * serving, and the probed socket can go on to the follower `register`.
+ * UNREGISTERED `broker_ping` with a `broker_pong` (no name assigned, no
+ * broadcasts, no roster disclosure, connection left free for a later
+ * `register` handshake — see broker.ts `_tryBrokerPing`), so an acked probe
+ * proves the broker is actually serving, and the probed socket can go on to
+ * the follower `register`.
  *
  * Outcomes:
  *  - `live` — broker acked; `socket` is open and may proceed to `register`
@@ -178,11 +179,11 @@ function _probeBroker(sockPath: string): Promise<LeaderProbe> {
       clearTimeout(connectTimer)
       if (ackTimer !== null) clearTimeout(ackTimer)
       // A `live` socket may proceed to `register`; any other outcome must not
-      // leave the connection dangling. A live socket is handed over, so this
-      // probe stops reading it (the peer reads every later line, including
-      // the probe's second reply, which it skips).
+      // leave the connection dangling. A live one must stop being read here:
+      // SessionPeer attaches its own reader, and two parsers on one socket
+      // would split the register_ack away from it.
+      sock.off("data", onData)
       if (result.outcome !== "live") sock.destroy()
-      else sock.off("data", onData)
       resolve(result)
     }
 
@@ -205,11 +206,8 @@ function _probeBroker(sockPath: string): Promise<LeaderProbe> {
         try {
           const env = JSON.parse(line) as { body?: { type?: unknown } }
           // PONG: the minimal liveness ack (no roster data — see broker.ts
-          // _tryBrokerPing). Compatibility shim: brokers predating broker_ping
-          // answer the roster-shaped list_peers ack instead; accept both until
-          // every node runs a ping-aware broker, then drop the fallback.
-          const bodyType = env?.body?.type
-          if (bodyType === "broker_pong" || bodyType === "list_peers_reply") {
+          // _tryBrokerPing).
+          if (env?.body?.type === "broker_pong") {
             settle({ outcome: "live", socket: sock })
             return
           }
@@ -221,12 +219,16 @@ function _probeBroker(sockPath: string): Promise<LeaderProbe> {
     sock.on("data", onData)
 
     sock.once("connect", () => {
-      // Kernel connect won; now wait for the APP-level ack.
+      // Kernel connect won; now wait for the APP-level ack. Exactly ONE line:
+      // this socket goes on to carry the follower `register` (see
+      // SessionPeer._registerOver), so a second question would leave a second
+      // reply (the whole roster) in flight, free to land between the pong and
+      // the register_ack and abort the join. Asking twice also buys nothing:
+      // a broker that predates `broker_ping` destroys the connection on the
+      // unknown first line (broker.ts _handleRegister), so the old
+      // `list_peers` fallback never got its answer read anyway.
       clearTimeout(connectTimer)
       sock.write(JSON.stringify({ type: "broker_ping" }) + "\n")
-      // Fallback line for pre-ping brokers: they ignore broker_ping, so ask
-      // again the old way.
-      sock.write(JSON.stringify({ type: "list_peers" }) + "\n")
       ackTimer = setTimeout(() => settle({ outcome: "busy" }), PROBE_ACK_TIMEOUT_MS)
     })
 

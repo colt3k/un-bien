@@ -898,6 +898,7 @@ export interface UnlinkBinariesResult {
 
 export function unlinkCliBinaries(
   home: string = homedir(),
+  paths: { remotePi?: string } = {},
 ): UnlinkBinariesResult {
   const binDir = userLocalBinDir(home)
   const log: string[] = []
@@ -916,6 +917,11 @@ export function unlinkCliBinaries(
       existed = true
     } catch {
       /* not present */
+    }
+    const owner = existed ? _foreignBinOwner(path, home, paths.remotePi ?? findRemotePiScript()) : null
+    if (owner) {
+      log.push(`kept ${path} → ${owner} (installed by a package manager)`)
+      existed = false
     }
     if (existed) {
       try {

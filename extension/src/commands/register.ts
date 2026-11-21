@@ -23,6 +23,7 @@ import { _cmdRoot, _cmdSetup, _cmdStart, _cmdStop } from "./lifecycle.js"
 import { _cmdBranch, _cmdFork, _cmdNewSession } from "./session_ops.js"
 import { _cmdPair, _cmdRevoke, _shortidCompletions } from "./pairing.js"
 import { _cmdRelay, _cmdSetRelay } from "./relay.js"
+import { _cmdSettings } from "./settings.js"
 import { _cmdInstall, _cmdUninstall } from "./housekeeping.js"
 import {
   _cmdInstallTarget,
@@ -66,6 +67,7 @@ export function registerUnbienCommands(
         "relay status",
         "relay url",
         "config",
+        "settings",
         "identity",
         "identity show",
         "test", // hidden e2e UI harness (dev-only)
@@ -120,6 +122,8 @@ export function registerUnbienCommands(
         _cmdSetRelay(sub.slice("set-relay".length).trim(), ctx)
       } else if (sub === "relay" || sub.startsWith("relay ")) {
         await _cmdRelay(deps, sub.slice("relay".length).trim(), ctx)
+      } else if (sub === "settings") {
+        await _cmdSettings(deps, ctx)
       } else if (sub === "config") {
         _cmdConfig(deps, ctx)
       } else if (sub === "identity" || sub.startsWith("identity ")) {
@@ -258,6 +262,12 @@ export function registerUnbienCommands(
     description: "Persist a new relay URL to user config",
     handler: async (args, ctx) => {
       _cmdSetRelay(args.trim(), ctx)
+    },
+  })
+  pi.registerCommand("unbien settings", {
+    description: "Edit un-bien's settings: this machine's (un-bien.json) and this folder's",
+    handler: async (_, ctx) => {
+      await _cmdSettings(deps, ctx)
     },
   })
   pi.registerCommand("unbien config", {

@@ -259,7 +259,16 @@ describe.skipIf(posixOnly)("paths", () => {
 
 describe("defaultRenderVars", () => {
   test("populates all required fields", () => {
-    const vars = defaultRenderVars()
+    // An empty config dir: no service.runtime, so the installing runtime.
+    const saved = process.env["PI_CODING_AGENT_DIR"]
+    process.env["PI_CODING_AGENT_DIR"] = mkdtempSync(join(tmpdir(), "rv-cfg-"))
+    let vars: ReturnType<typeof defaultRenderVars>
+    try {
+      vars = defaultRenderVars()
+    } finally {
+      if (saved === undefined) delete process.env["PI_CODING_AGENT_DIR"]
+      else process.env["PI_CODING_AGENT_DIR"] = saved
+    }
     expect(vars.node).toBe(process.execPath)
     expect(vars.launcher.endsWith(join("bin", "launcher.js"))).toBe(true)
     expect(isAbsolute(vars.home)).toBe(true)
@@ -421,19 +430,19 @@ describe.skipIf(posixOnly)("linkCliBinaries / unlinkCliBinaries", () => {
 
   test("unlink removes the symlink, idempotent on second call", () => {
     linkCliBinaries(tmpHome, fakePaths)
-    const first = unlinkCliBinaries(tmpHome)
+    const first = unlinkCliBinaries(tmpHome, fakePaths)
     expect(first.removed.map((r) => r.existed)).toEqual([true])
     for (const r of first.removed) {
       expect(existsSync(r.path)).toBe(false)
     }
     // Second call is a no-op
-    const second = unlinkCliBinaries(tmpHome)
+    const second = unlinkCliBinaries(tmpHome, fakePaths)
     expect(second.removed.map((r) => r.existed)).toEqual([false])
   })
 
   test("unlink does NOT delete the extension files (link targets are preserved)", () => {
     const linkResult = linkCliBinaries(tmpHome, fakePaths)
-    unlinkCliBinaries(tmpHome)
+    unlinkCliBinaries(tmpHome, fakePaths)
     for (const link of linkResult.links) {
       // The target file (the actual dist/index.js etc) still exists.
       expect(existsSync(link.target)).toBe(true)
@@ -497,10 +506,10 @@ describe.skipIf(!posixOnly)(
 
     test("unlink removes the .cmd shim, idempotent on second call", () => {
       linkCliBinaries(tmpHome, fakePaths, { node, mutatePath: false })
-      const first = unlinkCliBinaries(tmpHome)
+      const first = unlinkCliBinaries(tmpHome, fakePaths)
       expect(first.removed.map((r) => r.existed)).toEqual([true])
       for (const r of first.removed) expect(existsSync(r.path)).toBe(false)
-      const second = unlinkCliBinaries(tmpHome)
+      const second = unlinkCliBinaries(tmpHome, fakePaths)
       expect(second.removed.map((r) => r.existed)).toEqual([false])
     })
   },

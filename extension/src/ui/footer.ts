@@ -1,5 +1,7 @@
 /**
- * Footer renderer for the Pi TUI. Three status slots + window title.
+ * Footer renderer for the Pi TUI: three status slots. The terminal title is
+ * left to pi (`π - <session> - <folder>`): the relay state it used to carry
+ * is already in the relay slot.
  *
  * Slot keys (intentionally namespaced so other extensions don't collide):
  *   - un-bien:session   — current local session + peer count
@@ -9,7 +11,6 @@
 export interface FooterContext {
   ui: {
     setStatus(key: string, value: string | undefined): void
-    setTitle(title: string): void
   }
 }
 
@@ -26,9 +27,6 @@ export interface FooterState {
    *  🟢 when true (ready — devices can connect), 🟡 when false (first
    *  pairing needed). Pairing is per-machine (global), not per-process. */
   hasPairings?: boolean
-  /** Assigned agent name in the current session. Becomes the title prefix
-   *  (e.g. "backend · foo · relay") when set. Falls back to "Pi" otherwise. */
-  agentName?: string
 }
 
 const K_SESSION = "un-bien:session"
@@ -57,14 +55,4 @@ export function updateFooter(ctx: FooterContext, state: FooterState): void {
   } else {
     ctx.ui.setStatus(K_PEER, undefined)
   }
-
-  // Terminal title — two parts only: `<agent-name> · <On|Off>`.
-  // Pre-2026-05-24 the title carried three segments (`name · local · relay`),
-  // but `local` was always the same string (single fixed UDS session) and
-  // `relay` repeated information the relay slot already shows. Collapsed
-  // to "name + relay state in plain English" — same info, clearer at a
-  // glance: terminal tabs read like `backend · On` / `backend · Off`.
-  const prefix = state.agentName?.trim() || "Pi"
-  const relayState = state.relayOn ? "On" : "Off"
-  ctx.ui.setTitle(`${prefix} · ${relayState}`)
 }

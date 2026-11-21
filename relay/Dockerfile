@@ -23,12 +23,19 @@ RUN apt-get update && \
 
 COPY --from=builder /app/target/release/unbien-relay /usr/local/bin/unbien-relay
 
+# Runs as an unprivileged user (uid/gid 10001), not root. /data must be
+# writable by it: a volume created by an older (root) image keeps
+# root-owned files, so chown it once before upgrading:
+#   docker run --rm -v un-bien-data:/data debian:bookworm-slim chown -R 10001:10001 /data
+RUN groupadd --system --gid 10001 unbien && \
+    useradd --system --uid 10001 --gid unbien --home-dir /data --no-create-home unbien
+
 # Persistent state — BOTH stores live here: the mesh-version SQLite
 # (UNBIEN_MESH_DB_PATH) and the pairing DB (UNBIEN_PAIRING_DB_PATH — the
 # pin/gate state; losing it means re-pairing every peer). Mount a host
 # directory or a named volume at /data to keep them across container
 # restarts. Without a mount, /data is ephemeral.
-RUN mkdir -p /data
+RUN mkdir -p /data && chown unbien:unbien /data
 VOLUME ["/data"]
 
 ENV UNBIEN_RELAY_PORT=3000
@@ -54,5 +61,7 @@ EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD curl -sf http://localhost:${UNBIEN_RELAY_PORT}/health
+
+USER unbien
 
 CMD ["unbien-relay"]
