@@ -274,7 +274,7 @@ machine's paired identity and relay config, and spawns a `pi` window via
 `tmux` (or `herdr`) when the app asks. Remote launch is **opt-in per
 directory** — set `allow_remote_launch: true` in `<cwd>/.pi/un-bien/config.json`,
 or machine-wide via `defaults.allow_remote_launch` in
-`~/.pi/extensions/un-bien.json`. See the
+`~/.pi/agent/extensions/un-bien.json`. See the
 [launcher README](../launcher/README.md) and
 [Remote launch](../extension/README.md#remote-launch) for details.
 
@@ -556,7 +556,7 @@ The same targets work as slash commands inside pi: `/unbien install [target]`,
 
 | What                                                  | Path                                                                                                               |
 | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Global extension settings (relay URL, launch backend) | `~/.pi/extensions/un-bien.json`                                                                                    |
+| Global extension settings (relay URL, launch backend) | `~/.pi/agent/extensions/un-bien.json`                                                                                    |
 | Per-directory config (incl. `allow_remote_launch`)    | `<cwd>/.pi/un-bien/config.json`                                                                                    |
 | State (sessions, identity, peers, logs)               | `~/.local/state/un-bien/` (`UNBIEN_STATE_DIR` relocates)                                                           |
 | Launcher service (Linux / macOS)                      | `~/.config/systemd/user/unbien-launcher.service` · `~/Library/LaunchAgents/com.georgeharker.unbien.launcher.plist` |

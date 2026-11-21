@@ -15,7 +15,7 @@ resolver's one job is to never let that happen silently.
 ## Storage backends
 
 The seed lives in one **selected backend**, configured in `un-bien.json`
-(`<PI_CODING_AGENT_DIR>/extensions/un-bien.json`, or `~/.pi/extensions/…`):
+(`<PI_CODING_AGENT_DIR>/extensions/un-bien.json`, by default `~/.pi/agent/extensions/…`):
 
 ```jsonc
 {

@@ -55,24 +55,39 @@ export function unbienStateHome(): string {
 }
 
 /**
+ * pi's agent dir, resolved as pi resolves it (getAgentDir in pi's config.ts):
+ * `PI_CODING_AGENT_DIR` when set and non-empty, a leading `~` expanded, else
+ * `~/.pi/agent`.
+ */
+export function piAgentDir(): string {
+  const dir = process.env["PI_CODING_AGENT_DIR"]
+  if (!dir) return join(homedir(), ".pi", "agent")
+  if (dir === "~") return homedir()
+  if (dir.startsWith("~/")) return join(homedir(), dir.slice(2))
+  return dir
+}
+
+/**
  * Root for un-bien's global config specifically — the machine-wide relay URL,
- * the `defaults` block, and the `debug` prefs. The Pi host keeps its own global
- * settings under `PI_CODING_AGENT_DIR`, and un-bien's config is a pi extension
- * config: `<PI_CODING_AGENT_DIR|~/.pi>/extensions/un-bien.json`. This resolver
- * returns the `extensions` dir; `config.ts` appends `un-bien.json`.
- *
- * Precedence (resolved at CALL time):
- *
- *   1. `PI_CODING_AGENT_DIR` — the Pi host's settings root (default `~/.pi`).
- *      Config lives at `<PI_CODING_AGENT_DIR>/extensions/un-bien.json`.
- *   2. otherwise `~/.pi/extensions` — the default agent-dir location.
+ * the `defaults` block, and the `debug` prefs. un-bien's config is a pi
+ * extension config, beside pi's own settings: `<agent dir>/extensions/
+ * un-bien.json`, the agent dir being pi's (`piAgentDir`). This resolver returns
+ * the `extensions` dir; `config.ts` appends `un-bien.json`.
  *
  * State (sessions, daemon registries, cwd locks, identity) is unaffected — only
- * the global config honours `PI_CODING_AGENT_DIR` this way.
+ * the global config follows the agent dir.
  */
 export function unbienConfigHome(): string {
-  const agentDir = process.env["PI_CODING_AGENT_DIR"]
-  const base =
-    agentDir && agentDir.length > 0 ? agentDir : join(homedir(), ".pi")
-  return join(base, "extensions")
+  return join(piAgentDir(), "extensions")
+}
+
+/**
+ * Where versions before 0.25.17 kept the global config when
+ * `PI_CODING_AGENT_DIR` was unset: `~/.pi/extensions`, not pi's default agent
+ * dir (`~/.pi/agent`). Read only to migrate it (config.ts
+ * migrateLegacyConfig); null when `PI_CODING_AGENT_DIR` is set, as those
+ * versions then already used `<PI_CODING_AGENT_DIR>/extensions`.
+ */
+export function legacyUnbienConfigHome(): string | null {
+  return process.env["PI_CODING_AGENT_DIR"] ? null : join(homedir(), ".pi", "extensions")
 }

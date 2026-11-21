@@ -156,9 +156,37 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Where the extension's global config (un-bien.json) may be, in order: pi's
+/// agent dir (`PI_CODING_AGENT_DIR`, a leading `~` expanded, else
+/// `~/.pi/agent`) + `/extensions/un-bien.json`; and, with
+/// `PI_CODING_AGENT_DIR` unset, `~/.pi/extensions/un-bien.json`, where
+/// extension versions before 0.25.17 kept it.
+fn unbien_config_candidates() -> Vec<std::path::PathBuf> {
+    let home = std::env::var("HOME").ok().map(std::path::PathBuf::from);
+    let agent_dir = match std::env::var("PI_CODING_AGENT_DIR") {
+        Ok(dir) if !dir.is_empty() => match (dir.as_str(), &home) {
+            ("~", Some(h)) => Some(h.clone()),
+            (d, Some(h)) if d.starts_with("~/") => Some(h.join(&d[2..])),
+            (d, _) => Some(std::path::PathBuf::from(d)),
+        },
+        _ => home.as_ref().map(|h| h.join(".pi").join("agent")),
+    };
+    let mut candidates: Vec<std::path::PathBuf> = agent_dir
+        .map(|d| d.join("extensions").join("un-bien.json"))
+        .into_iter()
+        .collect();
+    let env_unset = std::env::var("PI_CODING_AGENT_DIR").map_or(true, |d| d.is_empty());
+    if env_unset {
+        if let Some(h) = &home {
+            candidates.push(h.join(".pi").join("extensions").join("un-bien.json"));
+        }
+    }
+    candidates
+}
+
 /// `debug.relay` pref: the relay has no CLI/config surface of its own, so it
-/// reads the SAME global un-bien config the extension uses —
-/// `$PI_CODING_AGENT_DIR|~/.pi` + `/extensions/un-bien.json` — and, when
+/// reads the SAME global un-bien config the extension uses (see
+/// `unbien_config_candidates`) and, when
 /// `debug.relay` is true, upgrades the filter to INFO (mesh storage, listen,
 /// peer/room lifecycle — all datestamped by the fmt layers). An explicit
 /// RUST_LOG always wins; the default (pref off / config unreadable) is
@@ -169,12 +197,9 @@ fn relay_log_filter() -> tracing_subscriber::EnvFilter {
     if std::env::var_os("RUST_LOG").is_some() {
         return tracing_subscriber::EnvFilter::from_default_env();
     }
-    let enabled = std::env::var("PI_CODING_AGENT_DIR")
-        .map(std::path::PathBuf::from)
-        .or_else(|_| std::env::var("HOME").map(|h| std::path::PathBuf::from(h).join(".pi")))
-        .map(|base| base.join("extensions").join("un-bien.json"))
-        .ok()
-        .and_then(|p| std::fs::read_to_string(p).ok())
+    let enabled = unbien_config_candidates()
+        .into_iter()
+        .find_map(|p| std::fs::read_to_string(p).ok())
         .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
         .and_then(|v| {
             v.get("debug")

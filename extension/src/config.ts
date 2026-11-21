@@ -1,12 +1,75 @@
 import fs from "node:fs"
 import path from "node:path"
-import { unbienConfigHome } from "./paths.js"
+import { legacyUnbienConfigHome, unbienConfigHome } from "./paths.js"
 
 // Resolved at call time via `unbienConfigHome()` — the global config is a pi
-// extension config at `<PI_CODING_AGENT_DIR|~/.pi>/extensions/un-bien.json`.
-// See paths.ts.
+// extension config at `<agent dir>/extensions/un-bien.json`, the agent dir
+// being pi's (PI_CODING_AGENT_DIR, else ~/.pi/agent). See paths.ts.
+const CONFIG_NAME = "un-bien.json"
 const configDir = (): string => unbienConfigHome()
-const configFile = (): string => path.join(unbienConfigHome(), "un-bien.json")
+const configFile = (): string => {
+  migrateLegacyConfig()
+  return path.join(unbienConfigHome(), CONFIG_NAME)
+}
+
+let legacyChecked = false
+
+/**
+ * Move a config from where versions before 0.25.17 kept it with
+ * PI_CODING_AGENT_DIR unset (~/.pi/extensions/un-bien.json) to pi's agent dir
+ * (~/.pi/agent/extensions/un-bien.json). Runs once per process, before the
+ * first read or write, and only when the new file does not exist yet.
+ *
+ * The old path is then replaced by a symlink to the new file, so an older
+ * un-bien (or relay) still running on this machine reads and writes the same
+ * settings. Where a symlink cannot be made, the old file is left as it was (a
+ * copy). Best-effort: on any failure the old file is read instead, so no
+ * settings are lost.
+ */
+export function migrateLegacyConfig(): void {
+  if (legacyChecked) return
+  legacyChecked = true
+  const legacyDir = legacyUnbienConfigHome()
+  if (!legacyDir) return
+  const legacy = path.join(legacyDir, CONFIG_NAME)
+  const target = path.join(unbienConfigHome(), CONFIG_NAME)
+  if (legacy === target || fs.existsSync(target)) return
+  try {
+    if (!fs.lstatSync(legacy).isFile()) return
+  } catch {
+    return // no legacy config
+  }
+  try {
+    fs.mkdirSync(path.dirname(target), { recursive: true })
+    fs.copyFileSync(legacy, target, fs.constants.COPYFILE_EXCL)
+  } catch (err) {
+    console.error(`[un-bien] could not move ${legacy} to ${target}: ${String(err)}; still reading the old file`)
+    return
+  }
+  try {
+    const link = `${legacy}.link-${process.pid}`
+    fs.symlinkSync(target, link)
+    fs.renameSync(link, legacy)
+  } catch {
+    /* no symlinks here: the old file stays as a copy */
+  }
+  console.error(`[un-bien] global config moved to ${target} (pi's agent dir)`)
+}
+
+/** The config file to read: the current one, or the legacy one when the
+ *  migration could not copy it (see migrateLegacyConfig). */
+const readableConfigFile = (): string => {
+  const current = configFile()
+  if (fs.existsSync(current)) return current
+  const legacyDir = legacyUnbienConfigHome()
+  const legacy = legacyDir ? path.join(legacyDir, CONFIG_NAME) : null
+  return legacy && fs.existsSync(legacy) ? legacy : current
+}
+
+/** Test-only: let migrateLegacyConfig run again. */
+export function _resetLegacyConfigCheckForTest(): void {
+  legacyChecked = false
+}
 
 export type UnBienConfig = {
   relay?: string
@@ -154,7 +217,7 @@ export type UnBienConfig = {
 
 export function loadConfig(): UnBienConfig {
   try {
-    const raw = fs.readFileSync(configFile(), "utf8")
+    const raw = fs.readFileSync(readableConfigFile(), "utf8")
     const parsed = JSON.parse(raw) as unknown
     if (!parsed || typeof parsed !== "object") return {}
     return parsed as UnBienConfig
@@ -179,7 +242,7 @@ export type RelayResolution =
  * Precedence:
  *   1. `UNBIEN_RELAY` env var (ops/CI escape hatch)
  *   2. `relay` field in the global config
- *      (`<PI_CODING_AGENT_DIR|~/.pi>/extensions/un-bien.json`, set via
+ *      (`<agent dir>/extensions/un-bien.json`, set via
  *      `/unbien set-relay`)
  *
  * There is NO built-in default. When neither is set, `url` is null and

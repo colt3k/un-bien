@@ -49,7 +49,7 @@ import type { ServerMessage } from "./protocol/types.js"
  * explicit room_meta.parent field, not correlation.
  *
  * Enablement is opt-in via the un-bien setting `subagents.rooms` (global config,
- * ~/.pi/extensions/un-bien.json). Absent/false ⇒ disabled (a no-op controller).
+ * ~/.pi/agent/extensions/un-bien.json). Absent/false ⇒ disabled (a no-op controller).
  *
  * childSessionId <-> subagent record binding is by ARRIVAL ORDER for now (a
  * created event is followed by the child's session_start); the exact key lands
