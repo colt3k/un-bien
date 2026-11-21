@@ -22,6 +22,7 @@ import {
   type Block,
   type Inline,
 } from "./markdown.js"
+import { bodyRenderKey, wantsMarkdown } from "./body-render.js"
 import { parseInvite } from "./invite.js"
 import { describeError, toastMessage } from "./notice.js"
 import {
@@ -124,16 +125,8 @@ function el<K extends keyof HTMLElementTagNameMap>(
  *  (TranscriptRowViews.swift:67, 112, 138); past the same budget the text is
  *  shown as-is, because parsing a 100 KB paste on every delta of a live stream
  *  is a re-layout per keystroke. */
-function wantsMarkdown(item: TranscriptItem): boolean {
-  return (
-    item.kind !== "tool" &&
-    item.kind !== "reasoning" &&
-    item.kind !== "compaction" &&
-    item.text.length <= MARKDOWN_BUDGET
-  )
-}
-
-function inlineNodes(tokens: Inline[]): Node[] {
+/** Exported for verification: this is the builder every inline token goes through. */
+export function inlineNodes(tokens: Inline[]): Node[] {
   const nodes: Node[] = []
   for (const token of tokens) {
     switch (token.type) {
@@ -256,7 +249,8 @@ function pairingCard(
   return card
 }
 
-function blockNodes(blocks: Block[]): Node[] {
+/** Exported for verification: block-level rendering, including fenced code. */
+export function blockNodes(blocks: Block[]): Node[] {
   const nodes: Node[] = []
   for (const block of blocks) {
     switch (block.type) {
@@ -1025,7 +1019,7 @@ export class App {
     // A pairing notice renders from its payload, not from the text it was told
     // to display.
     const pairing = item.kind === "notice" ? pairingDetails(item) : null
-    const key = pairing ? `pair:${pairing.uri}|${item.text.length}` : item.text
+    const key = bodyRenderKey(item, pairing?.uri)
     if (holder.renderedSource === key) return
     if (pairing) {
       holder.renderedSource = key
@@ -1033,13 +1027,11 @@ export class App {
       return
     }
     if (!wantsMarkdown(item) || item.streaming) {
-      if (holder.renderedSource !== item.text) {
-        holder.renderedSource = item.text
-        body.textContent = item.text
-      }
+      holder.renderedSource = key
+      body.textContent = item.text
       return
     }
-    holder.renderedSource = item.text
+    holder.renderedSource = key
     body.replaceChildren(...blockNodes(parseMarkdown(item.text)))
   }
 
