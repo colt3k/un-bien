@@ -292,6 +292,11 @@ export function blockNodes(blocks: Block[]): Node[] {
         // Wrapped in a scroller: a wide table must not widen the transcript, and
         // on a phone it has to scroll sideways inside its own block.
         const wrap = el("div", "md-table-wrap")
+        // A wide table has to be scrollable by keyboard, not only by trackpad:
+        // a scroll container with no tabindex is invisible to keyboard users.
+        wrap.tabIndex = 0
+        wrap.setAttribute("role", "region")
+        wrap.setAttribute("aria-label", "Table")
         const table = el("table", "md-table")
         const head = document.createElement("thead")
         const headRow = document.createElement("tr")

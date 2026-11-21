@@ -4,6 +4,14 @@
   --bg: #101014;
   --panel: #17171d;
   --line: #26262f;
+  /* Separators derived from --line for things that must actually be seen.
+     `--line` against a card is ~1.2:1 — a hairline that reads as nothing. The
+     table frame uses `--line-strong` (~3:1, the WCAG floor for a non-text
+     boundary) and its inner rules use `--line-soft`, so the grid stays quiet
+     while the outline does its job. Mixed in oklab: mixing neutrals in oklch
+     hits a Chromium bug where low-chroma hues resolve to 0deg and tint pink. */
+  --line-strong: color-mix(in oklab, var(--line) 40%, var(--muted));
+  --line-soft: color-mix(in oklab, var(--line) 72%, var(--muted));
   --fg: #e8e8ee;
   --muted: #9a9aa8;
   --accent: #6ea8fe;
@@ -636,14 +644,23 @@ details[open] > .collapsed {
 }
 
 /* Markdown tables. pi's TUI draws these aligned; in the browser they used to be
-   a wall of pipes. */
+   a wall of pipes. The scroller is keyboard-focusable (tabindex + role) so a
+   wide table can be scrolled without a mouse. */
 .md-table-wrap {
   overflow-x: auto;
   margin: 8px 0;
 }
 
+.md-table-wrap:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .body table.md-table {
+  /* One frame rather than a border per cell: a box around every cell is what
+     makes a dark-mode table look like a grid of holes. */
   border-collapse: collapse;
+  border: 1px solid var(--line-strong);
   font-size: 13px;
   width: max-content;
   max-width: 100%;
@@ -651,14 +668,27 @@ details[open] > .collapsed {
 
 .body .md-table th,
 .body .md-table td {
-  border: 1px solid var(--line);
-  padding: 4px 9px;
+  border: 0;
+  padding: 5px 10px;
   text-align: left;
   vertical-align: top;
 }
 
+.body .md-table thead tr {
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.body .md-table th:not(:first-child),
+.body .md-table td:not(:first-child) {
+  border-left: 1px solid var(--line-soft);
+}
+
+.body .md-table tbody tr + tr {
+  border-top: 1px solid var(--line-soft);
+}
+
 .body .md-table th {
-  background: var(--panel);
+  background: color-mix(in oklab, var(--line) 55%, transparent);
   font-weight: 600;
 }
 
@@ -668,4 +698,25 @@ details[open] > .collapsed {
 
 .body .md-table .align-right {
   text-align: right;
+}
+
+/* Reinforce the quiet grid for people who asked for more contrast. */
+@media (prefers-contrast: more) {
+  .body .md-table th:not(:first-child),
+  .body .md-table td:not(:first-child),
+  .body .md-table tbody tr + tr {
+    border-color: var(--line-strong);
+  }
+}
+
+/* Forced Colors Mode drops author colours and background images; the structure
+   has to survive on system colours. */
+@media (forced-colors: active) {
+  .body table.md-table,
+  .body .md-table thead tr,
+  .body .md-table th:not(:first-child),
+  .body .md-table td:not(:first-child),
+  .body .md-table tbody tr + tr {
+    border-color: CanvasText;
+  }
 }
