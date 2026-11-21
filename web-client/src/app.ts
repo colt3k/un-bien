@@ -60,6 +60,15 @@ import {
 const CAPTURE_FRAMES = /(?:\?|&)capture=1(?:&|$)/.test(
   typeof location === "object" ? location.search : "",
 )
+/**
+ * `?fresh=1` opens the viewer without re-attaching to the last room. This is an
+ * escape hatch, not a feature: the saved room may be an enormous session (this
+ * repo's current pi session is 14 MB / 8571 entries / 244 base64 blocks), and the
+ * replay builds the whole transcript in one synchronous pass, so the tab wedges
+ * for minutes on load — and a wedged tab cannot load a fix.
+ */
+const SKIP_RESTORE = /(?:\?|&)fresh=1(?:&|$)/.test(location.search)
+
 const capturedFrames: EnvelopeMessage[] = []
 if (CAPTURE_FRAMES) {
   const store = globalThis as Record<string, unknown>
@@ -452,7 +461,9 @@ export class App {
       // Resume what the user was last driving. A reload, a recycled phone tab or
       // a sleep should bring the transcript back, not an empty screen at the
       // top of an empty column.
-      void this.resumeSession()
+      if (SKIP_RESTORE)
+        this.sub.textContent = "not restoring the last room (?fresh=1)"
+      else void this.resumeSession()
     } catch (err) {
       this.statusDot.className = "dot idle"
       this.toast(`connect failed: ${describeError(err)}`)
