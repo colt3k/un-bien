@@ -580,3 +580,38 @@ details[open] > .collapsed {
   font-size: 13px;
   line-height: 1.35;
 }
+
+/* Room badges: the name alone cannot distinguish a session from a control
+   room, because both can carry the machine's hostname. */
+.tag {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  vertical-align: middle;
+}
+
+.tag-control {
+  border-style: dashed;
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: none;
+  letter-spacing: 0;
+}

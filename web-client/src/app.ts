@@ -1,6 +1,16 @@
 import type { EnvelopeMessage } from "@geohar/un-bien/client"
 import { SessionClient, type RoomInfo } from "./session-client.js"
 import {
+  isControlRoom,
+  isViewableSession,
+  mergeRoomLists,
+  roomFacts,
+  roomTag,
+  roomTitle,
+  visibleRooms,
+  type TrackedRoom,
+} from "./room-list.js"
+import {
   TranscriptReducer,
   type AskRequest,
   type TranscriptItem,
@@ -304,7 +314,7 @@ export class App {
   private client: SessionClient | null = null
   private relayUrl = ""
   private readonly peers = new Map<string, PairedPeer>()
-  private readonly rooms = new Map<string, RoomInfo[]>()
+  private readonly rooms = new Map<string, TrackedRoom[]>()
   private readonly reducer = new TranscriptReducer()
   /** row key → element, so streaming updates patch in place instead of
    *  rebuilding the list on every one of the hundreds of delta frames a turn
@@ -355,6 +365,9 @@ export class App {
       if (url) void this.connect(url)
     })
     $("pairBtn").addEventListener("click", () => void this.pair())
+    $("showControlRooms").addEventListener("change", () =>
+      this.renderPeerList(),
+    )
     this.sendBtn.addEventListener("click", () => this.send("auto"))
     $("queueBtn").addEventListener("click", () => this.send("queue"))
     this.stopBtn.addEventListener("click", () => this.client?.abort())
@@ -503,9 +516,9 @@ export class App {
         const epk = String(frame.peer ?? "")
         const room = frame as unknown as RoomInfo
         if (!epk || !room.room_id) return
-        const list = this.rooms.get(epk) ?? []
-        const next = [...list.filter((r) => r.room_id !== room.room_id), room]
-        this.rooms.set(epk, next)
+        // Merge, don't replace: registration and metadata arrive separately,
+        // and a reply that omits a field means "not stated", not "now empty".
+        this.rooms.set(epk, mergeRoomLists(this.rooms.get(epk) ?? [], [room]))
         this.renderPeerList()
         // A re-announcement of the room being driven means the machine came
         // back on the same room id — pi restarted, so the history we hold is
@@ -527,10 +540,11 @@ export class App {
       case "room_ended": {
         const epk = String(frame.peer ?? "")
         const roomId = String(frame.room_id ?? "")
-        const list = this.rooms.get(epk) ?? []
+        // `room_ended` is an explicit signal, so it drops immediately — the
+        // grace period in room-list.ts is only for replies that stay silent.
         this.rooms.set(
           epk,
-          list.filter((r) => r.room_id !== roomId),
+          (this.rooms.get(epk) ?? []).filter((r) => r.room_id !== roomId),
         )
         this.renderPeerList()
         if (
@@ -566,8 +580,13 @@ export class App {
     if (!this.client) return
     for (const peer of this.peers.values()) {
       const result = await this.client.listRooms(peer.epk)
-      if (result.status === "ok") this.rooms.set(peer.epk, result.rooms)
-      else this.rooms.set(peer.epk, [])
+      if (result.status === "ok")
+        this.rooms.set(
+          peer.epk,
+          mergeRoomLists(this.rooms.get(peer.epk) ?? [], result.rooms),
+        )
+      // A failed lookup leaves the last known list standing: an error reply is
+      // not evidence that the machine's rooms disappeared.
       if (result.status !== "ok") this.sub.textContent = explainRooms(result)
     }
     this.renderPeerList()
@@ -607,26 +626,56 @@ export class App {
       card.append(refresh)
       host.append(card)
 
-      for (const room of this.rooms.get(peer.epk) ?? []) {
+      const all = this.rooms.get(peer.epk) ?? []
+      const hidden = all.filter(isControlRoom).length
+      for (const room of visibleRooms(
+        all,
+        $<HTMLInputElement>("showControlRooms").checked,
+      )) {
+        const control = isControlRoom(room)
         const row = el("div", "card room")
-        row.append(el("div", "name", room.name ?? room.room_id))
-        const roomFacts = [room.cwd ?? "?"]
-        // Only say "N capabilities" here: the caps themselves are the same list
-        // the machine card already summarizes, and dumping eleven strings in a
-        // phone-width card is unreadable noise.
-        if (room.caps?.length)
-          roomFacts.push(`${room.caps.length} capabilities`)
-        if (room.sessionId) roomFacts.push(room.sessionId.slice(0, 8))
-        row.append(el("div", "meta", roomFacts.join(" · ")))
-        const open = el("button", undefined, "attach")
-        open.addEventListener(
-          "click",
-          () =>
-            void this.attach(peer.epk, room.room_id, room.name ?? room.room_id),
+        const title = el("div", "name")
+        title.append(roomTitle(room))
+        // The badge is the point: two cards can legitimately carry the same
+        // name (pi names a room after the session, which for a machine's
+        // launcher is the hostname), so the name alone cannot say which room
+        // this is.
+        title.append(
+          el("span", control ? "tag tag-control" : "tag", roomTag(room)),
         )
-        row.append(open)
+        row.append(title)
+        row.append(el("div", "meta", roomFacts(room).join(" · ")))
+        if (control) {
+          row.append(
+            el(
+              "div",
+              "meta",
+              "no transcript — this room starts sessions on the machine",
+            ),
+          )
+        } else {
+          const open = el("button", undefined, "attach")
+          open.addEventListener(
+            "click",
+            () =>
+              void this.attach(
+                peer.epk,
+                room.room_id,
+                room.name ?? room.room_id,
+              ),
+          )
+          row.append(open)
+        }
         host.append(row)
       }
+      if (hidden > 0 && !$<HTMLInputElement>("showControlRooms").checked)
+        host.append(
+          el(
+            "div",
+            "meta",
+            `${hidden} control room${hidden > 1 ? "s" : ""} hidden`,
+          ),
+        )
     }
   }
 
@@ -741,7 +790,10 @@ export class App {
       forgetLastRoom(held.epk)
       return
     }
-    const rooms = this.rooms.get(held.epk) ?? []
+    // Only sessions can be restored: a control room has no transcript, and
+    // restoring into one used to be possible when it was the machine's only
+    // room.
+    const rooms = (this.rooms.get(held.epk) ?? []).filter(isViewableSession)
     if (rooms.length === 0) return
     const target =
       rooms.find((room) => room.room_id === held.roomId) ??

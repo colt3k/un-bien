@@ -80,7 +80,15 @@
         </section>
 
         <section>
-          <h2>Machines</h2>
+          <div class="section-head">
+            <h2>Machines</h2>
+            <!-- Control rooms drive the machine (remote launch/pair) and have no
+                 transcript, so they are hidden unless asked for. -->
+            <label class="inline-check">
+              <input id="showControlRooms" type="checkbox" />
+              <span>control rooms</span>
+            </label>
+          </div>
           <div id="peerList" class="list"></div>
         </section>
 
