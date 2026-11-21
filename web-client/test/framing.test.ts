@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest"
 import {
+  correlationId,
   decodeInbound,
   encodeOuter,
   stampEnvelope,
   toWsUrl,
+  uuidFromBytes,
 } from "../src/framing.js"
 import { parseInvite } from "../src/invite.js"
 import { generateEd25519Keypair } from "@geohar/un-bien/client"
@@ -120,6 +122,55 @@ describe("pairing invites", () => {
     // the phone screen needs "the key is wrong", not a stack type.
     expect(() => parseInvite("unbien://pair?t=abc&epk=QUJDRA")).toThrow(
       /unusable machine key/,
+    )
+  })
+})
+
+describe("request ids", () => {
+  const uuidShape =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+
+  it("stamps a v4 uuid where the browser has one", () => {
+    expect(correlationId()).toMatch(uuidShape)
+  })
+
+  it("still stamps one when crypto.randomUUID is missing", () => {
+    // `crypto.randomUUID` is a SECURE-CONTEXT API: it is `undefined` on the
+    // plain-http tailnet URL this client is opened from, while
+    // `getRandomValues` is present. The id must not depend on the restricted
+    // one, or every request (pair, prompt, steer, abort) dies silently.
+    const real = globalThis.crypto
+    const stub = {
+      getRandomValues: (bytes: Uint8Array) => {
+        bytes.fill(0)
+        for (let i = 0; i < bytes.length; i++) bytes[i] = i
+        return bytes
+      },
+    }
+    // `globalThis.crypto` is a getter-only accessor: a plain assignment is
+    // silently ignored, so replace the property itself.
+    Object.defineProperty(globalThis, "crypto", {
+      value: stub,
+      configurable: true,
+    })
+    try {
+      expect(correlationId()).toMatch(uuidShape)
+    } finally {
+      Object.defineProperty(globalThis, "crypto", {
+        value: real,
+        configurable: true,
+      })
+    }
+  })
+
+  it("lays the version and variant nibbles in the v4 slots", () => {
+    // byte 6 -> the first nibble of the third group, byte 8 -> the first of the
+    // fourth. All-zero and all-one inputs show both slots being overwritten.
+    expect(uuidFromBytes(new Uint8Array(16))).toBe(
+      "00000000-0000-4000-8000-000000000000",
+    )
+    expect(uuidFromBytes(new Uint8Array(16).fill(0xff))).toBe(
+      "ffffffff-ffff-4fff-bfff-ffffffffffff",
     )
   })
 })

@@ -99,7 +99,52 @@ export function decodeInbound(line: string): Inbound {
   return { kind: "stock", frame: record }
 }
 
-/** Frames carry a correlation id; pi echoes it back in `response`. */
+/**
+ * Frames carry a correlation id; pi echoes it back in `response`.
+ *
+ * `crypto.randomUUID` is a SECURE-CONTEXT API. On the plain-`http` tailnet URL
+ * this client is meant to be opened from (`USAGE.md`: open
+ * `http://<host>.tail5f1ece.ts.net:5173`), it is `undefined` — measured in
+ * Chrome on `http://100.118.102.118:5173`: `isSecureContext false`,
+ * `randomUUID undefined`, `getRandomValues` fine.
+ *
+ * That made this one line the loudest silence in the client. It ran inside the
+ * `pairAwaited` Promise constructor, so the TypeError rejected that promise;
+ * `pair()` awaited it with no catch, so the async click handler rejected into an
+ * unhandled rejection: no toast, no header change, nothing. A phone on the
+ * tailnet URL saw a dead pair button, and every `prompt`/`steer`/`abort` was
+ * equally dead. `crypto.getRandomValues` is NOT restricted to secure contexts,
+ * so the id is built from that when `randomUUID` is missing.
+ */
 export function correlationId(): string {
-  return globalThis.crypto.randomUUID()
+  const crypto = globalThis.crypto
+  const uuid = crypto?.randomUUID
+  if (typeof uuid === "function") return uuid.call(crypto)
+  if (typeof crypto?.getRandomValues !== "function") {
+    // Say what is missing rather than throwing a bare TypeError from a getter.
+    throw new Error(
+      "this browser exposes no random source — cannot stamp a request id",
+    )
+  }
+  return uuidFromBytes(crypto.getRandomValues(new Uint8Array(16)))
+}
+
+/** 16 random bytes in the v4 layout (version 4, RFC 4122 variant). Split out so
+ *  the insecure-context path is testable with fixed bytes. */
+export function uuidFromBytes(bytes: Uint8Array): string {
+  const withVariant = new Uint8Array(bytes)
+  const versionNibble = (withVariant[6] ?? 0) & 0x0f
+  const variantNibble = (withVariant[8] ?? 0) & 0x3f
+  withVariant[6] = versionNibble | 0x40
+  withVariant[8] = variantNibble | 0x80
+  const hex = Array.from(withVariant, (b) =>
+    b.toString(16).padStart(2, "0"),
+  ).join("")
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20),
+  ].join("-")
 }
