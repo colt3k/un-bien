@@ -44,6 +44,17 @@
             ✕
           </button>
         </div>
+        <!-- Relay/session notices, while the sheet is open. A page element
+             cannot be stacked above a modal <dialog>: verified in Chrome, a
+             `popover` opened after showModal() still hit-tests below it. So the
+             toast has a second home inside the sheet instead of a z-index. -->
+        <div
+          id="noticeBar"
+          class="notice-bar"
+          role="status"
+          aria-live="polite"
+          hidden
+        ></div>
         <section>
           <h2>Relay</h2>
           <div class="row">
@@ -62,7 +73,8 @@
           <h2>Pair a machine</h2>
           <p class="hint">
             Run <code>/unbien pair</code> in a Pi session, then paste the
-            <em>pairing code</em> it prints.
+            <em>pairing code</em> it prints. A code is single-use and expires 60
+            seconds after it is printed — run the command again for a fresh one.
           </p>
           <div class="row">
             <input
@@ -77,6 +89,16 @@
             rows="3"
             placeholder="unbien://pair?t=…&epk=…&n=…&rm=…"
           ></textarea>
+          <!-- The verdict goes HERE, not only in the header and the toast: this
+               section is the one place on screen that is not behind the open
+               sheet, so it is the only place the result is always visible. -->
+          <p
+            id="pairStatus"
+            class="pair-status"
+            role="status"
+            aria-live="polite"
+            hidden
+          ></p>
         </section>
 
         <section>
@@ -137,6 +159,11 @@
         </button>
       </footer>
 
+      <!-- `hidden`, not a z-index: this box sits on the page, so it is behind
+           the open sheet and its backdrop. While the sheet is open the same
+           stack is painted in #noticeBar instead (app.ts `renderNotices`).
+           pointer-events:none (styles.css) keeps taps landing on the backdrop,
+           so light-dismiss still works where the box overlaps it. -->
       <div id="toast" class="toast" hidden></div>
     </div>
     <script type="module" src="/src/main.ts"></script>

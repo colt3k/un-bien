@@ -1,5 +1,9 @@
 import type { EnvelopeMessage } from "@geohar/un-bien/client"
-import { SessionClient, type RoomInfo } from "./session-client.js"
+import {
+  SessionClient,
+  type PairVerdict,
+  type RoomInfo,
+} from "./session-client.js"
 import {
   isControlRoom,
   isViewableSession,
@@ -31,8 +35,9 @@ import {
   sliceWindow,
   type TranscriptWindow,
 } from "./transcript-window.js"
-import { parseInvite } from "./invite.js"
+import { parseInvite, type PairingInvite } from "./invite.js"
 import { describeError, toastMessage } from "./notice.js"
+import { pairResultMessage } from "./pair-status.js"
 import {
   forgetPeer,
   forgetLastRoom,
@@ -365,6 +370,10 @@ export class App {
   private readonly panels = $<HTMLElement>("panels")
   private readonly asks = $<HTMLElement>("asks")
   private readonly toastEl = $<HTMLElement>("toast")
+  /** The pair verdict, rendered inside the sheet — see `pair-status.ts`. */
+  private readonly pairStatusEl = $<HTMLElement>("pairStatus")
+  /** The notice stack while the sheet is open. See `renderNotices`. */
+  private readonly noticeEl = $<HTMLElement>("noticeBar")
   private readonly input = $<HTMLTextAreaElement>("input")
   private readonly stopBtn = $<HTMLButtonElement>("stopBtn")
   private readonly sendBtn = $<HTMLButtonElement>("sendBtn")
@@ -389,6 +398,8 @@ export class App {
   private lastItemCount = 0
   private active: ActiveSession | null = null
   private busy = false
+  /** A pair request in flight (up to the 15s verdict timeout). */
+  private pairBusy = false
   /** Debounce for the post-turn re-read (a turn ends with several frames). */
   private resyncTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -426,6 +437,9 @@ export class App {
     // Keep aria-expanded honest for whatever path closed it (✕, Escape, backdrop).
     this.drawer.addEventListener("toggle", () => {
       $("drawerToggle").setAttribute("aria-expanded", String(this.drawer.open))
+      // A notice stack does not get to disappear because the half of the screen
+      // it was painted in just closed. Re-render it into whichever is visible.
+      if (this.toastLines.length > 0) this.renderNotices()
     })
     $("relayConnect").addEventListener("click", () => {
       const url = $<HTMLInputElement>("relayUrl").value.trim()
@@ -533,32 +547,59 @@ export class App {
   }
 
   async pair(): Promise<void> {
+    // One attempt at a time: the button stays pressed for up to 15s, and a
+    // second click only re-sends the same request and starts a second listener.
+    if (this.pairBusy) return
     const code = $<HTMLTextAreaElement>("pairCode").value.trim()
     const deviceName =
       $<HTMLInputElement>("deviceName").value.trim() || "unbien-web"
+    // Every outcome says so in the sheet. Before, the only trace of a refused
+    // pairing was a toast under the drawer and a subtitle nobody could see.
+    const refuse = (message: string): void => {
+      this.setPairStatus(message, "error")
+      this.sub.textContent = message
+      this.toast(message)
+    }
     if (!this.client) {
-      this.toast(
-        "connect to a relay first — a pairing is only valid on one relay",
-      )
+      refuse("connect to a relay first — a pairing is only valid on one relay")
       return
     }
-    let invite
+    let invite: PairingInvite
     try {
       invite = parseInvite(code)
     } catch (err) {
-      this.toast(describeError(err))
+      refuse(describeError(err))
       return
     }
+    // Decided before the round trip, from this browser's own records. A machine
+    // re-ACKs a device it already trusts without spending a token, so a
+    // re-pair changes nothing on screen; `alreadyPaired` is the only thing that
+    // can tell the user that the silence meant "yes".
+    const alreadyPaired = this.peers.has(invite.epk)
 
+    const pairBtn = $<HTMLButtonElement>("pairBtn")
+    this.pairBusy = true
+    pairBtn.disabled = true
+    this.setPairStatus("pairing…", "pending")
     this.sub.textContent = "pairing…"
-    const verdict = await this.client.pairAwaited(invite, deviceName)
+    let verdict: PairVerdict
+    try {
+      verdict = await this.client.pairAwaited(invite, deviceName)
+    } catch (err) {
+      // The request could not be put on the wire at all (no random source in a
+      // browser that treats plain http as unsafe, a socket already gone). This
+      // used to land as an unhandled rejection out of an async click handler:
+      // no toast, no header, a pair button that looked dead.
+      verdict = { ok: false, detail: describeError(err) }
+    } finally {
+      this.pairBusy = false
+      pairBtn.disabled = false
+    }
+    const message = pairResultMessage(verdict, alreadyPaired)
+    this.setPairStatus(message, verdict.ok ? "ok" : "error")
+    this.sub.textContent = message
     if (!verdict.ok) {
-      this.sub.textContent = `pairing refused: ${
-        verdict.detail?.trim() || "no reason given"
-      }`
-      this.toast(
-        `pairing refused: ${verdict.detail?.trim() || "no reason given"}`,
-      )
+      this.toast(message)
       return
     }
     const paired: PairedPeer = {
@@ -577,10 +618,23 @@ export class App {
     rememberPeer(paired)
     this.peers.set(paired.epk, paired)
     if (verdict.relayPubkey) recordRelayPin(this.relayUrl, verdict.relayPubkey)
-    this.sub.textContent = "paired"
+    // Spent. A single-use token left in the box comes back as `token_expired`
+    // on the next click, which reads as a broken button rather than an old code.
+    $<HTMLTextAreaElement>("pairCode").value = ""
     this.client.subscribeRooms([...this.peers.keys()])
     await this.refreshRooms()
     this.renderPeerList()
+  }
+
+  /**
+   * The pairing verdict, in the sheet. `role="status"` announces it to a
+   * screen reader; the three states are coloured so a green line cannot be
+   * mistaken for the amber one.
+   */
+  private setPairStatus(text: string, kind: "pending" | "ok" | "error"): void {
+    this.pairStatusEl.textContent = text
+    this.pairStatusEl.className = `pair-status ${kind}`
+    this.pairStatusEl.hidden = text === ""
   }
 
   // ── discovery ─────────────────────────────────────────────────────────────
@@ -1413,16 +1467,43 @@ export class App {
     if (text === null) return
     this.toastLines.push(text)
     if (this.toastLines.length > 3) this.toastLines.shift()
-    this.toastEl.replaceChildren(
-      ...this.toastLines.map((line) => el("div", "toast-line", line)),
-    )
-    this.toastEl.hidden = false
+    this.renderNotices()
     clearTimeout(toastTimer)
     toastTimer = setTimeout(() => {
       this.toastLines.length = 0
-      this.toastEl.replaceChildren()
-      this.toastEl.hidden = true
+      this.renderNotices()
     }, 6_000)
+  }
+
+  /**
+   * Paint the notice stack where it can actually be seen.
+   *
+   * While the sheet is open it goes inside the sheet (#noticeBar). The fixed
+   * toast cannot be lifted above a modal <dialog>: the dialog and its
+   * ::backdrop are in the top layer, where author `z-index` does not reach, and
+   * a `popover="auto"` opened after showModal() was measured (Chrome 156) to
+   * hit-test BELOW the dialog anyway. At phone width the sheet is 80vw and the
+   * toast is centred, which is how "not even an error" happened: every notice
+   * a refused pairing produced was painted behind the panel the user was
+   * staring at. Two homes, one stack — and the drawer's `toggle` handler
+   * re-renders on open/close so a notice is never left stranded in the hidden
+   * half.
+   */
+  private renderNotices(): void {
+    const inSheet = this.drawer.open
+    const shown = inSheet ? this.noticeEl : this.toastEl
+    const other = inSheet ? this.toastEl : this.noticeEl
+    other.replaceChildren()
+    other.hidden = true
+    if (this.toastLines.length === 0) {
+      shown.replaceChildren()
+      shown.hidden = true
+      return
+    }
+    shown.replaceChildren(
+      ...this.toastLines.map((line) => el("div", "toast-line", line)),
+    )
+    shown.hidden = false
   }
   private readonly toastLines: string[] = []
 }

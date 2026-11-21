@@ -191,6 +191,24 @@ textarea {
   font-size: 12.5px;
   margin: 6px 0;
 }
+/* The pairing verdict. Inside the sheet on purpose: a modal <dialog> and its
+   ::backdrop are in the top layer, so nothing outside the sheet is reliably
+   visible while the drawer is open — and the pair button only exists inside
+   the sheet. */
+.pair-status {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.35;
+}
+.pair-status.pending {
+  color: var(--muted);
+}
+.pair-status.ok {
+  color: var(--ok);
+}
+.pair-status.error {
+  color: var(--danger);
+}
 .list {
   display: flex;
   flex-direction: column;
@@ -597,6 +615,23 @@ details[open] > .collapsed {
   padding: 8px 12px;
   max-width: 90vw;
   z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  /* It overlaps the sheet's backdrop, and that backdrop is how the sheet is
+     dismissed by a tap outside it. The box has no controls of its own, so it
+     must not swallow that tap. */
+  pointer-events: none;
+}
+/* The same stack, inside the sheet, while the sheet is open — the only place a
+   notice can be seen then. `hidden` keeps the empty-box rule ([hidden] is
+   display:none !important); the amber matches .toast. */
+.notice-bar {
+  background: #241a12;
+  border: 1px solid #6b3b12;
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  margin: 0 0 10px;
   display: flex;
   flex-direction: column;
   gap: 6px;
