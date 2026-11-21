@@ -100,7 +100,7 @@ describe("extension default export", () => {
     // + 2 identity (`unbien identity` and its `identity show` verb alias)
     // + 1 config + 3 internal session ops (fork/branch/new)
     // + 2 stop (`/stop` + the `unbien stop` alias) - universal abort.
-    expect(registeredCommands).toHaveLength(21)
+    expect(registeredCommands).toHaveLength(22)
     // Internal session ops — self-dispatched from the app's structured
     // session_fork / session_navigate / new_session frames (ctx.fork /
     // ctx.navigateTree / ctx.newSession are command-ctx-only).
@@ -112,6 +112,7 @@ describe("extension default export", () => {
     // without it every `/unbien relay …` silently reprinted the status panel.
     expect(registeredCommands).toContain("unbien relay")
     expect(registeredCommands).toContain("unbien config")
+    expect(registeredCommands).toContain("unbien settings")
     expect(registeredCommands).toContain("stop")
     expect(registeredCommands).toContain("unbien stop")
     for (const removed of [

@@ -310,10 +310,10 @@ it opens the connection. Same canonical form for the mobile app and any
 self-hosting docs: paste the URL your reverse proxy exposes.
 
 This writes the `relay` field into the global config at
-`~/.pi/extensions/un-bien.json`. Resolution order (highest precedence first):
+`~/.pi/agent/extensions/un-bien.json`. Resolution order (highest precedence first):
 
 1. `UNBIEN_RELAY` environment variable (CI / one-off overrides)
-2. `relay` field in `~/.pi/extensions/un-bien.json`
+2. `relay` field in `~/.pi/agent/extensions/un-bien.json`
 
 There is **no built-in default** — when neither is set, the extension refuses
 to connect and prompts you to configure a relay.
@@ -408,6 +408,7 @@ real name to the peer.
 | `/unbien relay [start\|stop\|status]` | Relay-only control — leaves local mesh membership untouched (no verb = toggle) |
 | `/unbien relay url <url>`             | Same as `set-relay`                                                            |
 | `/unbien config`                      | Show the effective relay URL and its source (env / config / unset)             |
+| `/unbien settings`                    | Edit this machine's settings (`un-bien.json`) and this folder's (`.pi/un-bien/config.json`) |
 
 ### Service install & remote launch (see [Remote launch](#remote-launch))
 
@@ -486,7 +487,7 @@ The launcher only spawns sessions where remote launch is **opted in**:
 
 - per directory: `allow_remote_launch: true` in `<cwd>/.pi/un-bien/config.json`
 - or machine-wide: `defaults.allow_remote_launch: true` in the global config
-  (`~/.pi/extensions/un-bien.json`)
+  (`~/.pi/agent/extensions/un-bien.json`)
 
 The spawn backend is machine-wide: `launch.backend` in the global config —
 `tmux` (default; one shared `un-bien` tmux session, a window per launched Pi),
@@ -579,18 +580,25 @@ back. Pairing and identity live in the state root and are never touched.
 
 | Path                                                   | Scope             | What's in it                                                                   |
 | ------------------------------------------------------ | ----------------- | ------------------------------------------------------------------------------ |
-| `~/.pi/extensions/un-bien.json`                        | Per-user (global) | `relay` URL, `defaults`, `identity`, `debug` — the global settings (see below) |
-| `<cwd>/.pi/un-bien/config.json`                        | Per-directory     | `agent_name`, `auto_start_relay`, `allow_remote_launch`                        |
+| `~/.pi/agent/extensions/un-bien.json`                        | Per-user (global) | `relay` URL, `defaults`, `identity`, `debug` — the global settings (see below) |
+| `<cwd>/.pi/un-bien/config.json`                        | Per-directory     | `agent_name`, `auto_start_relay`, `allow_remote_launch`, `allow_remote_terminate` |
 | `~/.local/state/un-bien/identity.json`                 | Per-machine       | Paired identity keypair (file identity backend; `0600`)                        |
 | `~/.local/state/un-bien/peers.json`                    | Per-machine       | Paired mobile devices                                                          |
 | `~/.local/state/un-bien/sessions/<name>/`              | Per-session       | Broker socket + `audit.jsonl`                                                  |
 | `~/.local/state/un-bien/skills/agent-network/SKILL.md` | Per-user          | Agent skill the LLM reads                                                      |
 
-### Global settings — `~/.pi/extensions/un-bien.json`
+### Global settings — `~/.pi/agent/extensions/un-bien.json`
 
-This is a Pi **extension config** (it lives beside the coding agent's own
-settings, under `PI_CODING_AGENT_DIR/extensions/`, not in the state tree). All
-fields are optional:
+This is a Pi **extension config**: it lives beside the coding agent's own
+settings, in pi's agent dir (`$PI_CODING_AGENT_DIR/extensions/` when that is
+set, else `~/.pi/agent/extensions/`), not in the state tree. All fields are
+optional.
+
+Versions before 0.25.17 used `~/.pi/extensions/un-bien.json` when
+`PI_CODING_AGENT_DIR` was unset. On first use a config there is moved to the
+new path, and the old path becomes a symlink to it, so an older un-bien or
+relay still running on the machine shares the same settings (where a symlink
+cannot be made, the old file is left as a copy).
 
 ```jsonc
 {
@@ -619,19 +627,45 @@ fields are optional:
 
   // File-based diagnostic logs. Off by default. Read from config (not env)
   // because the daemon fork usually runs detached without a shell's env.
-  "debug": { "envelope": false, "panels": false },
+  // "launcher" and "relay" apply when that process restarts.
+  "debug": { "envelope": false, "panels": false, "launcher": false, "relay": false },
 }
 ```
 
+`/unbien settings` edits all of the following except the lists (`launch.dirs`,
+`service.env`) and `identity`, which stay in the file. The complete set of
+keys, with defaults:
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `relay` | unset | Relay URL (http:// or https://); also `/unbien set-relay` |
+| `defaults.auto_start_relay` | `true` | Auto-start for folders that don't set it |
+| `defaults.allow_remote_launch` | `false` | Remote launch for folders that don't set it |
+| `defaults.allow_remote_terminate` | `true` | Remote terminate for folders that don't set it |
+| `launch.backend` | `tmux` | `tmux`, `herdr` or `rex` |
+| `launch.fallback` | `none` | Backend used only when `backend` is unavailable |
+| `launch.tmux_session` | `un-bien` | The tmux session launched pis become windows of |
+| `launch.rex_bin`, `rex_server`, `rex_session` | PATH / local server / `un-bien` | Rex binary, server endpoint, session label |
+| `launch.dirs` | `"*"` | Folders remote launch may use: `"*"`, or a list (a folder and those below it) |
+| `launch.shell`, `launch.shell_args` | `$SHELL`, `["-l"]` | The login shell launches run through, and its arguments |
+| `subagents.rooms` | `false` | Show each subagent as its own session in the app |
+| `mesh.tools` | `true` | Let the model message other agents; restart pi to apply |
+| `mesh.federation` | `true` | Take part in relay federation (the relay's own gate still applies) |
+| `package_manager` | pi's `npmCommand`, else npm | `npm`, `bun` or `pnpm`, for un-bien's global installs |
+| `service.runtime`, `service.env` | the installer's runtime; XDG + bun variables | The launcher service's runtime and copied environment ([install docs](../docs/install.md#service-environment--gotchas)) |
+| `identity.storage`, `identity.path` | `keychain` | Where this machine's key is kept ([identity docs](../docs/identity.md)) |
+| `debug.envelope`, `panels`, `launcher`, `relay` | `false` | Diagnostic logs |
+
 ### Per-directory settings — `<cwd>/.pi/un-bien/config.json`
 
-Written by the `/unbien` setup wizard:
+Written by the `/unbien` setup wizard and `/unbien settings` (This folder):
 
 | Field                 | Default        | Meaning                                                                                    |
 | --------------------- | -------------- | ------------------------------------------------------------------------------------------ |
 | `agent_name`          | directory name | Presentation leaf name for this agent (senders still use the opaque `list_peers` address)  |
 | `auto_start_relay`    | `true`         | On a fresh terminal, `/unbien` auto-joins the mesh and starts the relay                    |
 | `allow_remote_launch` | `false`        | Honor `session_launch` requests from a paired owner (spawn a new Pi session). Opt-in only. |
+| `allow_remote_terminate` | `true`      | Let a paired owner end a session in this folder (the app confirms first). Set `false` to refuse. |
 
 ### Environment variables
 
