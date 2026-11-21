@@ -14,7 +14,15 @@
   <body>
     <div id="app">
       <header class="bar">
-        <button id="drawerToggle" class="icon" aria-label="Machines">☰</button>
+        <button
+          id="drawerToggle"
+          class="icon"
+          aria-label="Machines"
+          aria-controls="drawer"
+          aria-expanded="false"
+        >
+          ☰
+        </button>
         <div class="titles">
           <div id="sessionTitle" class="title">not connected</div>
           <div id="sessionSub" class="sub">add a relay to start</div>
@@ -22,7 +30,15 @@
         <span id="statusDot" class="dot idle" title="relay status"></span>
       </header>
 
-      <aside id="drawer" hidden>
+      <dialog id="drawer" aria-label="Relays, pairing and machines">
+        <div class="drawer-bar">
+          <span class="drawer-title">Machines</span>
+          <!-- Explicit dismissal: the page behind is inert while the dialog is
+               open, so the ☰ that opened it cannot be clicked to close it. -->
+          <button id="drawerClose" class="icon" aria-label="Close" autofocus>
+            ✕
+          </button>
+        </div>
         <section>
           <h2>Relay</h2>
           <div class="row">
@@ -70,7 +86,7 @@
             <span>Hide thinking</span>
           </label>
         </section>
-      </aside>
+      </dialog>
 
       <main id="transcript" class="transcript" aria-live="polite"></main>
 

@@ -288,7 +288,7 @@ function blockNodes(blocks: Block[]): Node[] {
 
 export class App {
   private readonly transcript = $<HTMLElement>("transcript")
-  private readonly drawer = $<HTMLElement>("drawer")
+  private readonly drawer = $<HTMLDialogElement>("drawer")
   private readonly statusDot = $<HTMLElement>("statusDot")
   private readonly title = $<HTMLElement>("sessionTitle")
   private readonly sub = $<HTMLElement>("sessionSub")
@@ -331,8 +331,21 @@ export class App {
   // ── wiring ────────────────────────────────────────────────────────────────
 
   private bindUi(): void {
+    // A modal <dialog>: the browser handles Escape, restores focus to this
+    // trigger on close, and makes the rest of the page inert while it is open.
+    // That inertness is exactly why the ☰ cannot double as the close control —
+    // hence the ✕ inside the drawer and a light-dismiss tap on the backdrop.
     $("drawerToggle").addEventListener("click", () => {
-      this.drawer.hidden = !this.drawer.hidden
+      if (!this.drawer.open) this.drawer.showModal()
+    })
+    $("drawerClose").addEventListener("click", () => this.drawer.close())
+    // Tap the dimmed area (the dialog box itself, outside its content) to dismiss.
+    this.drawer.addEventListener("click", (event: MouseEvent) => {
+      if (event.target === this.drawer) this.drawer.close()
+    })
+    // Keep aria-expanded honest for whatever path closed it (✕, Escape, backdrop).
+    this.drawer.addEventListener("toggle", () => {
+      $("drawerToggle").setAttribute("aria-expanded", String(this.drawer.open))
     })
     $("relayConnect").addEventListener("click", () => {
       const url = $<HTMLInputElement>("relayUrl").value.trim()
@@ -653,7 +666,7 @@ export class App {
     this.reducer.setEnded(false)
     this.title.textContent = name
     this.sub.textContent = "syncing…"
-    this.drawer.hidden = true
+    if (this.drawer.open) this.drawer.close()
 
     // A full replay on every (re)attach, not an incremental read. Rebuilding
     // from pi's entries gives every row a stable identity (the entry id); an
