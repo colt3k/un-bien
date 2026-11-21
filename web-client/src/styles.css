@@ -558,6 +558,16 @@ details[open] > .collapsed {
   font-family: inherit;
   font-size: 15px;
 }
+/* The `hidden` attribute is only a UA default, and any author rule that sets
+   `display` on the element beats it. `.toast { display: flex }` therefore made
+   the toast panel impossible to hide: an empty amber box, `position: fixed`,
+   centred 84px above the bottom edge at z-index 30 — painted permanently over
+   the transcript, covering text. Same trap for `#panels` and the stop button.
+   Restore what `hidden` is supposed to mean, once, for everything. */
+[hidden] {
+  display: none !important;
+}
+
 .toast {
   position: fixed;
   left: 50%;
