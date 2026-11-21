@@ -108,8 +108,13 @@ full-reloads the page — which looks exactly like the client losing the session
 
 Open the drawer with **☰** (top left). Everything happens there.
 
-1. **Relay** — paste the relay URL (e.g. `http://m5max.tail5f1ece.ts.net:3000`) and
-   press **connect**. The dot in the header is the relay's state.
+1. **Relay** — the box is already filled in with **the host you opened the page
+   on, at the relay's port** (`http://<your-host>:3000`): `start.sh` brings both up
+   on the same box, so this is the right URL unless you split them. Press **connect**
+   (or let the app do it on load), and the dot in the header is the relay's state.
+   Once you connect, that URL is remembered — it wins over the guess on the next
+   load. An `https` page defaults to `https://<host>:3000` (`wss://`), because a
+   secure page cannot open an insecure `ws://` socket at all.
 2. **Pair a machine** — in the pi session run:
    ```
    /unbien pair

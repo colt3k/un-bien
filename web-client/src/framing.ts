@@ -40,6 +40,48 @@ export function toWsUrl(url: string): string {
   return trimmed
 }
 
+/** The port `unbien-relay` listens on unless told otherwise (`:3000` in the
+ *  README and the launcher's default). */
+export const RELAY_PORT = 3000
+
+/**
+ * The relay URL to DEFAULT to, from the page the client was opened on.
+ *
+ * A phone on the tailnet opens `http://<host>:5173` and needs the relay on the
+ * SAME host at `:3000` almost every time — the two are started by the same
+ * `start.sh`. Guessing that beats an empty box: the user sees the URL that is
+ * about to be used instead of retyping the host off the address bar.
+ *
+ * Only the port changes. The scheme is kept deliberately: an `https` page
+ * cannot open an insecure `ws://` socket at all (mixed content), so defaulting
+ * such a page to `http://host:3000` would produce a connection that is
+ * guaranteed to fail with a browser error no client code can explain. If the
+ * relay really is plain `ws` behind an `https` page, that URL has to be typed.
+ *
+ * Returns "" for anything that is not an http(s) origin — there is no host to
+ * take a relay port from.
+ */
+export function relayUrlForPage(
+  pageUrl: string,
+  port: number = RELAY_PORT,
+): string {
+  let page: URL
+  try {
+    page = new URL(pageUrl)
+  } catch {
+    return ""
+  }
+  if (page.protocol !== "http:" && page.protocol !== "https:") return ""
+  if (!page.hostname) return ""
+  // `host` keeps the brackets an IPv6 literal needs (`[::1]`), and drops the
+  // port, which is the whole point. Path/query/hash are not part of an origin.
+  page.port = String(port)
+  page.pathname = ""
+  page.search = ""
+  page.hash = ""
+  return page.toString().replace(/\/+$/, "")
+}
+
 /** Stamp the envelope's REAL plane kind plus a timestamp (see header note). */
 export function stampEnvelope(env: EnvelopeMessage): Record<string, unknown> {
   const kind =

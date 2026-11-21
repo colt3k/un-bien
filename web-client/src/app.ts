@@ -36,6 +36,7 @@ import {
   type TranscriptWindow,
 } from "./transcript-window.js"
 import { parseInvite, type PairingInvite } from "./invite.js"
+import { RELAY_PORT, relayUrlForPage } from "./framing.js"
 import { describeError, toastMessage } from "./notice.js"
 import { pairResultMessage } from "./pair-status.js"
 import {
@@ -409,9 +410,19 @@ export class App {
     this.renderPeerList()
     this.renderRelayList()
     const remembered = listRelays()[0]
+    const relayInput = $<HTMLInputElement>("relayUrl")
+    // The relay is almost always on the SAME box as the page — `start.sh`
+    // brings up both, and a phone reaches them through the same tailnet host.
+    // So the URL you connected to, with the relay's port, is the honest
+    // default: shown in the box before you type, and used if you don't.
+    const guess = relayUrlForPage(location.href, RELAY_PORT)
+    if (guess) relayInput.placeholder = guess
     if (remembered) {
-      $<HTMLInputElement>("relayUrl").value = remembered.url
+      relayInput.value = remembered.url
       void this.connect(remembered.url)
+    } else if (guess) {
+      relayInput.value = guess
+      void this.connect(guess)
     }
     this.sub.textContent = `device key ${devicePublicKey().slice(0, 12)}…`
   }

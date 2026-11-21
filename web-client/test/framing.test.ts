@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest"
 import {
+  RELAY_PORT,
   correlationId,
   decodeInbound,
   encodeOuter,
+  relayUrlForPage,
   stampEnvelope,
   toWsUrl,
   uuidFromBytes,
@@ -172,5 +174,48 @@ describe("request ids", () => {
     expect(uuidFromBytes(new Uint8Array(16).fill(0xff))).toBe(
       "ffffffff-ffff-4fff-bfff-ffffffffffff",
     )
+  })
+})
+
+describe("default relay URL, from the page the client was opened on", () => {
+  it("keeps the host and swaps in the relay port", () => {
+    // The phone case: the page and the relay are the same tailnet host,
+    // started by the same start.sh, differing only by port.
+    expect(
+      relayUrlForPage("http://m5max.tail5f1ece.ts.net:5173/?fresh=1"),
+    ).toBe("http://m5max.tail5f1ece.ts.net:3000")
+    expect(relayUrlForPage("http://localhost:5173/")).toBe(
+      "http://localhost:3000",
+    )
+    expect(relayUrlForPage("http://192.168.1.86:5173/x")).toBe(
+      "http://192.168.1.86:3000",
+    )
+  })
+
+  it("adds the port when the page has none", () => {
+    expect(relayUrlForPage("http://relay.example.com")).toBe(
+      "http://relay.example.com:3000",
+    )
+  })
+
+  it("keeps the scheme — an https page cannot open an insecure ws:// socket", () => {
+    const https = relayUrlForPage("https://host.example:8443/p?q=1#h")
+    expect(https).toBe("https://host.example:3000")
+    expect(toWsUrl(https)).toBe("wss://host.example:3000")
+  })
+
+  it("keeps an IPv6 literal bracketed", () => {
+    expect(relayUrlForPage("http://[::1]:5173")).toBe("http://[::1]:3000")
+  })
+
+  it("defaults to the relay's own port, and takes another when told", () => {
+    expect(RELAY_PORT).toBe(3000)
+    expect(relayUrlForPage("http://host:5173", 3100)).toBe("http://host:3100")
+  })
+
+  it("guesses nothing when there is no http host to take", () => {
+    expect(relayUrlForPage("file:///tmp/index.html")).toBe("")
+    expect(relayUrlForPage("about:blank")).toBe("")
+    expect(relayUrlForPage("not a url")).toBe("")
   })
 })
