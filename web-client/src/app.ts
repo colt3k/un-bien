@@ -22,7 +22,7 @@ import {
   type Block,
   type Inline,
 } from "./markdown.js"
-import { bodyRenderKey, wantsMarkdown } from "./body-render.js"
+import { bodyRenderKey, mayClamp, wantsMarkdown } from "./body-render.js"
 import {
   LOAD_MORE,
   growWindow,
@@ -346,6 +346,16 @@ export function blockNodes(blocks: Block[]): Node[] {
   return nodes
 }
 
+/** The newest answer row in a window: assistant first, then a notice. */
+function findTailRow(shown: TranscriptItem[]): string {
+  for (let i = shown.length - 1; i >= 0; i--) {
+    const item = shown[i]
+    if (item && (item.kind === "assistant" || item.kind === "notice"))
+      return item.row
+  }
+  return ""
+}
+
 export class App {
   private readonly transcript = $<HTMLElement>("transcript")
   private readonly drawer = $<HTMLDialogElement>("drawer")
@@ -370,6 +380,9 @@ export class App {
    *  rebuilding the list on every one of the hundreds of delta frames a turn
    *  produces. */
   private readonly rowEls = new Map<string, HTMLElement>()
+  // The newest answer row in the current window, remembered between renders so a
+  // node built mid-render can decide whether to clamp itself.
+  private tailRowId = ""
   /** Which slice of the transcript is drawn. Null until the first render. */
   private window: TranscriptWindow | null = null
   /** Rows in the last render's item list, for the "load earlier" control. */
@@ -1001,10 +1014,15 @@ export class App {
     // toward the top adds rows ABOVE the current first row, and an append would
     // drop them at the bottom of the log.
     let previous: HTMLElement | null = null
+    // The newest answer in the window is shown in full; older ones are clamped.
+    const tailRow = findTailRow(shown)
+    this.tailRowId = tailRow
     for (const item of shown) {
+      const atTail = item.row === tailRow
       const existing = this.rowEls.get(item.row)
       let node: HTMLElement
       if (existing) {
+        existing.classList.toggle("at-tail", atTail)
         this.patchItem(existing, item)
         node = existing
       } else {
@@ -1068,6 +1086,7 @@ export class App {
   private buildItem(item: TranscriptItem): HTMLElement {
     const node = el("div", `item ${item.kind}`)
     node.dataset.row = item.row
+    node.classList.toggle("at-tail", item.row === this.tailRowId)
     if (item.kind === "tool") {
       const details = el("details", "tool-inner")
       const summary = el("summary")
@@ -1131,7 +1150,7 @@ export class App {
    *  every attached client; and a model that counts to 2000 fills the scroll area
    *  with digits. The row stays the row — the fold and the corpus are untouched —
    *  it just does not dominate the screen. */
-  private syncClamp(node: HTMLElement): void {
+  private syncClamp(kind: string, node: HTMLElement): void {
     const body = node.querySelector<HTMLElement>(".body")
     if (!body) return
     const toggle = node.querySelector<HTMLElement>("button.clamp")
@@ -1140,6 +1159,19 @@ export class App {
     if (body.querySelector(".pair-card")) {
       node.classList.remove("expanded")
       toggle?.remove()
+      return
+    }
+    if (
+      !mayClamp({
+        kind,
+        atTail: node.classList.contains("at-tail"),
+        streaming: node.classList.contains("streaming"),
+      })
+    ) {
+      // Nothing to fold. Drop a stale control — the row may have become the
+      // newest answer since it was last drawn — and let the body take its height.
+      toggle?.remove()
+      node.classList.remove("expanded")
       return
     }
     const needsClamp = body.scrollHeight > body.clientHeight + 24
@@ -1164,7 +1196,7 @@ export class App {
     if (item.kind !== "tool") {
       this.setBody(node, item)
       if (item.kind === "notice" || item.kind === "assistant")
-        this.syncClamp(node)
+        this.syncClamp(item.kind, node)
       this.syncImages(node, item)
       return
     }

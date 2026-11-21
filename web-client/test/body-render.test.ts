@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { MARKDOWN_BUDGET } from "../src/markdown.js"
-import { bodyRenderKey, wantsMarkdown } from "../src/body-render.js"
+import { bodyRenderKey, mayClamp, wantsMarkdown } from "../src/body-render.js"
 
 const settled = {
   kind: "assistant",
@@ -65,5 +65,33 @@ describe("wantsMarkdown", () => {
   it("stops parsing past the budget the native app uses", () => {
     const huge = { ...settled, text: "x".repeat(MARKDOWN_BUDGET + 1) }
     expect(wantsMarkdown(huge)).toBe(false)
+  })
+})
+
+describe("mayClamp", () => {
+  it("does not fold the newest answer", () => {
+    expect(
+      mayClamp({ kind: "assistant", atTail: true, streaming: false }),
+    ).toBe(false)
+  })
+
+  it("does not fold a row that is still streaming", () => {
+    expect(
+      mayClamp({ kind: "assistant", atTail: false, streaming: true }),
+    ).toBe(false)
+  })
+
+  it("folds older answers and long notices", () => {
+    expect(
+      mayClamp({ kind: "assistant", atTail: false, streaming: false }),
+    ).toBe(true)
+    expect(mayClamp({ kind: "notice", atTail: false, streaming: false })).toBe(
+      true,
+    )
+  })
+
+  it("never folds rows that are not prose", () => {
+    for (const kind of ["user", "tool", "reasoning", "thinking"])
+      expect(mayClamp({ kind, atTail: false, streaming: false })).toBe(false)
   })
 })

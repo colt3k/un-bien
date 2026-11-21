@@ -40,3 +40,20 @@ export function bodyRenderKey(
   if (pairingUri) return `pair:${pairingUri}|${item.text.length}`
   return `${item.streaming ? "stream" : "final"}:${item.text}`
 }
+
+/**
+ * Whether a row's body may be clamped behind a "show more" control.
+ *
+ * The row the reader is waiting for is never clamped: the newest assistant
+ * answer, and anything still streaming, is shown in full. Clamping those made the
+ * thing you asked for the hardest thing to read — the answer you just asked for sat
+ * folded with a button above the composer until you clicked it.
+ */
+export function mayClamp(opts: {
+  kind: string
+  atTail: boolean
+  streaming: boolean
+}): boolean {
+  if (opts.kind !== "assistant" && opts.kind !== "notice") return false
+  return !opts.atTail && !opts.streaming
+}

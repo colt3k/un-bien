@@ -338,10 +338,19 @@ textarea {
 /* Long bodies are clamped behind a control (see `syncClamp` in app.ts): a
  * pairing QR notice and a model counting to 2000 are both real rows, and both
  * used to take over the screen. */
-.item.notice .body,
-.item.assistant .body {
+.item.notice .body {
   max-height: 12rem;
   overflow: hidden;
+}
+
+.item.assistant .body {
+  max-height: 22rem;
+  overflow: hidden;
+}
+
+/* The newest answer is never clamped, streaming or settled (see `mayClamp`). */
+.item.at-tail .body {
+  max-height: none;
 }
 .item.expanded .body {
   max-height: none;
