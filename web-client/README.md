@@ -15,9 +15,9 @@ runs) is imported directly, aliased through Vite so three node-isms don't drag
 ```sh
 web-client/scripts/start.sh             # dev server, with the URLs and the relay check
 pnpm -C web-client dev                  # vite dev server, bound to all interfaces
-pnpm -C web-client build                # dist/ (88 kB JS, 30 kB gzip)
+pnpm -C web-client build                # dist/ (127 kB JS / 43 kB gzip, 10 kB CSS / 2.7 kB gzip)
 pnpm -C web-client preview              # serve dist/ — use THIS on a phone
-pnpm -C web-client test                 # 127 passing (see Conformance)
+pnpm -C web-client test                 # 188 passing (see Conformance)
 ```
 
 `--filter web-client` is NOT a working filter here — the package is
@@ -39,9 +39,22 @@ like the client losing the session.
 
 ````
 
-Then open `http://<tailnet-host>:5173` (e.g. `http://m5max.tail5f1ece.ts.net:5173`)
-and put the relay URL in the drawer. Dev-server-only exposure; a real deployment
-wants TLS (WebCrypto subtle crypto and a `wss://` relay) and a static host.
+Then open `http://<tailnet-host>:5173` (e.g. `http://m5max.tail5f1ece.ts.net:5173`).
+The drawer's relay box is already filled in with that same host on the relay's
+port (`http://<tailnet-host>:3000`) — `start.sh` runs both on one box, so that is
+the right URL unless you split them. Dev-server-only exposure; a real deployment
+wants TLS (`https://` page and a `wss://` relay — an `https` page cannot open an
+insecure `ws://` socket) and a static host.
+
+Pairing crypto is **not** the reason for that: Ed25519 comes from `@noble`, which
+uses `crypto.subtle` for SHA-512 when it is there and a pure-JS implementation
+when it isn't — so pairing works on a plain-`http` origin (verified: relay
+handshake and `pair_request` succeed with `isSecureContext false` and
+`crypto.subtle undefined`). But secure contexts do gate some APIs this client
+touches, and finding one the hard way is why `src/framing.ts` exists as it does —
+`crypto.randomUUID` is `undefined` on a plain-`http` origin, which used to throw
+inside the `pairAwaited` promise and leave the pair button doing nothing at all,
+with no error anywhere.
 
 To exercise it without a real pi, there is a scripted machine double:
 
@@ -219,7 +232,7 @@ toolCall]`, `tool_execution_start`/`_end` for a `read`, the toolResult
 - **`016` is the panel capture, and it says the panel plane the corpus pinned is
   fiction.** First capture with `evt` frames: 12 of them, all
   `{evt:{channel:"panel", data:{type:"panel_update", key, title, icon,
-  data:{items}}}}` — coalesced **full snapshots**, one per source per 60 ms tick,
+data:{items}}}}` — coalesced **full snapshots**, one per source per 60 ms tick,
   the same payload re-sent many times. The shipped extension has no other panel
   producer (`routing.ts:120`, `session/relay_lifecycle.ts:246`). The app folds
   that form in its UI layer (`AppModel+Inbound.swift:569` re-routes the inner
@@ -248,7 +261,7 @@ toolCall]`, `tool_execution_start`/`_end` for a `read`, the toolResult
   app's foreground heal (`RootView.swift:78` → `AppModel.refreshBusyState`),
   since a hidden tab is throttled while its socket stays healthy. What is
   deliberately **not** used: the relay's `room_meta_updated` `meta.working`.
-  Checked rather than assumed — it brackets *compaction*
+  Checked rather than assumed — it brackets _compaction_
   (`extension/src/index.ts:1830`, `:1836`), not a turn, so folding it as busy
   would be wrong.
 - **Markdown is rendered, on purpose, in a deliberately small subset.** The app
@@ -309,12 +322,12 @@ toolCall]`, `tool_execution_start`/`_end` for a `read`, the toolResult
   arrives cold sees nothing else. Both runners now hold the cold run to the same
   golden, and they agree. What it took to get there:
 
-  * **Sidecar loss (fixed, pinned).** `aux.hunks` rides `tool_execution_start`,
+  - **Sidecar loss (fixed, pinned).** `aux.hunks` rides `tool_execution_start`,
     but a streamed tool call usually opens its card earlier — from a
     `toolcall_start` delta, which carries no aux. Attaching the sidecar only when
     creating the card lost it for good: the reference projected `[diff, hunks]`
     and this client `[diff]`. `startTool` now takes hunks onto an existing card.
-  * **Delta dedup was stricter here than in the reference (fixed).** Both folds
+  - **Delta dedup was stricter here than in the reference (fixed).** Both folds
     drop a `message_update` identical to the last one applied — a redelivery guard
     the reference added after run 2026-09-18 ("every chunk repeats", and this
     capture really does contain three byte-identical frames). This client compared
@@ -323,7 +336,7 @@ toolCall]`, `tool_execution_start`/`_end` for a `read`, the toolResult
     says where it can bite: with an all-zero-`usage` model and adjacent frames
     sharing a `ts`, a legitimate repeat is indistinguishable from a redelivery —
     and the projection's 48-char text window hides the resulting loss.
-  * **Thinking notes are live-only, and that is now a decision rather than a
+  - **Thinking notes are live-only, and that is now a decision rather than a
     finding.** pi persists `thinking` blocks ON the message entry (25 in this
     session, 50 in 021's) and neither fold turns a persisted block into a row, so a
     client that attaches cold shows none — while the content sits in the durable
@@ -337,13 +350,13 @@ toolCall]`, `tool_execution_start`/`_end` for a `read`, the toolResult
     one go. (It is also unrepresentable in the vocabulary today:
     `ConformanceProjection.swift:95` keys reasoning rows synthetic `reasoning#n`,
     `replayStable: false`.)
-  * The fixture's scrub is length-preserving filler rather than `«length»`
+  - The fixture's scrub is length-preserving filler rather than `«length»`
     markers, for this scenario only: the durable plane gives one content block and
     the live plane gives the deltas that built it, and a marker per delta makes the
     two incomparable as strings. `capture.py` explains it at the top.
 
 - **022: turning up late at an already-compacted session.** A human compacted a
-  real session (85 963 tokens folded, `firstKeptEntryId` 59041a36) and only *then*
+  real session (85 963 tokens folded, `firstKeptEntryId` 59041a36) and only _then_
   attached this client, so the compaction arrived purely as a durable entry — and
   that entry was the leaf of the attach walk. Both folds render it correctly
   (`compaction@d80b313f`, "Context compacted (85963 tokens)"); nothing before this
@@ -377,14 +390,14 @@ toolCall]`, `tool_execution_start`/`_end` for a `read`, the toolResult
   leaf beacon `3d0107fa`. The reference folds both to 92 rows and 41 rows and
   passes.
 
-  * **The pair assertion changed shape, and 021 is the reason.** Branching puts
+  - **The pair assertion changed shape, and 021 is the reason.** Branching puts
     entries off the active path, and `get_entries` only serves the active path, so
     a client arriving afterwards CANNOT show rows a watcher saw. Equality would
     have failed a fixture that is demonstrating the tree working. Both runners now
     assert containment — every cold row exists in the watched transcript with the
     same fields, same `leafId` — and log the rows only the watcher saw, rather
     than filtering them away. See "Paired inputs" in vocab.md.
-  * **One divergence found, and it was a rule about WHEN an id is decided.** All
+  - **One divergence found, and it was a rule about WHEN an id is decided.** All
     92 rows agreed in kind, face, state, image count and leaf, and the cold run
     held the same 41 rows. Nine rows kept synthetic keys, and this client's
     counters sat five ahead: `user#6..9` / `assistant#7..11` where the reference
@@ -400,14 +413,14 @@ toolCall]`, `tool_execution_start`/`_end` for a `read`, the toolResult
     because they are what the UI keys an element by: a positional placeholder
     would shift every time a row above got anchored, and the element would remount
     mid-conversation.
-  * **What the durable vocabulary actually does:** a `compaction` entry folds to
+  - **What the durable vocabulary actually does:** a `compaction` entry folds to
     the same row a live `compaction_end` does; a `branch_summary` entry renders
     NOTHING in either fold (its parent is an ancestor of the old leaf, so the
     summary lives on the abandoned branch — visible only if the tree moves back
     there); 59 `custom` entries — an extension's state blobs — render nothing in
     either fold; an image tool result arrives cold as an `image` content block and
     the card shows `images: 1` exactly as the watched one does.
-  * **Two findings worth telling the owner.** (1) An entry appended to a live
+  - **Two findings worth telling the owner.** (1) An entry appended to a live
     session's JSONL out of band reaches nobody: `get_entries` answers from pi's
     in-memory `fileEntries`, never re-read from disk, and pi's own
     `getSessionName()` ignores it too. That is why `session_info` is not pinned by
@@ -415,7 +428,7 @@ toolCall]`, `tool_execution_start`/`_end` for a `read`, the toolResult
     (2) The client re-walks on a 6-second timer regardless of activity: 81 walk
     runs / 136 pages in ten minutes, 23 distinct leaf ids. `capture.py` collapses
     the interior runs; the cadence is a live-plane fact.
-  * **Two scrub traps this fixture sprang on me, recorded so the next capture does
+  - **Two scrub traps this fixture sprang on me, recorded so the next capture does
     not re-earn them.** A `«length»` marker is fine for a 120 KB tool result and
     fatal for MESSAGE text: row identity is a hash of message content, so marking
     a 3 190-character reply made the durable plane's text unmatchable with what a
@@ -452,7 +465,7 @@ toolCall]`, `tool_execution_start`/`_end` for a `read`, the toolResult
   expiry, without scraping the display string"
   (`extension/src/commands/pairing.ts:124-136`). With that in the fold the view
   draws a card — which room, valid until when, and the code + ASCII QR behind a
-  *show pairing code* reveal — instead of 30 lines of blocks with a live
+  _show pairing code_ reveal — instead of 30 lines of blocks with a live
   credential on screen by default. Verified live against the real entry that
   session had already written: "Pair a device · un-bien#2 · WF-jI-uORO6x ·
   expired 3:13:27 PM", reveal showing the URI (copyable) and 28 lines of QR.
@@ -465,7 +478,7 @@ toolCall]`, `tool_execution_start`/`_end` for a `read`, the toolResult
   frames were edit-family, and I read absence in one capture as a property of the
   wire. A turn asking the live session to `write` then `edit` a scratch file
   produced, in the extension's own envelope log (0.25.15), `aux.hunks attached:
-  edit (1 hunk(s))`, and this client drew that card with one hunk and four diff
+edit (1 hunk(s))`, and this client drew that card with one hunk and four diff
   lines (1 add, 1 remove, 2 context). So the sidecar does ride live — on the
   **start** frame, not on the result frame (`extension/src/session/rpc_envelope.ts:405`,
   comment at :420 — checked against the running 0.25.15 build too, where the same
@@ -503,7 +516,7 @@ toolCall]`, `tool_execution_start`/`_end` for a `read`, the toolResult
   without an `entryId` is a live-born marker and takes
   `SyntheticID.compaction(seq:)` — the sequence number alone, so the projection
   row reads `compaction@1`, not `compaction@compaction#1`. Every scenario before
-  017 replayed compaction *entries*, which carry pi's entry id, so this client's
+  017 replayed compaction _entries_, which carry pi's entry id, so this client's
   `kind#n` key sat wrong in a case the corpus could not see.
 
 - **Long bodies are clamped behind a control, not suppressed.** `/unbien pair`
@@ -512,8 +525,8 @@ toolCall]`, `tool_execution_start`/`_end` for a `read`, the toolResult
   row — ~30 lines of blocks whose pairing URI (and token) is then on screen in
   every attached client. This client keeps the row (the app has **no** special
   case for `un-bien:pair-code`; grep it and you find nothing, so folding it away
-  would diverge) and clamps anything taller than 12rem behind a *show more*
-  toggle. Whether the token *should* be visible to already-paired devices is an
+  would diverge) and clamps anything taller than 12rem behind a _show more_
+  toggle. Whether the token _should_ be visible to already-paired devices is an
   extension-side question, and not the one-liner it looks like: `display: false`
   would also take the QR out of the operator's own TUI, which is where it is
   needed — the alternative is a structured pairing view built from the
