@@ -1,7 +1,7 @@
 # Running and using the web client
 
 Practical steps: what has to be running, how to pair, what the buttons do, and how
-to capture a fixture. For *why* the fold is shaped the way it is, read `README.md`
+to capture a fixture. For _why_ the fold is shaped the way it is, read `README.md`
 and `../DESIGN.md`.
 
 Everything below was run against a real pi session on 2026-11-20.
@@ -63,7 +63,7 @@ it. If you ever want it always-on instead, set `RunAtLoad` back to true or run
 `/unbien install relay`, then `launchctl bootout` + `bootstrap` to apply.
 
 Caveat worth knowing: pi's extension and the launcher are also relay clients. With the
-relay down, `/unbien pair` says *"Pair requires the relay to be connected"* and the
+relay down, `/unbien pair` says _"Pair requires the relay to be connected"_ and the
 launcher retries silently every few seconds. Bring it up with
 `start.sh relay up` (or just run `dev`).
 
@@ -87,6 +87,14 @@ open `http://<your-host>.tail5f1ece.ts.net:5173`. Pairing crypto is Ed25519 from
 `@noble`, not WebCrypto, so plain `http` does **not** lock you out of pairing — the
 relay transport (`ws://` vs `wss://`) is the thing to think about, not the page.
 
+One exception worth knowing, because it bit this client: `crypto.randomUUID` is a
+**secure-context** API and is `undefined` on a plain-`http` origin (measured:
+`isSecureContext false`, `randomUUID undefined`, `getRandomValues` fine). Every
+request id therefore falls back to `crypto.getRandomValues` (`src/framing.ts`). A
+`TypeError` from that getter used to reject inside `pairAwaited`, and an `await`
+with no catch swallowed it: the pair button looked completely dead, with no error
+anywhere, on exactly the phone URL this section tells you to open.
+
 **On a phone, use `preview`, not `dev`:**
 
 ```sh
@@ -108,15 +116,23 @@ Open the drawer with **☰** (top left). Everything happens there.
    ```
    Copy the pairing **code** it prints (`unbien://pair?t=…&epk=…&n=…&rm=…`), give the
    device a name (e.g. `pixel-8-pro`), paste the code, press **pair**.
-   The header then reads *pairing…* → the machine's name.
+   The line under the code box is the verdict: _pairing…_ → green (paired, or
+   already paired) or red (refused, with the machine's reason). It is in the sheet
+   on purpose — while the sheet is open nothing outside it can be painted above
+   the modal `<dialog>`, which is where the header and the toast live.
 3. **Machines** — the paired machine appears as a card; each room (session) it
    advertises has an **attach** button. Attaching walks `get_entries` (paged, ending
    on the empty page) and renders the transcript, then keeps up live.
 
 Things worth knowing, because they explain the failures you'll otherwise chase:
 
-- **Codes are single-use.** Re-pairing needs a fresh `/unbien pair`. This is the
-  usual cause of *pairing refused*.
+- **Codes are single-use** and **expire 60 seconds** after `/unbien pair` prints
+  them (`TOKEN_TTL_MS` in `extension/src/pairing/qr.ts`). A code pasted from a
+  terminal five minutes later is dead. This is the usual cause of a red verdict.
+- **A device that is already paired stays paired.** The machine re-ACKs an owner it
+  already trusts without spending a token (`relay_lifecycle.ts:1052`), so the verdict
+  says _already paired … re-confirmed_ and no new card appears. That is a success, not
+  a no-op: press **attach** on a room, don't hunt for another code.
 - **A pairing is only valid on one relay** — the client says so if you try to use a
   code on the wrong relay URL.
 - The browser keeps **its own long-lived identity** and a **TOFU pin** on the relay's
@@ -129,7 +145,7 @@ Things worth knowing, because they explain the failures you'll otherwise chase:
 ## 4. Driving a session
 
 - **Composer** (bottom): type and press **send**. Idle → `prompt`. Mid-turn →
-  **send** *steers* the running turn.
+  **send** _steers_ the running turn.
 - **⏱** queues the message as a follow-up for after the current turn.
 - **■** (appears during a turn) aborts it.
 - **Asks / panels**: when pi asks a question (`select`, `confirm`), it renders as an
@@ -163,7 +179,7 @@ a dev-only tee of **every inbound envelope** into `window.__unbienFrames`; it is
 default and not sticky across a reload. Nothing in the app reads the buffer.
 
 ```js
-__unbienDump("026-my-shape")   // downloads JSONL, returns the frame COUNT
+__unbienDump("026-my-shape") // downloads JSONL, returns the frame COUNT
 ```
 
 The count is the diagnostic: **3 frames means you were never attached**, not that the
@@ -214,15 +230,17 @@ That output file **is your session** — prompts, tool output, paths. `/tmp`, ne
 
 ## 9. When it does not work
 
-| Symptom | Likely cause |
-| --- | --- |
-| `pairing refused: …` | code already used, or you are on a different relay than when it was minted |
-| Header stuck at `not connected` | relay URL typo/scheme, relay not up, or port 3000 in use by another relay |
-| Client refuses the socket, mentions "a different relay" | relay key changed since you paired — the TOFU pin, working as designed |
-| Page full-reloads on a phone | you are on `dev`, not `preview` |
-| Transcript stops mid-turn but the machine kept going | you are attached to a different room, or the machine re-announced and the re-attach is mid-walk |
-| `__unbienDump` returns a tiny count | you were never attached — attach first, the tee only records while connected |
-| Port 5173 busy | `strictPort: true`: the server refuses to pick another port, kill the other instance |
+| Symptom                                                       | Likely cause                                                                                    |
+| ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `pairing refused: …`                                          | code already used, or you are on a different relay than when it was minted                      |
+| red line: `Token was not issued by this Pi` / `token expired` | the code is spent or older than 60s — run `/unbien pair` again                                  |
+| green line: `already paired … re-confirmed`, no new card      | this browser already holds that pairing — press **attach** on a room                            |
+| Header stuck at `not connected`                               | relay URL typo/scheme, relay not up, or port 3000 in use by another relay                       |
+| Client refuses the socket, mentions "a different relay"       | relay key changed since you paired — the TOFU pin, working as designed                          |
+| Page full-reloads on a phone                                  | you are on `dev`, not `preview`                                                                 |
+| Transcript stops mid-turn but the machine kept going          | you are attached to a different room, or the machine re-announced and the re-attach is mid-walk |
+| `__unbienDump` returns a tiny count                           | you were never attached — attach first, the tee only records while connected                    |
+| Port 5173 busy                                                | `strictPort: true`: the server refuses to pick another port, kill the other instance            |
 
 This is a **spike**: no offline story, no push notifications, one file per concern, and
 the dev-server exposure above is not a deployment. A real one wants TLS, a static host,
