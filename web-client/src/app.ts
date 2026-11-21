@@ -23,6 +23,7 @@ import {
   type Inline,
 } from "./markdown.js"
 import { parseInvite } from "./invite.js"
+import { describeError, toastMessage } from "./notice.js"
 import {
   forgetPeer,
   forgetLastRoom,
@@ -454,9 +455,7 @@ export class App {
       void this.resumeSession()
     } catch (err) {
       this.statusDot.className = "dot idle"
-      this.toast(
-        `connect failed: ${err instanceof Error ? err.message : String(err)}`,
-      )
+      this.toast(`connect failed: ${describeError(err)}`)
     }
   }
 
@@ -474,15 +473,19 @@ export class App {
     try {
       invite = parseInvite(code)
     } catch (err) {
-      this.toast(err instanceof Error ? err.message : String(err))
+      this.toast(describeError(err))
       return
     }
 
     this.sub.textContent = "pairing…"
     const verdict = await this.client.pairAwaited(invite, deviceName)
     if (!verdict.ok) {
-      this.sub.textContent = `pairing refused: ${verdict.detail}`
-      this.toast(`pairing refused: ${verdict.detail}`)
+      this.sub.textContent = `pairing refused: ${
+        verdict.detail?.trim() || "no reason given"
+      }`
+      this.toast(
+        `pairing refused: ${verdict.detail?.trim() || "no reason given"}`,
+      )
       return
     }
     const paired: PairedPeer = {
@@ -1279,7 +1282,12 @@ export class App {
     // refusal, a re-sync, a machine that went away) and the old code showed
     // only the LAST of them for 4 seconds — the most important message lost to
     // a later cosmetic one.
-    this.toastLines.push(message)
+    //
+    // An empty message is not a message: it used to render as a small empty
+    // amber pill, a visible nothing. Drop it instead.
+    const text = toastMessage(message)
+    if (text === null) return
+    this.toastLines.push(text)
     if (this.toastLines.length > 3) this.toastLines.shift()
     this.toastEl.replaceChildren(
       ...this.toastLines.map((line) => el("div", "toast-line", line)),
