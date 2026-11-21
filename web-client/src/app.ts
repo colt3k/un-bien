@@ -338,7 +338,10 @@ export class App {
     $("drawerToggle").addEventListener("click", () => {
       if (!this.drawer.open) this.drawer.showModal()
     })
-    $("drawerClose").addEventListener("click", () => this.drawer.close())
+    // Two close controls (top ✕, sticky bottom bar) — both dismiss the same way.
+    for (const btn of this.drawer.querySelectorAll(".drawer-close")) {
+      btn.addEventListener("click", () => this.drawer.close())
+    }
     // Tap the dimmed area (the dialog box itself, outside its content) to dismiss.
     this.drawer.addEventListener("click", (event: MouseEvent) => {
       if (event.target === this.drawer) this.drawer.close()

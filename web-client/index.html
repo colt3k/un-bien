@@ -35,7 +35,12 @@
           <span class="drawer-title">Machines</span>
           <!-- Explicit dismissal: the page behind is inert while the dialog is
                open, so the ☰ that opened it cannot be clicked to close it. -->
-          <button id="drawerClose" class="icon" aria-label="Close" autofocus>
+          <button
+            id="drawerClose"
+            class="icon drawer-close"
+            aria-label="Close"
+            autofocus
+          >
             ✕
           </button>
         </div>
@@ -86,6 +91,14 @@
             <span>Hide thinking</span>
           </label>
         </section>
+
+        <!-- Sticky bottom bar: the ✕ above is ~800px from the bottom edge on a
+             phone viewport, i.e. the worst place to reach one-handed. -->
+        <div class="drawer-foot">
+          <button id="drawerCloseBottom" class="drawer-close wide">
+            Close
+          </button>
+        </div>
       </dialog>
 
       <main id="transcript" class="transcript" aria-live="polite"></main>

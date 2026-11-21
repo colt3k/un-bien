@@ -103,7 +103,10 @@ textarea:focus {
      edge drawer, so reset it and place it ourselves. */
   inset: 0 auto 0 0;
   margin: 0;
-  width: min(92vw, 380px);
+  /* Leave ~20% of the page visible on a phone: that sliver is the affordance
+     that says "tap outside to dismiss". At 92vw it was a 31px sliver on an
+     iPhone 15 viewport — technically tappable, practically invisible. */
+  width: min(80vw, 360px);
   height: 100%;
   max-width: none;
   max-height: none;
@@ -128,6 +131,24 @@ textarea:focus {
   justify-content: space-between;
   gap: 8px;
   margin-bottom: 4px;
+}
+
+/* Sticky so it is always where the thumb already is, whatever is scrolled. */
+.drawer-foot {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  gap: 8px;
+  margin: 16px -14px calc(-16px - env(safe-area-inset-bottom));
+  padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+}
+
+.drawer-close.wide {
+  flex: 1;
+  min-height: 44px;
+  font-size: 14px;
 }
 
 .drawer-title {
