@@ -375,14 +375,18 @@ describe("the compaction row opens when the summary call starts", () => {
     expect(rowsOf(reducer)).toEqual(["1|Compaction cancelled|settled|failed"])
   })
 
-  it("a failure with no row open adds nothing", () => {
-    // `/compact` on a session too small fails BEFORE the hook, so no row was
-    // ever opened. A failure row for a compaction nobody saw start is a phantom.
+  it("a refusal with no row open IS the event, not a phantom", () => {
+    // `/compact` on a session too small, or on one already compacted, fails
+    // BEFORE the hook, so no row was ever opened. Dropping the frame left the
+    // viewer blank while pi printed the error in its own TUI — which is what
+    // "the compact notice doesn't show" turned out to mean.
     const reducer = new TranscriptReducer()
     reducer.apply(
       failed({ errorMessage: "Compaction failed: Already compacted" }),
     )
-    expect(rowsOf(reducer)).toEqual([])
+    expect(rowsOf(reducer)).toEqual([
+      "1|Compaction failed: Already compacted|settled|failed",
+    ])
   })
 
   it("keeps the session busy across the compaction, even a manual one", () => {
@@ -397,6 +401,50 @@ describe("the compaction row opens when the summary call starts", () => {
     expect(reducer.snapshot().flags.streaming).toBe(false)
     reducer.apply(failed({ aborted: true }))
     expect(reducer.snapshot().busy).toBe(false)
+  })
+
+  it("a refusal that never started still gets a row — it is the only signal", () => {
+    // pi throws `Nothing to compact (session too small)` (and `Already
+    // compacted`) BEFORE `session_before_compact`, so no start frame is ever
+    // broadcast and the failed `compaction_end` is the WHOLE event. The TUI
+    // prints it; a viewer that drops it shows a blank transcript next to a
+    // terminal in error, which is exactly the report this fixes.
+    const reducer = new TranscriptReducer()
+    reducer.apply({
+      rpc: {
+        type: "compaction_end",
+        reason: "manual",
+        errorMessage: "Nothing to compact (session too small)",
+        aborted: false,
+      },
+    } as never)
+    const rows = () =>
+      reducer.snapshot().items.filter((item) => item.kind === "compaction")
+    const at = (i: number) => rows()[i]
+    expect(rows().length).toBe(1)
+    expect(at(0)?.state).toBe("failed")
+    expect(at(0)?.text).toBe("Nothing to compact (session too small)")
+    // Two attempts, two events — and a refusal writes no entry, so the durable
+    // walk must never anchor it.
+    reducer.apply({
+      rpc: { type: "compaction_end", reason: "manual" },
+    } as never)
+    expect(rows().length).toBe(2)
+    expect(at(1)?.text).toBe("Compaction failed")
+    reducer.applyEntries(
+      [
+        {
+          type: "compaction",
+          id: "entry-9",
+          summary: "s",
+          tokensBefore: 1234,
+        },
+      ] as never,
+      "entry-9",
+      true,
+    )
+    expect(rows().length).toBe(3)
+    expect(at(0)?.text).toBe("Nothing to compact (session too small)")
   })
 
   it("a machine that never sends compaction_start still behaves as before", () => {

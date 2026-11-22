@@ -54,6 +54,11 @@ describe("outer framing", () => {
     expect(inbound.kind).toBe("envelope")
     if (inbound.kind === "envelope") {
       expect(inbound.frame.rpc).toMatchObject({ type: "message_end" })
+      // The room the relay routed it on — the only thing that lets a viewer
+      // holding one room drop the traffic of the machine's OTHER rooms. Without
+      // it the transcript of the room you switched to quietly absorbs rows from
+      // the room you left.
+      expect(inbound.room).toBe("aB12CD34eF56")
     }
   })
 

@@ -734,10 +734,7 @@ export class TranscriptReducer {
           // No result: pi's failure/cancel frame (a failed compaction appends no
           // entry, so `session_compact` never fires). Whatever row is still
           // waiting for this compaction has to stop saying the machine is
-          // summarizing. With NO open row there is nothing to explain — the hook
-          // that opens one never ran (`/compact` on a session too small to
-          // compact fails before the hook), and a failure row for a compaction
-          // no viewer ever saw start is a phantom.
+          // summarizing.
           const row = this.openCompactions.shift()
           if (row !== undefined) {
             const item = this.byRow.get(row)
@@ -751,7 +748,33 @@ export class TranscriptReducer {
             }
             const at = this.unanchoredLiveCompactions.indexOf(row)
             if (at >= 0) this.unanchoredLiveCompactions.splice(at, 1)
+            break
           }
+          // With NO open row the refusal landed BEFORE pi's hook — a session too
+          // small to compact, or `Already compacted` — so no viewer ever saw a
+          // start. Dropping the frame (the earlier call, called a phantom) is
+          // what made `/compact` look like a no-op: pi prints the error in its
+          // own TUI, so the terminal says "Compaction failed: Nothing to compact
+          // (session too small)" while the viewer shows a blank transcript. The
+          // refusal is the event; there is nothing else to report.
+          //
+          // Deliberately NOT registered as an unanchored live compaction: a
+          // refusal writes no entry, so nothing will ever anchor it, and letting
+          // a later compaction's entry match this row would stamp the wrong
+          // token count onto the wrong event.
+          this.push({
+            kind: "compaction",
+            row: this.nextCompactionId(),
+            text: compactionFailureCaption(
+              rpc.errorMessage,
+              rpc.aborted === true,
+            ),
+            streaming: false,
+            state: "failed",
+            blocks: [],
+            images: 0,
+            replayStable: false,
+          })
           break
         }
         const tokens =
