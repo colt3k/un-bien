@@ -125,6 +125,13 @@ Open the drawer with **☰** (top left). Everything happens there.
    already paired) or red (refused, with the machine's reason). It is in the sheet
    on purpose — while the sheet is open nothing outside it can be painted above
    the modal `<dialog>`, which is where the header and the toast live.
+   Once at least one machine is paired the section **starts folded**, labelled
+   **paired** (**3 paired** if there are three): an empty code box sitting above a
+   list of machines you already own reads like a step still owed. The heading is the
+   toggle (a real `<h2><button aria-expanded>` — a heading inside `<summary>` is
+   dropped by JAWS and TalkBack), and the fold is decided as the sheet opens, never
+   during a pairing attempt, so a verdict cannot be collapsed half-read. The hidden
+   fields use `hidden="until-found"`, so they stay reachable to find-in-page.
 3. **Machines** — the paired machine appears as a card; each room (session) it
    advertises has an **attach** button. Attaching walks `get_entries` (paged, ending
    on the empty page) and renders the transcript, then keeps up live.
@@ -164,6 +171,63 @@ Things worth knowing, because they explain the failures you'll otherwise chase:
   re-subscribe, re-attach, pin still valid).
 - **unpair** on a machine card drops the local identity — **also** revoke the pairing
   on the machine with `/unbien revoke`. **forget** on a relay card drops that relay.
+
+### Starting a session where none is running (remote launch)
+
+A paired machine's card carries **new conversation** when the machine has a launcher
+control room — the daemon, not a pi session (`is_daemon` cap). It opens a form in place
+of the transcript (a control room has no transcript, and a composer pointed at it would
+be a dead input): **folder** plus an optional **name**, then **launch** sends
+`ub.session_launch` to that room, and the daemon spawns a pi window through tmux/herdr/Rex.
+
+**The folder list comes from the machine.** Opening the panel asks
+`ub.session_launch_dirs`, and the daemon answers `session_launch_dirs_result`: each
+`launch.dirs` root, absolute, with its **immediate** child folders (never deeper — that
+is the machine's decision, and a device that could walk the tree could read a home
+directory). They appear in the folder field's OWN dropdown (a `<datalist>`), labelled
+with the whole path and sorted by full path ignoring case — `myai` alone would not tell
+you which root it came from. There is no second list of folders on the panel: one control,
+one set of paths. `~` in the config is expanded machine-side; the device never guesses, and
+a typed path is always accepted.
+Picking a folder sets the path **and moves the name to its last component**
+(`/Users/gfcollin/x/a/b/c` → `c`) — picking a different folder means a different project,
+so the name follows. A name you typed yourself is never replaced; only the client's own
+previous suggestion is. Pressing Enter names the session the same way.
+What the answer is not, it says out loud: `wildcard` (`launch.dirs: "*"` — type anything),
+`locked` (`launch.dirs: []` — nothing can launch), `allow_remote_launch` off, a root that
+isn't on the machine right now, or an older daemon that never answers (then the form keeps
+working with a typed path).
+
+Two things about that room are worth knowing, because both look like a client bug:
+
+- **The control room is a room like any other.** `rooms_check` lists it — measured on a
+  live relay: `HI5OxguNw8Nl`, name `Gils-MacBook-Pro.local`, cwd `/Users/gfcollin`, caps
+  `["remote_launch", "is_daemon", "session_resume"]` — sitting next to the pi session's
+  room.
+  It is aged by `MISSING_GRACE` like a session, so when the daemon dies its card (and the
+  launch button) goes away after a couple of refreshes — that is the signal working, not
+  the client forgetting. The launcher log ends and `launchctl print gui/$UID/com.georgeharker.unbien.launcher`
+  shows `last exit code = 78: EX_CONFIG`: the classic cause is a **stale absolute node path**
+  baked into the LaunchAgent after a Homebrew node bump. `unbien-admin install` re-snapshots
+  node and PATH; the daemon then re-announces and the button is back.
+- **`refresh` twice can print "relay did not answer the session listing".** The relay keeps
+  the last `rooms` response per connection and SUPPRESSES an identical repeat
+  (`rooms_suppressed` metric), so the second identical listing never arrives and
+  `listRooms` times out. Nothing is wrong — the last known list stands. The client now only
+  says this when the machine's card is already empty.
+
+The client targets the **`is_daemon`** room specifically. A pi in a folder with
+`allow_remote_launch` advertises `remote_launch` too (and answers `session_launch`), but its
+room is a chat: grabbing it would hide the transcript the user is reading and take away its
+attach button.
+
+The machine answers with `session_launch_result`; a refusal is printed under the form
+with the setting that owns it (`launch.dirs` allow-list, `allow_remote_launch`, a folder
+that does not exist, a missing backend). Success is confirmed twice: the result frame, then
+the launched session's announce, whose `launchReq` echoes the request id — that match is
+what auto-opens the new chat. Verified end to end 2026-11-21 against a real daemon:
+`/Users/gfcollin/Desktop` → `permission_denied` + the allow-list hint; `~/dev/myai` →
+pi in a tmux window named `web-smoke`, browser attached to it a second later.
 
 ## 5. Watching a real session (what we actually do here)
 

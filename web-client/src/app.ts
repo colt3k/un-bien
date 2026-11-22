@@ -5,8 +5,11 @@ import {
   type RoomInfo,
 } from "./session-client.js"
 import {
+  applyRoomUpdate,
+  controlRoomOf,
   isControlRoom,
   isViewableSession,
+  launchedRoom,
   mergeRoomLists,
   roomFacts,
   roomTag,
@@ -37,8 +40,22 @@ import {
 } from "./transcript-window.js"
 import { parseInvite, type PairingInvite } from "./invite.js"
 import { RELAY_PORT, relayUrlForPage } from "./framing.js"
-import { describeError, toastMessage } from "./notice.js"
-import { pairResultMessage } from "./pair-status.js"
+import { tokenize } from "./highlight.js"
+import {
+  dirChoices,
+  dirsHint,
+  launchNameFor,
+  nextAutoName,
+  parseLaunchDirs,
+  type LaunchDirChild,
+  type LaunchDirsAnswer,
+} from "./launch-dirs.js"
+import { describeError, launchFailureHint, toastMessage } from "./notice.js"
+import {
+  pairResultMessage,
+  pairSectionBadge,
+  pairSectionOpens,
+} from "./pair-status.js"
 import {
   forgetPeer,
   forgetLastRoom,
@@ -47,12 +64,14 @@ import {
   lastRoom,
   listPeers,
   listRelays,
+  monoProse,
   recordRelayPin,
   rememberPeer,
   rememberLastRoom,
   rememberRelay,
   relayPinFor,
   setHideReasoning,
+  setMonoProse,
   type PairedPeer,
 } from "./store.js"
 
@@ -113,6 +132,9 @@ interface ActiveSession {
   /** The pi sessionId, from `ub hello`. A new one on a stable room means a
    *  different session reused the room. */
   sessionId?: string
+  /** A launcher's control room, not a pi session: routable, but with no
+   *  transcript and no composer. A reconnect re-points it without a replay. */
+  control?: boolean
 }
 
 let toastTimer: ReturnType<typeof setTimeout> | undefined
@@ -270,7 +292,20 @@ export function blockNodes(blocks: Block[]): Node[] {
     switch (block.type) {
       case "code": {
         const pre = el("pre", "md-code")
-        pre.append(el("code", undefined, block.text))
+        const code = document.createElement("code")
+        // pi colours a block it recognises token by token, and one it does not
+        // as a single colour (`mdCodeBlock` — the green in its transcript).
+        // Same split here, so an unknown fence is coloured rather than left flat.
+        const tokens = tokenize(block.text, block.lang)
+        if (tokens === null) code.classList.add("md-code-plain")
+        else
+          for (const token of tokens)
+            code.append(
+              token.role === "plain"
+                ? token.text
+                : el("span", `tk-${token.role}`, token.text),
+            )
+        pre.append(code)
         nodes.push(pre)
         break
       }
@@ -373,13 +408,38 @@ export class App {
   private readonly toastEl = $<HTMLElement>("toast")
   /** The pair verdict, rendered inside the sheet — see `pair-status.ts`. */
   private readonly pairStatusEl = $<HTMLElement>("pairStatus")
+  /**
+   * The "Pair a machine" disclosure. `aria-expanded` on the trigger is the
+   * state; the form itself hides with `hidden="until-found"`, whose IDL getter
+   * reads false, so the boolean is kept here rather than re-read from the DOM.
+   */
+  private readonly pairToggle = $<HTMLButtonElement>("pairToggle")
+  private readonly pairForm = $<HTMLElement>("pairForm")
+  private readonly pairState = $<HTMLElement>("pairState")
+  private pairFormOpen = true
   /** The notice stack while the sheet is open. See `renderNotices`. */
   private readonly noticeEl = $<HTMLElement>("noticeBar")
   private readonly input = $<HTMLTextAreaElement>("input")
   private readonly stopBtn = $<HTMLButtonElement>("stopBtn")
   private readonly sendBtn = $<HTMLButtonElement>("sendBtn")
+  /** Hidden while a control room is open — see `joinControlRoom`. */
+  private readonly composer = $<HTMLElement>("composer")
+  private readonly launchPanel = $<HTMLElement>("launchPanel")
+  private readonly launchHeading = $<HTMLElement>("launchHeading")
+  private readonly launchCwd = $<HTMLInputElement>("launchCwd")
+  private readonly launchName = $<HTMLInputElement>("launchName")
+  private readonly launchNote = $<HTMLElement>("launchNote")
+  /** The machine-reported allow-list, offered as the FOLDER FIELD'S OWN dropdown
+   *  (`<datalist>`), so picking a path is part of filling the field in rather
+   *  than a second control to cross-reference. See `launch-dirs.ts`. */
+  private readonly launchDirsHint = $<HTMLElement>("launchDirsHint")
+  private readonly launchDirOptions = $<HTMLDataListElement>("launchDirOptions")
   /** Reasoning rows are folded always and hidden here — see `render`. */
   private reasoningHidden = hideReasoning()
+  /** One monospace grid for the whole transcript, as pi's terminal sets it. A
+   *  preference, not a redesign: it is the closest thing to pi and the least
+   *  legible on a narrow screen, so the user decides. */
+  private monoProseMode = monoProse()
 
   private client: SessionClient | null = null
   private relayUrl = ""
@@ -401,6 +461,22 @@ export class App {
   private busy = false
   /** A pair request in flight (up to the 15s verdict timeout). */
   private pairBusy = false
+  /** A `session_launch` we asked for and have not seen the room for. The id is
+   *  the correlation key: the machine echoes it in `session_launch_result
+   *  .in_reply_to` and, once pi starts, in the new room's `launchReq`. */
+  private pendingLaunch: { id: string; epk: string; cwd: string } | null = null
+  private launchTimer: ReturnType<typeof setTimeout> | undefined
+  /** A `session_launch_dirs` request in flight, correlated the same way: the id
+   *  is echoed in `session_launch_dirs_result.in_reply_to`, so an answer for a
+   *  control room the user has already left is dropped. */
+  private pendingDirs: { id: string; epk: string } | null = null
+  private dirsTimer: ReturnType<typeof setTimeout> | undefined
+  /** The paths the machine offered. Kept so a value that is EXACTLY one of them
+   *  counts as a pick while typing (and only then does the name follow). */
+  private launchChoices: LaunchDirChild[] = []
+  /** The name this client last pre-filled. That is what makes it safe to
+   *  replace later: a name the user typed themselves never is. */
+  private autoFilledName = ""
   /** Debounce for the post-turn re-read (a turn ends with several frames). */
   private resyncTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -448,10 +524,19 @@ export class App {
     // Keep aria-expanded honest for whatever path closed it (✕, Escape, backdrop).
     this.drawer.addEventListener("toggle", () => {
       $("drawerToggle").setAttribute("aria-expanded", String(this.drawer.open))
+      // Deciding the pairing form's state as the sheet opens — rather than the
+      // moment a pairing lands — keeps the verdict readable: collapsing the
+      // section that holds it would fold it away under the hand that just
+      // pressed `pair`. A sheet opened later shows it collapsed and `paired`.
+      if (this.drawer.open)
+        this.setPairFormOpen(pairSectionOpens(this.peers.size))
       // A notice stack does not get to disappear because the half of the screen
       // it was painted in just closed. Re-render it into whichever is visible.
       if (this.toastLines.length > 0) this.renderNotices()
     })
+    this.pairToggle.addEventListener("click", () =>
+      this.setPairFormOpen(!this.pairFormOpen),
+    )
     $("relayConnect").addEventListener("click", () => {
       const url = $<HTMLInputElement>("relayUrl").value.trim()
       if (url) void this.connect(url)
@@ -465,6 +550,23 @@ export class App {
       this.window = growWindow(this.window, this.lastItemCount, LOAD_MORE)
       this.render()
     })
+    $("launchClose").addEventListener("click", () => this.closeLaunchPanel())
+    $("launchBtn").addEventListener("click", () => this.requestLaunch())
+    for (const field of [this.launchCwd, this.launchName]) {
+      field.addEventListener("keydown", (event: KeyboardEvent) => {
+        if (event.key === "Enter") {
+          event.preventDefault()
+          this.requestLaunch()
+        }
+      })
+    }
+    // A value that is exactly one of the offered paths — a dropdown pick, a
+    // paste, or retyping a whole path — counts as picking it, so the name
+    // follows it.
+    this.launchCwd.addEventListener("input", () => this.applyNameIfPicked())
+    // A TYPED path is a selection too, once the field commits: tabbing out or
+    // pressing Enter names the session after the folder they wrote.
+    this.launchCwd.addEventListener("change", () => this.applyNameForCwd())
     this.sendBtn.addEventListener("click", () => this.send("auto"))
     $("queueBtn").addEventListener("click", () => this.send("queue"))
     this.stopBtn.addEventListener("click", () => this.client?.abort())
@@ -491,6 +593,16 @@ export class App {
       // Re-render: hidden rows leave the DOM, shown rows come back with their
       // keys, because the reducer kept folding them the whole time.
       this.render()
+    })
+    // Typeface is a class on the transcript, not a re-render: the rows and
+    // their keys do not move, only the grid they are set on.
+    const monoBox = $<HTMLInputElement>("monoProse")
+    monoBox.checked = this.monoProseMode
+    this.transcript.classList.toggle("mono-prose", this.monoProseMode)
+    monoBox.addEventListener("change", () => {
+      this.monoProseMode = monoBox.checked
+      setMonoProse(this.monoProseMode)
+      this.transcript.classList.toggle("mono-prose", this.monoProseMode)
     })
   }
 
@@ -535,7 +647,13 @@ export class App {
       // the protocol's incremental path, not a full re-dump.
       client.subscribeRooms([...this.peers.keys()])
       void this.refreshRooms()
-      if (this.active)
+      if (this.active?.control) {
+        // A control room has no transcript to re-read. Re-point the routing so
+        // the launch panel keeps working after the socket came back; a full
+        // attach would ask a daemon for `get_entries` and never be answered.
+        this.client?.setRoutingPeer(this.active.epk)
+        this.client?.setRoom(this.active.roomId)
+      } else if (this.active)
         void this.attach(this.active.epk, this.active.roomId, this.active.name)
     })
 
@@ -642,6 +760,34 @@ export class App {
    * screen reader; the three states are coloured so a green line cannot be
    * mistaken for the amber one.
    */
+  /**
+   * Open or fold the pairing form. `hidden="until-found"` rather than `hidden`:
+   * a collapsed form's fields (and the hint telling you where the code comes
+   * from) stay reachable to the browser's own find-in-page, which is what a
+   * disclosure is supposed to do instead of making text vanish.
+   */
+  private setPairFormOpen(open: boolean): void {
+    this.pairFormOpen = open
+    this.pairToggle.setAttribute("aria-expanded", String(open))
+    if (open) this.pairForm.removeAttribute("hidden")
+    else this.pairForm.setAttribute("hidden", "until-found")
+  }
+
+  /**
+   * The trigger's state badge. An open pairing form next to a machine already
+   * in the list reads as a step still owed; "paired" is what says it is not.
+   */
+  private renderPairState(): void {
+    const badge = pairSectionBadge(this.peers.size)
+    this.pairState.hidden = badge === null
+    if (badge) this.pairState.textContent = badge
+    // The trigger must not advertise an expanded section that the collapsed
+    // state has already hidden, so the fold is decided here too — but only while
+    // the sheet is shut, never under a pairing attempt in progress.
+    if (!this.drawer.open)
+      this.setPairFormOpen(pairSectionOpens(this.peers.size))
+  }
+
   private setPairStatus(text: string, kind: "pending" | "ok" | "error"): void {
     this.pairStatusEl.textContent = text
     this.pairStatusEl.className = `pair-status ${kind}`
@@ -655,12 +801,38 @@ export class App {
       case "room_announced":
       case "room_meta_updated": {
         const epk = String(frame.peer ?? "")
-        const room = frame as unknown as RoomInfo
-        if (!epk || !room.room_id) return
-        // Merge, don't replace: registration and metadata arrive separately,
-        // and a reply that omits a field means "not stated", not "now empty".
-        this.rooms.set(epk, mergeRoomLists(this.rooms.get(epk) ?? [], [room]))
+        // Two shapes, one handler: `room_announced` carries the room FLAT, while
+        // `room_meta_updated` nests what changed under `meta` (both taken from a
+        // captured relay frame log). Casting the whole meta frame — as this did —
+        // stated only `room_id` and filed `meta`/`type`/`peer` onto the room.
+        const roomId = String(frame.room_id ?? "")
+        if (!epk || !roomId) return
+        const room: RoomInfo =
+          frame.type === "room_announced"
+            ? ({ ...frame, room_id: roomId } as unknown as RoomInfo)
+            : { ...(frame.meta as RoomInfo | undefined), room_id: roomId }
+        // One frame, one room: apply it as an UPDATE, not as a listing. Run
+        // through the listing merge, each metadata push of a live session was a
+        // miss for every other room the machine owns — which deleted the
+        // launcher's control room seconds after load and its launch button with
+        // it. See `applyRoomUpdate`.
+        this.rooms.set(epk, applyRoomUpdate(this.rooms.get(epk) ?? [], room))
         this.renderPeerList()
+        // The room one of OUR launches produced, if this announce carries the
+        // request id back: open it, the way the app does. Exact match only — a
+        // new room that does not echo the id may be another device's session.
+        const pending = this.pendingLaunch
+        if (pending && pending.epk === epk && frame.type === "room_announced") {
+          const launched = launchedRoom(this.rooms.get(epk) ?? [], pending.id)
+          if (launched) {
+            this.pendingLaunch = null
+            clearTimeout(this.launchTimer)
+            this.setLaunchNote("session is live — opening it")
+            this.toast("session is live — opening it")
+            void this.attach(epk, launched.room_id, roomTitle(launched))
+            break
+          }
+        }
         // A re-announcement of the room being driven means the machine came
         // back on the same room id — pi restarted, so the history we hold is
         // stale (new session, entries possibly replaced). The relay does not
@@ -728,7 +900,17 @@ export class App {
         )
       // A failed lookup leaves the last known list standing: an error reply is
       // not evidence that the machine's rooms disappeared.
-      if (result.status !== "ok") this.sub.textContent = explainRooms(result)
+      // Said only when the machine's card is already empty. A second identical
+      // `rooms_check` on the same connection is SUPPRESSED by the relay
+      // (relay/src/handlers/peer.rs keeps `last_rooms_resp` and counts a
+      // rooms_suppressed metric), so pressing refresh twice reliably "times
+      // out" here — a healthy machine, nothing changed. The case worth naming
+      // is the one the user can act on: nothing known and nothing answering.
+      if (
+        result.status !== "ok" &&
+        (this.rooms.get(peer.epk) ?? []).length === 0
+      )
+        this.sub.textContent = explainRooms(result)
     }
     this.renderPeerList()
   }
@@ -765,9 +947,30 @@ export class App {
       const refresh = el("button", undefined, "refresh")
       refresh.addEventListener("click", () => void this.refreshRooms())
       card.append(refresh)
+      // Machine-level launch, on the machine card rather than on the control
+      // room's row: that is where the app puts it, and it works without the
+      // "control rooms" checkbox (the room is hidden by default but still known).
+      const all = this.rooms.get(peer.epk) ?? []
+      const control = controlRoomOf(all)
+      if (control) {
+        const launch = el("button", undefined, "new conversation")
+        launch.addEventListener("click", () =>
+          this.joinControlRoom(peer.epk, control),
+        )
+        card.append(launch)
+      } else if (all.length > 0) {
+        // Rooms but no launcher: the machine is reachable, it just has nothing
+        // to start a session with. Naming the fix beats a missing button.
+        card.append(
+          el(
+            "div",
+            "meta",
+            "no launcher daemon here — run `/unbien install` in Pi",
+          ),
+        )
+      }
       host.append(card)
 
-      const all = this.rooms.get(peer.epk) ?? []
       const hidden = all.filter(isControlRoom).length
       for (const room of visibleRooms(
         all,
@@ -818,6 +1021,8 @@ export class App {
           ),
         )
     }
+    // The heading above the list carries the same fact the list proves.
+    this.renderPairState()
   }
 
   private renderRelayList(): void {
@@ -847,12 +1052,193 @@ export class App {
 
   // ── attach + transcript ───────────────────────────────────────────────────
 
+  /**
+   * Point the client at a machine's launcher control room and show the launch
+   * form. Routing is exactly an attach; the transcript replay is deliberately
+   * skipped — a daemon does not serve `get_entries` (scripts/dump-entries.ts
+   * refuses the same room for the same reason), so a normal attach would sit
+   * at "machine not answering" forever.
+   */
+  private joinControlRoom(epk: string, room: TrackedRoom): void {
+    const client = this.client
+    if (!client) return
+    client.setRoutingPeer(epk)
+    client.setRoom(room.room_id)
+    this.active = {
+      epk,
+      roomId: room.room_id,
+      name: room.name ?? room.room_id,
+      caps: room.caps ?? [],
+      control: true,
+    }
+    // Not remembered as the last room: there is nothing to restore into a
+    // control room, and `resumeSession` filters to viewable sessions anyway —
+    // a reload should come back to the chat, not to a launch form.
+    this.reducer.reset()
+    this.rowEls.clear()
+    this.window = null
+    this.lastItemCount = 0
+    this.transcript.replaceChildren()
+    this.transcript.hidden = true
+    this.composer.hidden = true
+    $("loadEarlier").hidden = true
+    this.launchHeading.textContent = `New conversation on ${room.name ?? "this machine"}`
+    // The daemon's own cwd is a hint about where this machine starts, not an
+    // answer: it is the launcher process's cwd, almost never the project.
+    this.launchCwd.placeholder = room.cwd || "/absolute/path/to/project"
+    // Ask what may be launched into — the machine is the only one who knows.
+    this.requestLaunchDirs(epk)
+    this.setLaunchNote("")
+    this.launchPanel.hidden = false
+    if (this.drawer.open) this.drawer.close()
+    this.title.textContent = room.name ?? "control room"
+    this.sub.textContent = `launcher room ${room.room_id.slice(0, 8)} · ${room.caps?.length ?? 0} capabilities`
+    this.launchCwd.focus()
+  }
+
+  /** Back to a normal viewer: the panel goes away, the composer returns. */
+  private closeLaunchPanel(): void {
+    this.launchPanel.hidden = true
+    this.transcript.hidden = false
+    this.composer.hidden = false
+    this.active = null
+    this.cancelDirsRequest()
+    this.title.textContent = "not attached"
+    this.sub.textContent = "pick a session from the machines panel"
+  }
+
+  private setLaunchNote(text: string): void {
+    this.launchNote.textContent = text
+    this.launchNote.hidden = text === ""
+  }
+
+  private setLaunchDirsHint(text: string): void {
+    this.launchDirsHint.textContent = text
+    this.launchDirsHint.hidden = text === ""
+  }
+
+  private cancelDirsRequest(): void {
+    this.pendingDirs = null
+    clearTimeout(this.dirsTimer)
+  }
+
+  /** Ask the machine which folders may be launched into.
+   *
+   * The allow-list lives on the machine and is a prefix test against ITS
+   * filesystem (`launchDirAllowed`), so the browser cannot derive it — and
+   * `~/dev/myai` in the user's config means nothing over here. An older daemon
+   * that has never heard of the request simply does not answer, which is why a
+   * typed path always stays available.
+   */
+  private requestLaunchDirs(epk: string): void {
+    this.cancelDirsRequest()
+    this.launchChoices = []
+    this.launchDirOptions.replaceChildren()
+    this.setLaunchDirsHint("")
+    const client = this.client
+    if (!client) return
+    const id = client.sendUb("session_launch_dirs")
+    this.pendingDirs = { id, epk }
+    this.dirsTimer = setTimeout(() => {
+      if (this.pendingDirs?.id !== id) return
+      this.pendingDirs = null
+      // Said only when the user has nothing to work with: someone mid-typing a
+      // path does not need a banner about a list they never asked for.
+      if (!this.launchCwd.value)
+        this.setLaunchDirsHint(
+          "the machine did not list its folders — type the path (an older launcher daemon does not answer this)",
+        )
+    }, 8_000)
+  }
+
+  /** Put the answer in the field's own dropdown, ordered by full path.
+   *
+   * Labels stay the WHOLE path, not the leaf: in a dropdown that pops open under
+   * the field, `myai` next to `aichats` says nothing about which root each came
+   * from, and a pick has to be readable before it is made. */
+  private renderLaunchDirs(answer: LaunchDirsAnswer): void {
+    this.launchChoices = dirChoices(answer)
+    const options = this.launchDirOptions
+    options.replaceChildren()
+    for (const choice of this.launchChoices) {
+      const option = document.createElement("option")
+      option.value = choice.path
+      option.label = choice.path
+      options.append(option)
+    }
+    this.setLaunchDirsHint(dirsHint(answer))
+  }
+
+  /** Follow the name after the folder. Picking a DIFFERENT folder means picking
+   *  a different project, so the name re-follows the choice — but only our own
+   *  previous suggestion is ever replaced; a name the user typed stays put. */
+  private applyNameForCwd(): void {
+    const cwd = this.launchCwd.value.trim()
+    if (!cwd) return
+    const next = nextAutoName(cwd, this.launchName.value, this.autoFilledName)
+    if (next === null) return
+    this.launchName.value = next
+    this.autoFilledName = next
+  }
+
+  /** While TYPING, only a value that is exactly one of the offered paths counts
+   *  as a pick — a half-written path must not rename anything. */
+  private applyNameIfPicked(): void {
+    const cwd = this.launchCwd.value.trim()
+    if (this.launchChoices.some((c) => c.path === cwd)) this.applyNameForCwd()
+  }
+
+  /** Ask the launcher for a new session, and keep the request id so the
+   *  machine's answer and the room it produces can both be matched to it. */
+  private requestLaunch(): void {
+    const cwd = this.launchCwd.value.trim()
+    // `change` has not necessarily fired yet when Enter launches the request
+    // straight from the folder field, so the same last-component name applies
+    // here — otherwise the same path launched by click and by Enter would name
+    // the session differently. An empty field, or one still holding OUR previous
+    // suggestion for a different folder, both follow the folder being launched.
+    const typed = this.launchName.value.trim()
+    const name =
+      typed && typed !== this.autoFilledName
+        ? typed
+        : launchNameFor(cwd) || typed
+    if (!this.client || !this.active?.control) {
+      this.toast("no control room open — press 'new conversation' on a machine")
+      return
+    }
+    if (!cwd) {
+      this.setLaunchNote(
+        "a folder is required, and it must already exist on the machine — launch in its parent and let Pi create the project.",
+      )
+      return
+    }
+    const id = this.launch(cwd, name || undefined)
+    this.pendingLaunch = { id, epk: this.active.epk, cwd }
+    clearTimeout(this.launchTimer)
+    this.launchTimer = setTimeout(() => {
+      this.pendingLaunch = null
+    }, 60_000)
+    this.setLaunchNote(
+      `asked the machine for ${cwd} — waiting for it to answer…`,
+    )
+  }
+
   async attach(epk: string, roomId: string, name: string): Promise<void> {
     const client = this.client
     if (!client) return
     client.setRoutingPeer(epk)
     client.setRoom(roomId)
     this.active = { epk, roomId, name, caps: [] }
+    // Attaching to a session by hand drops any launch we were waiting on, so a
+    // late announce cannot yank the reader into another room mid-read.
+    this.pendingLaunch = null
+    clearTimeout(this.launchTimer)
+    this.cancelDirsRequest()
+    // Leaving a control room, if that is where we were: transcript and
+    // composer come back.
+    this.launchPanel.hidden = true
+    this.transcript.hidden = false
+    this.composer.hidden = false
     rememberLastRoom({ epk, roomId, name })
     // Attaching means the room is live and drivable again — clear any ended flag
     // the previous room left behind.
@@ -1021,11 +1407,34 @@ export class App {
         this.sub.textContent = `${this.active?.name ?? "session"} · synced`
         break
       }
+      case "session_launch_dirs_result": {
+        const answer = parseLaunchDirs(ub)
+        const pending = this.pendingDirs
+        if (!answer || !pending || ub.in_reply_to !== pending.id) break
+        this.cancelDirsRequest()
+        this.renderLaunchDirs(answer)
+        break
+      }
       case "session_launch_result": {
+        const code = typeof ub.code === "string" ? ub.code : ""
+        const inReplyTo =
+          typeof ub.in_reply_to === "string" ? ub.in_reply_to : ""
+        if (this.pendingLaunch && inReplyTo === this.pendingLaunch.id) {
+          if (ub.ok === true) {
+            // pi is starting; its room announce arrives next, echoing our id.
+            this.setLaunchNote("launched — waiting for the session to appear…")
+          } else {
+            // The refusal is the actionable part: a bare `permission_denied`
+            // does not say which of the two gates refused.
+            this.pendingLaunch = null
+            clearTimeout(this.launchTimer)
+            this.setLaunchNote(launchFailureHint(code))
+          }
+        }
         this.toast(
           ub.ok === true
             ? `launched (${String(ub.backend ?? "?")})`
-            : `launch failed: ${String(ub.code ?? ub.message ?? "unknown")}`,
+            : `launch failed: ${code || String(ub.message ?? "unknown")}`,
         )
         break
       }
@@ -1153,6 +1562,10 @@ export class App {
     node.dataset.row = item.row
     node.classList.toggle("at-tail", item.row === this.tailRowId)
     if (item.kind === "tool") {
+      // The state rides on the row, not only on the chip, because pi tints the
+      // whole tool box by state and a tint that has no attribute behind it
+      // cannot be painted from here.
+      node.dataset.state = item.state ?? "running"
       const details = el("details", "tool-inner")
       const summary = el("summary")
       summary.append(el("span", "who", `tool · ${item.tool ?? "?"}`))
@@ -1269,6 +1682,7 @@ export class App {
     if (state) {
       state.textContent = item.state ?? "running"
       state.className = `state ${item.state ?? "running"}`
+      node.dataset.state = item.state ?? "running"
     }
     // The face label must follow the card: it goes pending → terminal / file /
     // diff as the result settles. Written once at build time it would freeze at
@@ -1457,13 +1871,17 @@ export class App {
     this.autogrow()
   }
 
-  /** Remote launch: ask the machine's launcher daemon for a new session. */
-  launch(cwd: string, name?: string): void {
-    this.client?.sendUb("session_launch", {
-      mode: "new",
-      cwd,
-      ...(name ? { name } : {}),
-    })
+  /** Remote launch: ask the machine's launcher daemon for a new session.
+   *  Returns the request id — the machine echoes it in the result frame and in
+   *  the launched room's `launchReq`, which is how the caller correlates them. */
+  launch(cwd: string, name?: string): string {
+    return (
+      this.client?.sendUb("session_launch", {
+        mode: "new",
+        cwd,
+        ...(name ? { name } : {}),
+      }) ?? ""
+    )
   }
 
   private toast(message: string): void {

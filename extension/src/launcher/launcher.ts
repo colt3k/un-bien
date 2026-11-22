@@ -12,7 +12,7 @@ import { buildSignedAllowList } from "../pairing/signed_allow_list.js"
 import { roomIdForControl } from "../rooms.js"
 import { _findKnownPeer } from "../pairing/peer_trust.js"
 import { _expandTilde, configuredBackend } from "../launch.js"
-import { handleSessionLaunch } from "../launch_request.js"
+import { handleSessionLaunch, handleSessionLaunchDirs } from "../launch_request.js"
 import {
   helloEnvelope,
   isEnvelopeFrame,
@@ -230,6 +230,16 @@ export async function startLauncher(
           in_reply_to: typeof frame.id === "string" ? frame.id : "",
           sessions,
         },
+      })
+      return
+    }
+
+    if (frame.type === "session_launch_dirs") {
+      // The app's folder picker. The allow-list is a prefix test on THIS filesystem, so
+      // the daemon answers it; pairing-gated, config read FRESH.
+      await handleSessionLaunchDirs(frame, sender, {
+        log: (line) => launcherLog(`launcher ${line}`),
+        isPaired: () => _findKnownPeer(peer).then((known) => Boolean(known)),
       })
       return
     }

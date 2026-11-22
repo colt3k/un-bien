@@ -2,7 +2,9 @@ import { loadConfig } from "./config.js"
 import {
   _expandTilde,
   launchDirAllowed,
+  launchDirOptions,
   launchSession,
+  type LaunchDirOptions,
   type LaunchErrorCode,
   type LaunchResult,
 } from "./launch.js"
@@ -54,6 +56,72 @@ export function launchResultEnvelope(requestId: string, result: LaunchResult): E
 function stringField(frame: Record<string, unknown>, key: string): string | undefined {
   const v = frame[key]
   return typeof v === "string" && v.trim().length > 0 ? v.trim() : undefined
+}
+
+/**
+ * The `session_launch_dirs_result` frame. `remoteLaunch` is the answering side's own
+ * opt-in: an app showing a picker it can never use is worse than one that says "remote
+ * launch is off on this machine".
+ */
+export function launchDirsResultEnvelope(
+  requestId: string,
+  options: LaunchDirOptions,
+  remoteLaunch: boolean,
+): EnvelopeMessage {
+  return {
+    ub: {
+      type: "session_launch_dirs_result",
+      in_reply_to: requestId,
+      ok: true,
+      wildcard: options.wildcard,
+      locked: options.locked,
+      remote_launch: remoteLaunch,
+      roots: options.roots,
+    },
+  }
+}
+
+/**
+ * Answer "which folders may I launch into?" for an app's folder picker.
+ *
+ * Gated by PAIRING only, re-checked fresh exactly as a launch is: this reveals the user's
+ * own allow-list and one level under it, which is no more than a SUCCESSFUL launch
+ * already proves exists. The launch itself keeps every gate (per-cwd opt-in, allow-list,
+ * existence).
+ *
+ * `launch.dirs: "*"` has nothing to enumerate and `[]` can launch nothing; both are SAID
+ * rather than answered with an empty list, which would read as a broken picker. Config is
+ * read FRESH per request — editing `launch.dirs` changes the list with no daemon restart.
+ */
+export async function handleSessionLaunchDirs(
+  frame: Record<string, unknown>,
+  sender: LaunchReplyChannel,
+  opts: LaunchRequestOptions,
+): Promise<EnvelopeMessage> {
+  const requestId = stringField(frame, "id") ?? ""
+  const send = (env: EnvelopeMessage) => {
+    try {
+      sender.sendEnvelope(env)
+    } catch (err) {
+      opts.log(`session_launch_dirs_result send failed: ${String(err)}`)
+    }
+    return env
+  }
+  if (opts.isPaired && !(await opts.isPaired())) {
+    opts.log("session_launch_dirs unknown_peer")
+    return send({
+      ub: {
+        type: "session_launch_dirs_result",
+        in_reply_to: requestId,
+        ok: false,
+        code: "unknown_peer",
+        message: "Peer not paired — re-scan QR",
+      },
+    })
+  }
+  const options = launchDirOptions(loadConfig().launch?.dirs)
+  const remoteLaunch = effectiveAllowRemoteLaunch(loadLocalConfig(process.cwd()))
+  return send(launchDirsResultEnvelope(requestId, options, remoteLaunch))
 }
 
 export async function handleSessionLaunch(

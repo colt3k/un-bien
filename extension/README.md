@@ -531,6 +531,22 @@ output). A Pi that dies within 20 seconds of starting gets a second result for
 the same request. On tmux the launch window keeps its pane until that check,
 then closes it. Apps that predate the frame ignore it.
 
+### Which folders may be launched into
+
+A paired owner may ask `session_launch_dirs` and gets a `session_launch_dirs_result`:
+each `launch.dirs` root, expanded to an absolute path, with its **immediate** child
+directories (`{path, name, exists, truncated, children}`), plus `wildcard` (`launch.dirs`
+is `"*"`/unset — anything is allowed, nothing to enumerate) and `locked` (the list is
+empty — nothing is launchable). It exists because `launch.dirs` is a prefix test against
+THIS machine's filesystem and is written in this machine's shorthand (`~/dev/myai`): a
+phone cannot turn it into a pick list, and one level deep is where the project lives.
+Depth is capped at one on purpose — a device that could walk the tree through a paired
+socket could read a home directory. Pairing is re-checked fresh exactly as for a launch,
+and `allow_remote_launch` + the allow-list are still what decide whether a chosen path
+actually starts. The config is read per request, so editing `launch.dirs` changes the list
+with no daemon restart. A live pi answers the same request as the daemon does, so an app's
+picker does not depend on which room it opened.
+
 ### Launch names
 
 A `session_launch` request may carry a `name`. On the tmux backend the

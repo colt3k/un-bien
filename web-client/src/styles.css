@@ -15,6 +15,43 @@
   --fg: #e8e8ee;
   --muted: #9a9aa8;
   --accent: #6ea8fe;
+  /* pi's voice, so the same message reads the same on both: code spans carry a
+     colour instead of a box, and emphasis is the brightest thing on screen. The
+     violet is pi's own (#a878d8); against --panel it lands at ~5.3:1, which
+     clears WCAG AA at the 12px these spans use. */
+  --code: #a798d7;
+  --fg-strong: #ffffff;
+  /* pi's own syntax tokens, taken from its `dark` theme (the okhsl values
+     converted to sRGB, not eyeballed) so a code block in the browser reads like
+     the same block in the terminal. Measured against --panel they land between
+     6.9:1 and 7.4:1 — all clear of AA, and the block does not depend on any one
+     of them for meaning. */
+  --tk-number: #68b78d; /* syntaxNumber, mdCodeBlock — the green in pi */
+  --tk-keyword: #69add0; /* syntaxKeyword */
+  --tk-func: #cd9a22; /* syntaxFunction */
+  --tk-string: #de8d5a; /* syntaxString */
+  --tk-variable: #5db3ba; /* syntaxVariable */
+  --tk-comment: var(--muted); /* syntaxComment */
+  /* pi paints a markdown heading and a markdown link with the same two hues it
+     uses for functions and keywords (`mdHeading`: yellow, `mdLink`: blue), so
+     a heading in the browser is recognisably the same colour as in the
+     terminal. Kept as separate names rather than reusing --tk-func/--tk-keyword:
+     pi may move one and not the other, and the pairing belongs in a comment, not
+     in a variable name. */
+  --md-heading: #cd9a22;
+  --md-link: #69add0;
+  /* pi does not colour a tool row's text by state — it tints the WHOLE BOX
+     (toolPendingBg / toolSuccessBg / toolErrorBg) and paints the title in the
+     text colour. Converted from its dark theme, same as the hues above. */
+  --tool-running-bg: #34383a;
+  --tool-ok-bg: #254131;
+  --tool-failed-bg: #5b282a;
+  /* The caption colour lifted for those three boxes: `--muted` on a tinted
+     green/red box lands near 4:1, and this row's caption is the one text in the
+     transcript that must stay legible on a coloured background. Literal rather
+     than `color-mix` so it is a number that can be checked, not one that has to
+     be resolved. */
+  --tool-face: #bdbdc8;
   --danger: #e5484d;
   --ok: #46a758;
   --radius: 10px;
@@ -172,6 +209,49 @@ textarea:focus {
   color: var(--muted);
   margin: 16px 0 8px;
 }
+/* A heading that is also a disclosure trigger: strip the button chrome and let
+   it inherit the h2's look, so collapsing does not change what the section is
+   called or where it sits in the outline. */
+h2.section-toggle {
+  margin: 16px 0 8px;
+}
+h2.section-toggle > button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+h2.section-toggle > button:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 3px;
+}
+/* The disclosure triangle: <summary> gets one from the UA, a button does not,
+   and removing a directional cue without replacing it is the classic accordion
+   a11y miss. One glyph, rotated — so it also reads correctly in RTL. */
+h2.section-toggle > button::before {
+  content: "";
+  width: 0.7em;
+  height: 0.7em;
+  flex-shrink: 0;
+  background: currentColor;
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+h2.section-toggle > button[aria-expanded="true"]::before {
+  rotate: 90deg;
+}
+@media (prefers-reduced-motion: no-preference) {
+  h2.section-toggle > button::before {
+    transition: rotate 0.15s ease;
+  }
+}
 .row {
   display: flex;
   gap: 8px;
@@ -245,6 +325,46 @@ textarea {
   gap: 10px;
   -webkit-overflow-scrolling: touch;
 }
+
+/* Remote launch. Replaces the transcript while a machine's control room is
+   open — the daemon has no transcript to show, and a composer that sends
+   prompts to it would be a dead input. */
+.launch-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 12px calc(14px + env(safe-area-inset-bottom));
+  max-width: 620px;
+  width: 100%;
+  margin: 0 auto;
+}
+.launch-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.launch-head h2 {
+  margin: 0;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.field input {
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.launch-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
 .item {
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -287,6 +407,20 @@ textarea {
   font-family: var(--mono);
   font-size: 12.5px;
 }
+.transcript.mono-prose .item .body {
+  /* "Monospace like pi" (see `monoProse` in store.ts): pi sets prose, code and
+     the code block on ONE character grid, and that single fact is what makes a
+     screen of pi look like pi. 13.5px rather than the 15px proportional size,
+     because a monospace advance is roughly 0.6em against a proportional 0.5em —
+     the same px size would wrap noticeably more. */
+  font-family: var(--mono);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+.transcript.mono-prose .body code {
+  /* Same family, same size: only the colour and the tint say "code". */
+  font-size: inherit;
+}
 .item .body {
   white-space: pre-wrap;
   word-break: break-word;
@@ -304,6 +438,7 @@ textarea {
   margin: 8px 0 4px;
   font-size: 13px;
   font-weight: 650;
+  color: var(--md-heading);
 }
 .body h2.md-heading,
 .body h3.md-heading,
@@ -319,11 +454,24 @@ textarea {
 }
 .body code {
   font-family: var(--mono);
-  font-size: 12px;
-  background: var(--panel);
-  border: 1px solid var(--line);
+  /* Relative, not a fixed 12px: pi sets a code span on the SAME size grid as
+     the prose around it, and a fixed small px size made every identifier visibly
+     shrink out of the line it sits in. */
+  font-size: 0.92em;
+  /* Colored, not boxed. pi colors the span; a hairline box around every
+     identifier in a paragraph is what makes a transcript look like a form. The
+     10% tint is the code colour itself, so a span still reads as a span when it
+     wraps across lines. */
+  color: var(--code);
+  background: color-mix(in oklab, var(--code) 10%, transparent);
   border-radius: 4px;
   padding: 1px 4px;
+}
+/* pi colours list markers with the code colour. Ours inherited the prose colour,
+   which is why a numbered list read as one grey block. */
+.body ol > li::marker,
+.body ul > li::marker {
+  color: var(--code);
 }
 .body pre.md-code {
   margin: 6px 0;
@@ -338,6 +486,44 @@ textarea {
   background: none;
   border: 0;
   padding: 0;
+  /* Blocks stay the prose colour: pi tints whole blocks with syntax colours,
+     and violet-from-here-to-there is a wall of one hue, which reads as nothing. */
+  color: var(--fg);
+}
+/* A fence we have no grammar for: one colour, as pi paints `mdCodeBlock`. */
+.body pre.md-code code.md-code-plain {
+  color: var(--tk-number);
+}
+/* Token roles, named after pi's theme tokens (src/highlight.ts). */
+.body .md-code .tk-comment {
+  color: var(--tk-comment);
+}
+.body .md-code .tk-string {
+  color: var(--tk-string);
+}
+.body .md-code .tk-number {
+  color: var(--tk-number);
+}
+.body .md-code .tk-keyword {
+  color: var(--tk-keyword);
+}
+.body .md-code .tk-type {
+  color: var(--code);
+}
+.body .md-code .tk-func {
+  color: var(--tk-func);
+}
+.body .md-code .tk-variable {
+  color: var(--tk-variable);
+}
+.body .md-code .tk-punct {
+  /* pi paints punctuation and operators muted; keeping the scaffolding quiet is
+     what lets the four meaningful colours stay readable. */
+  color: var(--muted);
+}
+.body strong {
+  color: var(--fg-strong);
+  font-weight: 650;
 }
 .body blockquote {
   margin: 6px 0;
@@ -351,7 +537,10 @@ textarea {
   margin: 8px 0;
 }
 .body a {
-  color: var(--accent);
+  /* pi's `mdLink`, not our --accent: a link in a transcript should look like
+     the link pi drew, and the accent blue is reserved for the app's own chrome
+     (focus rings, buttons), which is a different thing to click. */
+  color: var(--md-link);
 }
 /* Long bodies are clamped behind a control (see `syncClamp` in app.ts): a
  * pairing QR notice and a model counting to 2000 are both real rows, and both
@@ -422,6 +611,36 @@ textarea {
 .item.streaming .body::after {
   content: "▌";
   color: var(--accent);
+}
+/* pi paints a tool title in the TEXT colour, not a caption colour: the tint of
+   the box already says which of the three states this is. */
+.item.tool .who {
+  color: var(--fg);
+}
+.item.tool[data-state="running"] {
+  background: var(--tool-running-bg);
+}
+.item.tool[data-state="ok"] {
+  background: var(--tool-ok-bg);
+}
+.item.tool[data-state="failed"] {
+  background: var(--tool-failed-bg);
+}
+/* On a tinted box the caption colours pi uses for muted text fall to ~4:1, so
+   the row's own secondary text is lifted. The state chip is lifted too — a
+   green-on-green chip is decoration otherwise, and the chip is also the text a
+   screen reader hears, so it has to be readable on its own. */
+.item.tool .face {
+  color: var(--tool-face);
+}
+.item.tool .state.ok {
+  color: #8fd3a3;
+}
+.item.tool .state.failed {
+  color: #f0959a;
+}
+.item.tool .state.running {
+  color: #ffc861;
 }
 .tool summary {
   cursor: pointer;
@@ -661,6 +880,13 @@ details[open] > .collapsed {
   border-style: dashed;
 }
 
+/* "paired" is a fact about this browser's state, not a room kind: it goes green
+   so the collapsed section does not read as a step still owed. */
+.tag-paired {
+  color: var(--ok);
+  border-color: color-mix(in oklab, var(--ok) 45%, var(--line));
+}
+
 .section-head {
   display: flex;
   align-items: center;
@@ -720,6 +946,12 @@ details[open] > .collapsed {
 
 .body .md-table thead tr {
   border-bottom: 1px solid var(--line-strong);
+}
+
+.body .md-table th {
+  /* pi draws table headers as the brightest text in the table. */
+  color: var(--fg-strong);
+  font-weight: 650;
 }
 
 .body .md-table th:not(:first-child),

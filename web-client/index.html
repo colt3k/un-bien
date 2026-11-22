@@ -70,35 +70,59 @@
         </section>
 
         <section>
-          <h2>Pair a machine</h2>
-          <p class="hint">
-            Run <code>/unbien pair</code> in a Pi session, then paste the
-            <em>pairing code</em> it prints. A code is single-use and expires 60
-            seconds after it is printed — run the command again for a fresh one.
-          </p>
-          <div class="row">
-            <input
-              id="deviceName"
-              placeholder="pixel-8-pro"
-              autocomplete="off"
-            />
-            <button id="pairBtn">pair</button>
+          <!-- A heading that doubles as the disclosure trigger. The heading
+               stays (screen-reader users move between drawer sections by
+               heading) and the BUTTON carries `aria-expanded`; a heading nested
+               inside a <summary> is announced as a bare button by JAWS and
+               TalkBack, which drops the heading. The `paired` state rides
+               inside the trigger so the collapsed section cannot read as "pair
+               me" again, and stays part of the control's accessible name. -->
+          <h2 class="section-toggle">
+            <button
+              type="button"
+              id="pairToggle"
+              aria-expanded="true"
+              aria-controls="pairForm"
+            >
+              <span>Pair a machine</span>
+              <span id="pairState" class="tag tag-paired" hidden></span>
+            </button>
+          </h2>
+          <div id="pairForm">
+            <p class="hint">
+              Run <code>/unbien pair</code> in a Pi session, then paste the
+              <em>pairing code</em> it prints. A code is single-use and expires
+              60 seconds after it is printed — run the command again for a fresh
+              one.
+            </p>
+            <div class="row">
+              <input
+                id="deviceName"
+                placeholder="pixel-8-pro"
+                autocomplete="off"
+              />
+              <button id="pairBtn">pair</button>
+            </div>
+            <textarea
+              id="pairCode"
+              rows="3"
+              placeholder="unbien://pair?t=…&epk=…&n=…&rm=…"
+            ></textarea>
+            <!-- The verdict goes HERE, not only in the header and the toast: a
+                 modal <dialog> and its ::backdrop live in the top layer, so a
+                 toast centred on the page behind the sheet is reliably invisible
+                 (measured on an iPhone 15 viewport: 100% of the toast area
+                 covered). It therefore lives inside the sheet — and the form is
+                 never collapsed while the drawer is open, so a verdict cannot be
+                 folded away half-read. -->
+            <p
+              id="pairStatus"
+              class="pair-status"
+              role="status"
+              aria-live="polite"
+              hidden
+            ></p>
           </div>
-          <textarea
-            id="pairCode"
-            rows="3"
-            placeholder="unbien://pair?t=…&epk=…&n=…&rm=…"
-          ></textarea>
-          <!-- The verdict goes HERE, not only in the header and the toast: this
-               section is the one place on screen that is not behind the open
-               sheet, so it is the only place the result is always visible. -->
-          <p
-            id="pairStatus"
-            class="pair-status"
-            role="status"
-            aria-live="polite"
-            hidden
-          ></p>
         </section>
 
         <section>
@@ -120,6 +144,10 @@
             <input id="hideReasoning" type="checkbox" />
             <span>Hide thinking</span>
           </label>
+          <label class="row">
+            <input id="monoProse" type="checkbox" />
+            <span>Monospace like pi</span>
+          </label>
         </section>
 
         <!-- Sticky bottom bar: the ✕ above is ~800px from the bottom edge on a
@@ -139,12 +167,56 @@
         </button>
       </div>
 
+      <!-- Remote launch. A launcher's control room has no transcript, so this
+           panel takes the transcript's place (and the composer's) while it is
+           open — see app.ts `joinControlRoom`. -->
+      <section id="launchPanel" class="launch-panel" hidden>
+        <div class="launch-head">
+          <h2 id="launchHeading">New conversation</h2>
+          <button id="launchClose" class="pill" type="button">close</button>
+        </div>
+        <p class="hint">
+          Starts a new Pi session on this machine through its launcher daemon.
+          The folder must already exist there, and the machine must allow remote
+          launch for it.
+        </p>
+        <label class="field">
+          <span>folder</span>
+          <input
+            id="launchCwd"
+            list="launchDirOptions"
+            placeholder="/absolute/path/to/project"
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck="false"
+          />
+        </label>
+        <!-- The machine's own allow-list, one level deep, offered AS THE FIELD'S
+             OWN DROPDOWN. The device cannot derive it: `launch.dirs` is a prefix
+             test against the MACHINE's filesystem, written in the machine's
+             shorthand (`~/dev/myai`). -->
+        <datalist id="launchDirOptions"></datalist>
+        <p id="launchDirsHint" class="hint" hidden></p>
+        <label class="field">
+          <span>name (optional)</span>
+          <input
+            id="launchName"
+            placeholder="shown as the session name"
+            autocomplete="off"
+          />
+        </label>
+        <div class="launch-actions">
+          <button id="launchBtn" type="button">launch</button>
+          <p id="launchNote" class="hint" hidden></p>
+        </div>
+      </section>
+
       <main id="transcript" class="transcript" aria-live="polite"></main>
 
       <div id="panels" class="panels" hidden></div>
       <div id="asks" class="asks"></div>
 
-      <footer class="composer">
+      <footer id="composer" class="composer">
         <textarea
           id="input"
           rows="1"

@@ -1,5 +1,5 @@
 import { envLog } from "./session/debug_log.js"
-import { handleSessionLaunch } from "./launch_request.js"
+import { handleSessionLaunch, handleSessionLaunchDirs } from "./launch_request.js"
 import { dispatchRpcCommand } from "./session/rpc_inbound.js"
 import { createRpcHandlers, type RpcHandlersDeps } from "./session/rpc_handlers.js"
 import type { EnvelopeMessage } from "./session/rpc_envelope.js"
@@ -217,6 +217,15 @@ export async function routeUnBienPlane(
     // A live pi's room is already paired: the shared handler applies the
     // opt-in and allow-list, launches, and replies with session_launch_result.
     void handleSessionLaunch(frame as Record<string, unknown>, sender, {
+      log: (line) => envLog(`${line} (ub)`),
+    })
+    return
+  }
+
+  if (type === "session_launch_dirs") {
+    // A live pi answers the same picker the daemon does, so the app's folder list does
+    // not depend on which room it happened to open.
+    void handleSessionLaunchDirs(frame as Record<string, unknown>, sender, {
       log: (line) => envLog(`${line} (ub)`),
     })
     return

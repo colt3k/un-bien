@@ -1,6 +1,6 @@
 import { spawn, spawnSync, execFile } from "node:child_process"
 import { basename, dirname, join, resolve } from "node:path"
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { loadConfig } from "./config.js"
 import { unbienStateHome } from "./paths.js"
@@ -279,6 +279,130 @@ export function launchDirAllowed(
     const base = resolve(_expandTilde(d))
     return target === base || target.startsWith(`${base}/`)
   })
+}
+
+// ── What an app may offer to launch INTO ────────────────────────────────────
+
+/**
+ * The allow-list is a set of roots and `launchDirAllowed` is a prefix test, so the
+ * question an app cannot answer on its OWN machine is "which folders are under those
+ * roots?" — and `~/dev/myai` in the user's config means nothing over there. Answering
+ * it machine-side is what turns a hand-typed absolute path into a pick list.
+ *
+ * ONE level deep, decided here rather than by the caller: a device that could walk the
+ * tree through a paired socket could read the user's home directory, and a project is
+ * one level down, which is exactly enough.
+ */
+
+/** Immediate children listed per root; more than this is a mistyped root. */
+export const LAUNCH_DIRS_CHILD_LIMIT = 60
+
+/** Children never offered: neither is a project you launch into, and `node_modules`
+ *  alone runs to tens of thousands of entries. */
+const LAUNCH_DIRS_SKIP = new Set(["node_modules"])
+
+export interface LaunchDirOption {
+  /** Absolute ON THIS MACHINE — verbatim material for a `session_launch.cwd`. */
+  path: string
+  name: string
+}
+
+export interface LaunchDirRootOption extends LaunchDirOption {
+  /** A configured root that is gone (renamed, external volume unmounted) is still
+   *  NAMED, so the app can say why the list is short instead of looking broken. */
+  exists: boolean
+  truncated: boolean
+  children: LaunchDirOption[]
+  error?: "not_a_directory" | "unreadable"
+}
+
+export interface LaunchDirOptions {
+  /** `launch.dirs` is `"*"`/unset: every folder qualifies, so there is nothing to
+   *  enumerate and the app must take a typed path. */
+  wildcard: boolean
+  /** `launch.dirs` is an EMPTY array: nothing is launchable, which the app should say
+   *  rather than show an empty picker. */
+  locked: boolean
+  roots: LaunchDirRootOption[]
+}
+
+function isLaunchableDir(path: string): boolean {
+  try {
+    // statSync follows symlinks, matching how a launch sees it (launchSession checks
+    // existsSync + statSync().isDirectory()).
+    return statSync(path).isDirectory()
+  } catch {
+    return false
+  }
+}
+
+/** Immediate child directories of one root, in the order an app can render them. */
+function childDirs(root: string, limit: number): { list: LaunchDirOption[]; truncated: boolean } {
+  // Filter by name/type first (cheap), sort, then statSync ONLY what is shown. Counting
+  // the raw readdir entries for the truncation call — which this first did — reported a
+  // root holding one project plus a `.git` as "truncated, first 60".
+  const candidates: string[] = []
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (entry.name.startsWith(".") || LAUNCH_DIRS_SKIP.has(entry.name)) continue
+    if (!entry.isDirectory() && !entry.isSymbolicLink()) continue
+    candidates.push(entry.name)
+  }
+  // Case-insensitive, with a deliberate tiebreak: `sensitivity: "base"` calls
+  // `apple` and `Apple` EQUAL, and sort is stable, so an equal pair would keep
+  // readdir order and the list would shuffle between runs.
+  const chosen = candidates.sort((a, b) => {
+    const folded = a.localeCompare(b, undefined, { sensitivity: "base" })
+    return folded !== 0 ? folded : a < b ? -1 : a > b ? 1 : 0
+  })
+  const list: LaunchDirOption[] = []
+  for (const name of chosen.slice(0, limit)) {
+    const path = join(root, name)
+    // A symlink that does not land on a directory is not launchable — offering it would
+    // only earn a `cwd_missing` from launchSession.
+    if (!isLaunchableDir(path)) continue
+    list.push({ name, path })
+  }
+  return { list, truncated: candidates.length > limit }
+}
+
+/**
+ * Enumerate the allow-list for an app's folder picker. Roots keep the ORDER the user
+ * wrote them in (that order is meaningful to them) and each is expanded to an absolute
+ * path, so the device never has to guess what `~` meant on a machine it is not on.
+ */
+export function launchDirOptions(
+  dirs: "*" | string[] | undefined,
+  limit: number = LAUNCH_DIRS_CHILD_LIMIT,
+): LaunchDirOptions {
+  if (dirs === undefined || dirs === "*") return { wildcard: true, locked: false, roots: [] }
+  if (!Array.isArray(dirs) || dirs.length === 0) return { wildcard: false, locked: true, roots: [] }
+
+  const roots: LaunchDirRootOption[] = []
+  for (const configured of dirs) {
+    const path = resolve(_expandTilde(configured))
+    const entry: LaunchDirRootOption = {
+      path,
+      name: basename(path),
+      exists: false,
+      truncated: false,
+      children: [],
+    }
+    if (!existsSync(path) || !isLaunchableDir(path)) {
+      entry.error = existsSync(path) ? "not_a_directory" : undefined
+      roots.push(entry)
+      continue
+    }
+    entry.exists = true
+    try {
+      const { list, truncated } = childDirs(path, limit)
+      entry.children = list
+      entry.truncated = truncated
+    } catch {
+      entry.error = "unreadable"
+    }
+    roots.push(entry)
+  }
+  return { wildcard: false, locked: false, roots }
 }
 
 // ── Launch results ──────────────────────────────────────────────────────────

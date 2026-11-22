@@ -138,6 +138,7 @@ export function forgetLastRoom(epk?: string): void {
 
 interface Prefs {
   hideReasoning?: boolean
+  monoProse?: boolean
 }
 
 /** Thinking visibility. Like the app's, this is a VIEW preference: reasoning is
@@ -148,4 +149,15 @@ export function hideReasoning(): boolean {
 
 export function setHideReasoning(hide: boolean): void {
   writeJson(PREFS_KEY, { ...readJson<Prefs>(PREFS_KEY), hideReasoning: hide })
+}
+
+/** Set the transcript in one monospace grid, the way pi's terminal does it.
+ *  Worth a switch rather than a change: it is the closest match to pi, and on a
+ *  phone viewport monospace prose wraps far more than the proportional face. */
+export function monoProse(): boolean {
+  return readJson<Prefs>(PREFS_KEY)?.monoProse === true
+}
+
+export function setMonoProse(mono: boolean): void {
+  writeJson(PREFS_KEY, { ...readJson<Prefs>(PREFS_KEY), monoProse: mono })
 }

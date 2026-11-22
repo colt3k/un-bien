@@ -110,6 +110,40 @@ export type UbFrame =
       output?: string
     }
   | {
+      // app->launcher/ext: "which folders may I launch into?" The allow-list is a PREFIX
+      // test against the machine's filesystem, so a device cannot turn it into a pick
+      // list — only the machine can. Answered ONE level deep on purpose (see
+      // `launchDirOptions` in launch.ts): enough to choose a project, not a walk of the
+      // user's home directory.
+      type: "session_launch_dirs"
+      id?: string
+    }
+  | {
+      // launcher/ext->app: that answer. `roots` keep the ORDER the user wrote
+      // `launch.dirs` in, each expanded to an absolute path, each carrying its immediate
+      // child directories.
+      type: "session_launch_dirs_result"
+      in_reply_to: string
+      ok: boolean
+      /** `launch.dirs` is `"*"`/unset: anything qualifies, nothing to enumerate. */
+      wildcard?: boolean
+      /** `launch.dirs` is an empty list: nothing is launchable. */
+      locked?: boolean
+      /** `allow_remote_launch` for the answering cwd — false means the picker would
+       *  only ever be refused. */
+      remote_launch?: boolean
+      code?: string
+      message?: string
+      roots?: Array<{
+        path: string
+        name: string
+        exists: boolean
+        truncated: boolean
+        error?: string
+        children: Array<{ path: string; name: string }>
+      }>
+    }
+  | {
       // daemon->owner listing (prototype: cli resume-session). Backed by pi's
       // public SessionManager — the daemon is otherwise pi-independent.
       type: "sessions_list"

@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest"
-import { forgetLastRoom, lastRoom, rememberLastRoom } from "../src/store.js"
+import {
+  forgetLastRoom,
+  hideReasoning,
+  lastRoom,
+  monoProse,
+  rememberLastRoom,
+  setHideReasoning,
+  setMonoProse,
+} from "../src/store.js"
 
 /**
  * The resume record. Storage falls back to an in-memory map under Node
@@ -37,5 +45,28 @@ describe("the session to resume", () => {
     rememberLastRoom({ epk: "M1", roomId: "room-a" })
     forgetLastRoom()
     expect(lastRoom()).toBeUndefined()
+  })
+})
+
+/**
+ * View preferences share ONE storage key, so the hazard is not reading them —
+ * it is one writer quietly dropping the other's field.
+ */
+describe("view preferences", () => {
+  it("monospace prose starts off and sticks once set", () => {
+    setMonoProse(false)
+    expect(monoProse()).toBe(false)
+    setMonoProse(true)
+    expect(monoProse()).toBe(true)
+  })
+
+  it("writing one preference keeps the other", () => {
+    setHideReasoning(true)
+    setMonoProse(false)
+    expect(hideReasoning()).toBe(true)
+    setHideReasoning(false)
+    setMonoProse(true)
+    expect(monoProse()).toBe(true)
+    expect(hideReasoning()).toBe(false)
   })
 })
