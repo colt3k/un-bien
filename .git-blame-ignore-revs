@@ -1,2 +1,7 @@
 # Semicolon-free reformat (2026-08-31) — pure formatting, ignore for blame.
 9225738
+# Prettier sweep of the files `format:check` had never been checking (91 files
+# across extension/ and unbien-cli/, 3078 insertions) — prettier's own output,
+# no behaviour change. `chore: run the formatter over the files that were never
+# formatted`.
+51c51ac
