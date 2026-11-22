@@ -1672,6 +1672,9 @@ export class App {
       // The fold carries the wording (it is corpus-compared against the app's),
       // and the summary stays on the item as the stand-in for the folded
       // history rather than becoming a label.
+      // `state` is set only when the compaction did NOT happen (refused or
+      // cancelled): the row then has to read as a refusal, not as a fold.
+      if (item.state) node.dataset.state = item.state
       node.append(el("div", "body", item.text))
     } else {
       node.append(el("div", "who", item.kind))
@@ -1760,6 +1763,15 @@ export class App {
 
   private patchItem(node: HTMLElement, item: TranscriptItem): void {
     node.classList.toggle("streaming", item.streaming)
+    if (item.kind === "compaction") {
+      // A compaction row changes state without changing kind: it opens as
+      // "Auto-compacting..." and settles either folded (no state) or refused
+      // (failed). The caption is re-set below from the changed text; the state
+      // attribute has to follow it or the row keeps the colour of the attempt
+      // that already ended.
+      if (item.state) node.dataset.state = item.state
+      else delete node.dataset.state
+    }
     if (item.kind !== "tool") {
       this.setBody(node, item)
       if (item.kind === "notice" || item.kind === "assistant")

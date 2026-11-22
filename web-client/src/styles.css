@@ -416,6 +416,30 @@ textarea {
   text-align: center;
   font-size: 12px;
 }
+/* A compaction is the one marker that can be RUNNING: the summary is a model
+   call, and this row is what explains why the transcript stopped moving. The
+   streaming caret (`.item.streaming .body::after`) already says "in flight"; the
+   breathing says the machine is working on it rather than typing. */
+@media (prefers-reduced-motion: no-preference) {
+  .item.compaction.streaming {
+    animation: compaction-pulse 1.6s ease-in-out infinite;
+  }
+}
+@keyframes compaction-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+/* Refused or cancelled: pi wrote no entry, so this row is not a fold marker and
+   must not wear the caption colour of one. */
+.item.compaction[data-state="failed"] {
+  color: var(--danger);
+  border-color: var(--danger);
+}
 .item pre {
   margin: 0;
   white-space: pre-wrap;

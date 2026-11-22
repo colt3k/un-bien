@@ -186,6 +186,71 @@ describe("envelopeForEvent — live plane", () => {
     })
   })
 
+  it("session_before_compact becomes the compaction_start frame", () => {
+    // The pause explained: the summary request is a model call, and this is the
+    // only cue an extension can get that one has STARTED (pi's own
+    // `compaction_start` rides the subscribe stream — see
+    // docs/rpc-on-event-map.md §B). The hook payload also carries `preparation`
+    // (the whole message set being summarized) and an AbortSignal; NEITHER may
+    // ride the wire, so the builder picks `reason` and nothing else.
+    const env = envelopeForEvent("session_before_compact", {
+      type: "session_before_compact",
+      reason: "threshold",
+      preparation: { messagesToSummarize: [{ huge: "payload" }] },
+      branchEntries: [{ id: "e1" }],
+      signal: new AbortController().signal,
+      willRetry: false,
+    })
+    expect(env).toEqual({
+      rpc: { type: "compaction_start", reason: "threshold" },
+    })
+  })
+
+  it("session_compact_failed becomes pi's result-less compaction_end", () => {
+    // A failed or cancelled compaction appends no entry, so `session_compact`
+    // never fires — without a terminal frame the viewer's "Auto-compacting..."
+    // row hangs forever. pi's own failure frame is a `compaction_end` with NO
+    // `result` plus `aborted`/`errorMessage` (agent-session.ts, manual and auto
+    // catch blocks), so that is the shape emitted.
+    expect(
+      envelopeForEvent("session_compact_failed", {
+        type: "session_compact_failed",
+        reason: "manual",
+        errorMessage:
+          "Compaction failed: Nothing to compact (session too small)",
+        aborted: false,
+        willRetry: false,
+        fromExtension: false,
+      }),
+    ).toEqual({
+      rpc: {
+        type: "compaction_end",
+        reason: "manual",
+        aborted: false,
+        willRetry: false,
+        errorMessage:
+          "Compaction failed: Nothing to compact (session too small)",
+      },
+    })
+    // An abort carries no message in pi's frame; say nothing beyond `aborted`.
+    expect(
+      envelopeForEvent("session_compact_failed", {
+        type: "session_compact_failed",
+        reason: "threshold",
+        aborted: true,
+        willRetry: false,
+        fromExtension: false,
+      }),
+    ).toEqual({
+      rpc: {
+        type: "compaction_end",
+        reason: "threshold",
+        aborted: true,
+        willRetry: false,
+      },
+    })
+  })
+
   it("agent_settled / agent_start are bare; agent_end defaults willRetry", () => {
     expect(
       envelopeForEvent("agent_settled", { type: "agent_settled" }),

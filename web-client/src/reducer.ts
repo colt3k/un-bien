@@ -180,6 +180,39 @@ export function compactionCaption(tokensBefore?: number): string {
     : `Context compacted (${tokensBefore} tokens)`
 }
 
+/** What the SAME row says while the summary call is still running.
+ *
+ *  This wording is pi's own, not this client's (`CompactionStatusIndicator`,
+ *  `modes/interactive/components/status-indicator.ts`): "Compacting context..."
+ *  for `/compact`, "Auto-compacting..." at the threshold, and the same word with
+ *  a "Context overflow detected, " prefix for overflow recovery. Only the
+ *  "(escape to cancel)" half is dropped — a viewer cannot cancel the thing it is
+ *  watching, and offering it would be a control we do not have. Like the settled
+ *  caption, it lives in the fold because the wording is a contract between
+ *  clients (the native app has to say the same thing), not each client's choice. */
+export function compactionRunningCaption(reason?: unknown): string {
+  if (reason === "manual") return "Compacting context..."
+  if (reason === "overflow")
+    return "Context overflow detected, auto-compacting..."
+  return "Auto-compacting..."
+}
+
+/** The row's final face when the compaction did NOT happen. pi appends no entry
+ *  for a failed or cancelled compaction, so there is no settled caption to fall
+ *  back on and no count to print — what the viewer needs is why the pause ended
+ *  without a fold. pi's own text is used verbatim when the wire carries it (it
+ *  already reads "Compaction failed: Nothing to compact (session too small)"),
+ *  so the browser and the TUI report the same sentence. */
+export function compactionFailureCaption(
+  errorMessage?: unknown,
+  aborted?: boolean,
+): string {
+  if (aborted === true) return "Compaction cancelled"
+  return typeof errorMessage === "string" && errorMessage.length > 0
+    ? errorMessage
+    : "Compaction failed"
+}
+
 function asFrame(value: unknown): Frame | null {
   return typeof value === "object" && value !== null ? (value as Frame) : null
 }
@@ -339,6 +372,14 @@ export class TranscriptReducer {
    *  content: see the `compaction_end` fold for what 023's wire did to the idea of
    *  a content key. */
   private unanchoredLiveCompactions: string[] = []
+  /** Compaction rows opened by a `compaction_start` and not yet settled. FIFO
+   *  for the same reason as the queue above: compactions do not overlap, so the
+   *  frame that settles one belongs to the row that opened first. It is kept
+   *  apart from `unanchoredLiveCompactions` because the two answer different
+   *  questions — "is this row still RUNNING" vs "has any walk seen this
+   *  compaction yet": a row settles at `compaction_end` but stays unanchored
+   *  until its durable entry lands. */
+  private openCompactions: string[] = []
   private leafId: string | null = null
   private streaming = false
   /** pi's own answer to `get_state` (or a `room_meta` equivalent): "a turn is in
@@ -423,6 +464,7 @@ export class TranscriptReducer {
     this.items.length = 0
     this.byRow.clear()
     this.unanchoredLiveCompactions = []
+    this.openCompactions = []
     this.toolsById.clear()
     this.identifyIndex.clear()
     this.pendingRows.clear()
@@ -637,6 +679,44 @@ export class TranscriptReducer {
         this.applyEntryAppended(asFrame(rpc.entry))
         break
       }
+      case "compaction_start": {
+        // The pause, explained. A compaction's summary is a full model call —
+        // tens of seconds in which nothing else reaches the wire — so a viewer
+        // that only learns of the compaction when it ENDS watches the transcript
+        // stop moving with no reason given. The extension sources this frame from
+        // the `session_before_compact` hook (pi's own `compaction_start` is
+        // subscribe-only; docs/rpc-on-event-map.md §B), which fires the instant
+        // the summary call is about to start, for every reason: manual,
+        // threshold, overflow.
+        //
+        // The row is born HERE and settled by the frames that follow, so the
+        // one-compaction-one-row rule is untouched: `compaction_end` updates this
+        // row in place, and the durable entry re-keys it, exactly as before. No
+        // extra row enters the projection, so the conformance vocabulary does not
+        // change.
+        //
+        // If the outcome frame is lost (a reconnect mid-compaction) the row is
+        // not stuck: the next entry walk anchors it and gives it the log's
+        // caption. `agent_settled` sweeps the streaming flag — that stops the
+        // pulse, because after a settle the machine is NOT working — and
+        // deliberately leaves the text alone: at that point the caption is the
+        // last thing the wire actually told us.
+        const item: TranscriptItem = {
+          kind: "compaction",
+          // A live row, so the bare sequence number — the id the same fold
+          // allocates today (`SyntheticID.compaction(seq:)`).
+          row: this.nextCompactionId(),
+          text: compactionRunningCaption(rpc.reason),
+          streaming: true,
+          blocks: [],
+          images: 0,
+          replayStable: false,
+        }
+        this.push(item)
+        this.unanchoredLiveCompactions.push(item.row)
+        this.openCompactions.push(item.row)
+        break
+      }
       case "compaction_end": {
         // The live plane's compaction. pi fires the `session_compact` EVENT and
         // the extension remaps it to this rpc frame, whose `result` carries the
@@ -648,9 +728,32 @@ export class TranscriptReducer {
         // and ride the log position; live ones take a seq id and append, because
         // they are a "now" event.
         const result = asFrame(rpc.result)
-        if (!result) break
         const entryId =
           typeof rpc.entryId === "string" ? rpc.entryId : undefined
+        if (!result) {
+          // No result: pi's failure/cancel frame (a failed compaction appends no
+          // entry, so `session_compact` never fires). Whatever row is still
+          // waiting for this compaction has to stop saying the machine is
+          // summarizing. With NO open row there is nothing to explain — the hook
+          // that opens one never ran (`/compact` on a session too small to
+          // compact fails before the hook), and a failure row for a compaction
+          // no viewer ever saw start is a phantom.
+          const row = this.openCompactions.shift()
+          if (row !== undefined) {
+            const item = this.byRow.get(row)
+            if (item) {
+              item.streaming = false
+              item.state = "failed"
+              item.text = compactionFailureCaption(
+                rpc.errorMessage,
+                rpc.aborted === true,
+              )
+            }
+            const at = this.unanchoredLiveCompactions.indexOf(row)
+            if (at >= 0) this.unanchoredLiveCompactions.splice(at, 1)
+          }
+          break
+        }
         const tokens =
           typeof result.tokensBefore === "number"
             ? result.tokensBefore
@@ -668,18 +771,41 @@ export class TranscriptReducer {
           // marker is the first entry-born compaction to arrive after it.
           const anchor = this.unanchoredLiveCompactions.shift()
           if (anchor !== undefined) {
+            // A walk can land before the live `compaction_end` does (or the frame
+            // is simply lost on a reconnect), leaving the row born at
+            // `compaction_start` open. The entry settles it too — and settles it
+            // with the log's count, which is the number a cold arrival sees.
+            const wasOpen = this.openCompactions.indexOf(anchor)
+            if (wasOpen >= 0) this.openCompactions.splice(wasOpen, 1)
             if (this.rekeyRow(anchor, entryId, "compaction") !== null) {
               // The entry's caption wins: a cold arrival sees the count the LOG
               // recorded, which may differ from what the live frame reported.
               const anchored = this.byRow.get(entryId)
               if (anchored) {
                 anchored.text = compactionCaption(tokens)
+                anchored.streaming = false
                 anchored.tokensBefore = tokens
                 anchored.summary = summary
               }
               break
             }
           }
+        }
+        // The live frame that STREAMS the outcome. If `compaction_start` already
+        // opened a row for this compaction, settle that row where it stands —
+        // same position, same id, now with the count the fold reports. Only for
+        // the live plane: an entry-born frame has already been matched above, and
+        // letting it settle a row that belongs to a YOUNGER compaction would put
+        // the wrong count on the wrong fold.
+        const openRow =
+          entryId === undefined ? this.openCompactions.shift() : undefined
+        const open = openRow === undefined ? null : this.byRow.get(openRow)
+        if (open) {
+          open.streaming = false
+          open.text = compactionCaption(tokens)
+          open.tokensBefore = tokens
+          open.summary = summary
+          break
         }
         const item: TranscriptItem = {
           kind: "compaction",
@@ -1379,6 +1505,7 @@ export class TranscriptReducer {
     this.items.length = 0
     this.byRow.clear()
     this.unanchoredLiveCompactions = []
+    this.openCompactions = []
     this.toolsById.clear()
     this.tree.reset()
     this.identifyIndex.clear()

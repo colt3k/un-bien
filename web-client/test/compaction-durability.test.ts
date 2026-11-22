@@ -257,3 +257,159 @@ describe("the boundary is the reference's boundary", () => {
     ).toEqual(["e-a", "e-b"])
   })
 })
+
+describe("the compaction row opens when the summary call starts", () => {
+  // A compaction's summary is a full model call — tens of seconds in which no
+  // other frame arrives. A viewer that only learns of the compaction at its end
+  // watches the transcript stop moving with nothing to read, which is what this
+  // is for. The extension sources `compaction_start` from the
+  // `session_before_compact` hook (extension/src/session/rpc_envelope.ts); pi's
+  // own frame of that name is subscribe-only and never reaches an extension.
+  const rowsOf = (reducer: TranscriptReducer) =>
+    reducer
+      .snapshot()
+      .items.filter((item) => item.kind === "compaction")
+      .map(
+        (item) =>
+          `${item.row}|${item.text}|${item.streaming ? "running" : "settled"}${
+            item.state ? `|${item.state}` : ""
+          }`,
+      )
+
+  const start = (reason: string) =>
+    ({ rpc: { type: "compaction_start", reason } }) as never
+  const end = (tokens: number) =>
+    ({
+      rpc: {
+        type: "compaction_end",
+        reason: "threshold",
+        result: { summary: "the fold", tokensBefore: tokens },
+      },
+    }) as never
+  const failed = (fields: Record<string, unknown>) =>
+    ({ rpc: { type: "compaction_end", reason: "manual", ...fields } }) as never
+
+  it("says what pi's own screen says, per reason", () => {
+    const reducer = new TranscriptReducer()
+    reducer.apply(start("threshold"))
+    reducer.apply(start("manual"))
+    reducer.apply(start("overflow"))
+    expect(rowsOf(reducer)).toEqual([
+      "1|Auto-compacting...|running",
+      "2|Compacting context...|running",
+      "3|Context overflow detected, auto-compacting...|running",
+    ])
+  })
+
+  it("its end settles that row in place — one row, and the count appears", () => {
+    const reducer = new TranscriptReducer()
+    reducer.apply(start("threshold"))
+    expect(rowsOf(reducer)).toEqual(["1|Auto-compacting...|running"])
+    reducer.apply(end(85_963))
+    // Same id, same position, no second row: the projection a compaction
+    // produces is unchanged, so the conformance vocabulary does not move.
+    expect(rowsOf(reducer)).toEqual([
+      "1|Context compacted (85963 tokens)|settled",
+    ])
+  })
+
+  it("start → end → entry is still ONE row, anchored to the entry id", () => {
+    // The three planes of one compaction. The row opens at the hook, settles on
+    // the live frame, and is re-keyed to pi's durable id when a walk brings the
+    // entry — with the LOG's count, which is what a cold arrival shows.
+    const reducer = new TranscriptReducer()
+    reducer.apply(start("threshold"))
+    reducer.apply(end(127_248))
+    reducer.apply({
+      rpc: {
+        type: "compaction_end",
+        result: { summary: "the fold", tokensBefore: 127_749 },
+        entryId: "e-live",
+      },
+    } as never)
+    expect(rowsOf(reducer)).toEqual([
+      "e-live|Context compacted (127749 tokens)|settled",
+    ])
+  })
+
+  it("a lost live frame still settles at the entry, not at 'Auto-compacting…'", () => {
+    // The reconnect case: the hook's frame arrived, the outcome's did not. The
+    // walk heals it — and the row must not be stolen by a YOUNGER live frame.
+    const reducer = new TranscriptReducer()
+    reducer.apply(start("threshold"))
+    reducer.apply({
+      rpc: {
+        type: "compaction_end",
+        result: { summary: "the fold", tokensBefore: 9_000 },
+        entryId: "e-healed",
+      },
+    } as never)
+    expect(rowsOf(reducer)).toEqual([
+      "e-healed|Context compacted (9000 tokens)|settled",
+    ])
+  })
+
+  it("a refused compaction ends the row as a refusal, not as a fold", () => {
+    // pi appends NO entry when compaction fails, so `session_compact` never
+    // fires. Without this the row would read "Auto-compacting..." forever.
+    const reducer = new TranscriptReducer()
+    reducer.apply(start("manual"))
+    reducer.apply({
+      rpc: {
+        type: "compaction_end",
+        reason: "manual",
+        aborted: false,
+        errorMessage:
+          "Compaction failed: Nothing to compact (session too small)",
+      },
+    } as never)
+    expect(rowsOf(reducer)).toEqual([
+      "1|Compaction failed: Nothing to compact (session too small)|settled|failed",
+    ])
+  })
+
+  it("an Esc in the TUI says so", () => {
+    const reducer = new TranscriptReducer()
+    reducer.apply(start("threshold"))
+    reducer.apply(failed({ aborted: true }))
+    expect(rowsOf(reducer)).toEqual(["1|Compaction cancelled|settled|failed"])
+  })
+
+  it("a failure with no row open adds nothing", () => {
+    // `/compact` on a session too small fails BEFORE the hook, so no row was
+    // ever opened. A failure row for a compaction nobody saw start is a phantom.
+    const reducer = new TranscriptReducer()
+    reducer.apply(
+      failed({ errorMessage: "Compaction failed: Already compacted" }),
+    )
+    expect(rowsOf(reducer)).toEqual([])
+  })
+
+  it("a machine that never sends compaction_start still behaves as before", () => {
+    // Extension builds older than this frame, and durable hosts (which have no
+    // hook to source it from): the end frame still births the marker.
+    const reducer = new TranscriptReducer()
+    reducer.apply(end(5_000))
+    expect(rowsOf(reducer)).toEqual([
+      "1|Context compacted (5000 tokens)|settled",
+    ])
+  })
+
+  it("two running compactions settle in the order they opened", () => {
+    // Compactions do not overlap, so FIFO is the rule here too. The first one's
+    // end frame being lost must not mislabel the second.
+    const reducer = new TranscriptReducer()
+    reducer.apply(start("threshold"))
+    reducer.apply(start("threshold"))
+    reducer.apply(end(7_000))
+    expect(rowsOf(reducer)).toEqual([
+      "1|Context compacted (7000 tokens)|settled",
+      "2|Auto-compacting...|running",
+    ])
+    reducer.apply(failed({ aborted: true }))
+    expect(rowsOf(reducer)).toEqual([
+      "1|Context compacted (7000 tokens)|settled",
+      "2|Compaction cancelled|settled|failed",
+    ])
+  })
+})

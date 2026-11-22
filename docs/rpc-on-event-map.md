@@ -38,16 +38,28 @@ transform).
 | `tool_execution_update` | `tool_execution_update` | identical `{toolCallId,toolName,args,partialResult}` (`partialResult` = accumulated, not delta) | passthrough |
 | `tool_execution_end` | `tool_execution_end` | identical `{toolCallId,toolName,result,isError}` | passthrough |
 | `compaction_end` | `session_compact` | **different event**: `on` = `{compactionEntry,fromExtension,reason,willRetry}`; rpc `compaction_end` = `{reason,result{summary,tokensBefore,…},aborted,willRetry,errorMessage?}` | **remap**: `compaction_end.result` ← `session_compact.compactionEntry` (`summary`,`tokensBefore`) |
+| `compaction_end` (no `result`) | `session_compact_failed` | `on` = `{reason,errorMessage?,aborted,willRetry,fromExtension}` | **remap**: pi's failure frame is a `compaction_end` with NO `result` + `aborted`/`errorMessage`; mirror it so a row opened by `compaction_start` cannot hang |
+| `compaction_start` | `session_before_compact` | `on` = `{preparation,branchEntries,customInstructions,reason,willRetry,signal}` — a whole message set + an AbortSignal | **pick `reason` only**: pi's own `compaction_start` is subscribe-only (§B), but the HOOK fires at the same instant, so it is the cue. Never pass the payload through |
 
 ---
 
-### Compaction, in one place (the three ways it goes wrong)
+### Compaction, in one place (the four ways it goes wrong)
 
 - **The live plane sends ONE shape: rpc `compaction_end`.** pi fires the
   `session_compact` EVENT; table A's remap turns it into `compaction_end`. A
   consumer that switches on `session_compact` or on pi's subscribe-only
   `compaction` matches nothing and drops the marker in silence — that was
   `web-client`'s bug (fixed; pinned by corpus scenario `013-real-compaction`).
+- **The pause between them was invisible, which read as a hang.** The summary is
+  a full model call — tens of seconds — and the marker only existed once it ENDED.
+  A viewer saw the transcript stop moving with nothing on screen to explain it,
+  while pi's own TUI showed "Auto-compacting... (escape to cancel)" the whole way.
+  `compaction_start` closes that: born from the `session_before_compact` HOOK
+  (pi's frame of that name is subscribe-only — table A), it opens the SAME row the
+  end frame settles, so one compaction is still one row and the projected
+  vocabulary does not change. Wording is pi's, per reason: "Compacting context..."
+  / "Auto-compacting..." / "Context overflow detected, auto-compacting...", minus
+  the cancel hint (a viewer cannot cancel what it is watching).
 - **The entry plane is a different payload.** `get_entries` returns a
   `compaction` entry: `{summary, tokensBefore, firstKeptEntryId, fromHook,
   systemMessage, usage, details}`. Fold it by synthesizing the SAME
@@ -55,17 +67,33 @@ transform).
   `SessionState+BirthEntry.swift:18`, and `web-client/src/reducer.ts`), so the
   entry and the frame that streamed it land on one row instead of two captions.
   `firstKeptEntryId` (where the kept history starts) is carried but used by
-  nobody yet.
-- **A refused compaction is invisible.** `/compact` on a short session fails
-  ("Nothing to compact (session too small)") and emits NO frame and writes NO
-  entry — verified against a live room: entry count and leaf unchanged. Nothing
-  a client can show.
+  nobody yet. It settles a row that never saw its live end (a lost frame), which
+  is what makes the running row self-healing.
+- **A refused compaction is nearly invisible, and used to leave the room busy.**
+  `/compact` on a short session fails ("Nothing to compact (session too small)")
+  and emits NO frame and writes NO entry — verified against a live room: entry
+  count and leaf unchanged. That one is still nothing to show (it fails BEFORE
+  the hook, so no row was opened, and a failure row for a compaction nobody saw
+  start is a phantom). What IS now visible: a compaction that starts and then
+  fails or is Esc-cancelled fires `session_compact_failed` and appends nothing,
+  which used to leave BOTH the app's row stuck at "Auto-compacting..." AND
+  `room_meta.working` stuck at `true` (the `false` lived only in
+  `session_compact`, which never fires). `index.ts` brackets the hook with a
+  failure path too.
 
 Where it renders, per surface: the app draws a centred caption
 "Context compacted (N tokens)" (`TranscriptRowViews.swift:61`) using
 `tokensBefore`, never `summary`; `web-client` does the same; **`unbien-cli` has
 no compaction case at all** — `connect.ts:479` only lists `compaction_end` as a
 frame that forces a transcript redraw, so the TUI shows nothing.
+
+The RUNNING caption is currently `web-client` only. The wording lives in the fold
+(`compactionRunningCaption` / `compactionFailureCaption` in `reducer.ts`), not in
+the view, for the usual reason: it is a contract between clients, and the app has
+to say the same words (`Compacting context...` / `Auto-compacting...` /
+`Context overflow detected, auto-compacting...`; `Compaction cancelled` /
+pi's own error text when one is refused) before the corpus can compare them. Until
+it does, the app and the CLI still show nothing for the pause.
 
 The durable path cannot supply the count: `unbien-durable` reconstructs the entry
 from a model message and writes `tokensBefore: 0` (`mirror.ts:140`, then
@@ -81,7 +109,7 @@ when the count is 0 is the honest fix, and it is not done anywhere yet.
 | --- | --- | --- |
 | `entry_appended` | **no** (`applyRPC` → `default: break`) | **`getEntries()` / `get_entries{since}`** — reconstruction spine only (attach/resume + out-of-band) |
 | `queue_update` | no (v1) | — skip |
-| `compaction_start` | no (v1) | — (`compaction_end` covers the render) |
+| `compaction_start` | **yes — from `session_before_compact`, not from pi** | the hook fires at the same instant pi emits its subscribe-only frame, and carries the same `reason` (table A). Pi's own frame remains unreachable: `on()` never sees it |
 | `auto_retry_start` / `auto_retry_end` | no (v1) | — skip |
 | `summarization_retry_scheduled` / `_attempt_start` / `_finished` | no | — skip |
 | `bash_execution_update` | no (v1; direct-rpc-`bash` only) | — skip |
@@ -112,6 +140,11 @@ logic (pairing/auth/mutation/gating); NOT session-content frames.
 (`model_select` / `thinking_level_select` change state but are not stream frames;
 the change surfaces as a `model_change` / `thinking_level_change` **entry** via
 `getEntries`, i.e. path B.)
+
+(`session_before_compact` and `session_compact_failed` are the two exceptions:
+they are control-plane hooks AND now the source of stream frames, because they
+are the only live cue pi gives an extension for a compaction that has STARTED
+or DIED. See table A.)
 
 ---
 
