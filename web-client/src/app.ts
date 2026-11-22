@@ -74,6 +74,7 @@ import {
   forgetLastRoom,
   forgetLastView,
   forgetLaunchDraft,
+  forgetPendingLaunch,
   forgetRelay,
   hideReasoning,
   launchDraft,
@@ -82,11 +83,14 @@ import {
   listPeers,
   listRelays,
   monoProse,
+  PENDING_LAUNCH_TTL_MS,
+  pendingLaunch as storedPendingLaunch,
   recordRelayPin,
   rememberPeer,
   rememberLastRoom,
   rememberLastView,
   rememberLaunchDraft,
+  rememberPendingLaunch,
   rememberRelay,
   relayPinFor,
   setHideReasoning,
@@ -784,7 +788,7 @@ export class App {
       // top of an empty column.
       if (SKIP_RESTORE)
         this.sub.textContent = "not restoring the last room (?fresh=1)"
-      else void this.resumeSession()
+      else if (!this.recoverPendingLaunch()) void this.resumeSession()
     } catch (err) {
       this.statusDot.className = "dot idle"
       this.toast(`connect failed: ${describeError(err)}`)
@@ -943,6 +947,7 @@ export class App {
           if (launched) {
             this.pendingLaunch = null
             clearTimeout(this.launchTimer)
+            forgetPendingLaunch()
             this.setLaunchNote("session is live — opening it")
             this.toast("session is live — opening it")
             void this.attach(epk, launched.room_id, roomTitle(launched))
@@ -1060,6 +1065,7 @@ export class App {
         forgetLastRoom(peer.epk)
         forgetLastView()
         forgetLaunchDraft()
+        forgetPendingLaunch()
         this.peers.delete(peer.epk)
         this.rooms.delete(peer.epk)
         this.renderPeerList()
@@ -1363,6 +1369,7 @@ export class App {
     this.pendingAnchor = null
     this.pendingLaunch = null
     clearTimeout(this.launchTimer)
+    forgetPendingLaunch()
     this.cancelDirsRequest()
     this.clearLaunchDirs()
     this.clearEndRequest()
@@ -1591,6 +1598,14 @@ export class App {
     }
     const id = this.launch(cwd, name || undefined)
     this.pendingLaunch = { id, epk: this.active.epk, cwd }
+    // Stored as well as held: the machine's answer can be a minute away, and a
+    // reload used to lose the question (see `recoverPendingLaunch`).
+    rememberPendingLaunch({
+      id,
+      epk: this.active.epk,
+      cwd,
+      askedAt: Date.now(),
+    })
     clearTimeout(this.launchTimer)
     this.launchTimer = setTimeout(() => {
       this.pendingLaunch = null
@@ -1684,6 +1699,7 @@ export class App {
     // late announce cannot yank the reader into another room mid-read.
     this.pendingLaunch = null
     clearTimeout(this.launchTimer)
+    forgetPendingLaunch()
     this.cancelDirsRequest()
     this.clearEndRequest()
     // Leaving a control room, if that is where we were: transcript and
@@ -1766,6 +1782,57 @@ export class App {
           this.reducer.reconcileBusy(state.isStreaming)
       })
       .catch(() => undefined)
+  }
+
+  /** Finish a launch this page asked for and never saw the result of.
+   *
+   *  `session_launch` carries a request id that the machine echoes twice: in its
+   *  direct answer, and in the `launchReq` of the room it produces. The second
+   *  echo is what makes a launch survive a reload — the announce is out there
+   *  whether or not the tab that asked still is. So: if the room has landed,
+   *  open it; if it has not, keep matching for it and say so.
+   *
+   *  Without this, refreshing during a launch loses the question. The session
+   *  usually starts anyway and appears in the machines list, but the page can no
+   *  longer tell "still starting" from "refused" from "never asked" — and the
+   *  room it is waiting for looks like somebody else's conversation.
+   *
+   *  Returns whether it took over the page, so the caller skips the ordinary
+   *  resume rather than restoring a different room on top of a launch that just
+   *  landed. */
+  private recoverPendingLaunch(): boolean {
+    const stored = storedPendingLaunch()
+    if (!stored) return false
+    if (!this.peers.has(stored.epk)) {
+      forgetPendingLaunch()
+      return false
+    }
+    const launched = launchedRoom(this.rooms.get(stored.epk) ?? [], stored.id)
+    // Re-arm the in-memory match either way: the announce may still be coming.
+    // How long is the record's remaining life rather than the 60s the panel
+    // gives its note — the panel is probably not even open now.
+    this.pendingLaunch = { id: stored.id, epk: stored.epk, cwd: stored.cwd }
+    clearTimeout(this.launchTimer)
+    this.launchTimer = setTimeout(
+      () => {
+        this.pendingLaunch = null
+      },
+      Math.max(0, PENDING_LAUNCH_TTL_MS - (Date.now() - stored.askedAt)),
+    )
+    const peer = this.peers.get(stored.epk)
+    const label = peer?.hostname ?? peer?.machineName ?? "the machine"
+    if (!launched) {
+      // Said out loud, because the alternative is silence about a request the
+      // reader made in a page that no longer exists.
+      this.toast(`still waiting for ${label} to start ${stored.cwd}`)
+      return false
+    }
+    forgetPendingLaunch()
+    this.pendingLaunch = null
+    clearTimeout(this.launchTimer)
+    this.toast("that launch finished while the page was closed — opening it")
+    void this.attach(stored.epk, launched.room_id, roomTitle(launched))
+    return true
   }
 
   /** Re-open the page this client was last on: the session it was driving, or
@@ -1908,6 +1975,7 @@ export class App {
             // does not say which of the two gates refused.
             this.pendingLaunch = null
             clearTimeout(this.launchTimer)
+            forgetPendingLaunch()
             this.setLaunchNote(launchFailureHint(code))
           }
         }

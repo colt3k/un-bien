@@ -3,14 +3,18 @@ import {
   forgetLastRoom,
   forgetLastView,
   forgetLaunchDraft,
+  forgetPendingLaunch,
   hideReasoning,
   lastRoom,
   lastView,
   launchDraft,
   monoProse,
+  PENDING_LAUNCH_TTL_MS,
+  pendingLaunch,
   rememberLastRoom,
   rememberLastView,
   rememberLaunchDraft,
+  rememberPendingLaunch,
   setHideReasoning,
   setMonoProse,
 } from "../src/store.js"
@@ -172,6 +176,49 @@ describe("the launch form to put back", () => {
     })
     forgetLaunchDraft()
     expect(launchDraft()).toBeUndefined()
+  })
+})
+
+/**
+ * A launch the machine has not produced a room for yet. It is stored because the
+ * machine echoes our request id in the room it starts, so the answer can arrive
+ * in a page that outlived the one that asked.
+ */
+describe("a launch still waiting for its room", () => {
+  it("survives the page that asked for it", () => {
+    forgetPendingLaunch()
+    expect(pendingLaunch()).toBeUndefined()
+    rememberPendingLaunch({
+      id: "rJ3k-2fQaLmX",
+      epk: "M1",
+      cwd: "/Users/gfcollin/dev/myai/un-bien",
+      askedAt: Date.now(),
+    })
+    expect(pendingLaunch()?.id).toBe("rJ3k-2fQaLmX")
+    expect(pendingLaunch()?.cwd).toBe("/Users/gfcollin/dev/myai/un-bien")
+  })
+
+  it("goes stale rather than waiting forever", () => {
+    const askedAt = Date.now()
+    rememberPendingLaunch({ id: "w1", epk: "M1", cwd: "/repo/x", askedAt })
+    // The clock is injected, so the edge is testable: still waiting one unit
+    // before the window closes, gone after it.
+    expect(pendingLaunch(askedAt + PENDING_LAUNCH_TTL_MS - 1)?.id).toBe("w1")
+    expect(pendingLaunch(askedAt + PENDING_LAUNCH_TTL_MS + 1)).toBeUndefined()
+    // And the expired record is really deleted, not recomputed away on every
+    // read — otherwise a machine that never answers keeps the note alive.
+    expect(pendingLaunch()).toBeUndefined()
+  })
+
+  it("is dropped once the room is in hand, or the machine said no", () => {
+    rememberPendingLaunch({
+      id: "done",
+      epk: "M1",
+      cwd: "/repo/x",
+      askedAt: Date.now(),
+    })
+    forgetPendingLaunch()
+    expect(pendingLaunch()).toBeUndefined()
   })
 })
 

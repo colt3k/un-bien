@@ -233,7 +233,7 @@ What the answer is not, it says out loud: `wildcard` (`launch.dirs: "*"` — typ
 isn't on the machine right now, or an older daemon that never answers (then the form keeps
 working with a typed path).
 
-Three things about that room are worth knowing, because all three look like a client bug:
+Four things about that room are worth knowing, because all four look like a client bug:
 
 - **The control room is a room like any other.** `rooms_check` lists it — measured on a
   live relay: `HI5OxguNw8Nl`, name `Gils-MacBook-Pro.local`, cwd `/Users/gfcollin`, caps
@@ -261,6 +261,16 @@ Three things about that room are worth knowing, because all three look like a cl
   launcher and coming back is not abandoning the session; **detach** is the
   control that says stop, and it clears both. If nothing was underneath, closing
   is a plain exit and the subtitle says "not attached".
+- **Refreshing during a launch does not cancel it, and no longer loses it.**
+  Pressing _launch_ sends a request id that the machine echoes back twice: in its
+  answer, and in the room it starts (`launchReq`). The id is stored, so the ask
+  outlives the tab. Reload mid-launch and the client either opens the session that
+  appeared ("that launch finished while the page was closed — opening it") or says
+  it is still waiting ("still waiting for <machine> to start <folder>"). The
+  record goes away when the room is in hand, when the machine refuses, when the
+  machine is unpaired, and after 10 minutes of silence — long because a cold start
+  on a loaded machine is exactly when you reload, and an exact id match cannot be
+  mistaken for another device's session.
 - **`refresh` twice can print "relay did not answer the session listing".** The relay keeps
   the last `rooms` response per connection and SUPPRESSES an identical repeat
   (`rooms_suppressed` metric), so the second identical listing never arrives and

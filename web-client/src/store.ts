@@ -19,6 +19,8 @@ const LAST_ROOM_KEY = "unbien.web.lastRoom.v1"
 const LAST_VIEW_KEY = "unbien.web.lastView.v1"
 /** The half-typed launch form, keyed to the control room it belongs to. */
 const LAUNCH_DRAFT_KEY = "unbien.web.launchDraft.v1"
+/** A launch asked for and not yet answered by a room. */
+const PENDING_LAUNCH_KEY = "unbien.web.pendingLaunch.v1"
 /** Viewer preferences. Named after the app's (`hideReasoning`) so a preference
  *  means the same thing on both devices. */
 const PREFS_KEY = "unbien.web.prefs.v1"
@@ -172,6 +174,50 @@ export function rememberLaunchDraft(draft: LaunchDraft): void {
 
 export function forgetLaunchDraft(): void {
   kv.remove(LAUNCH_DRAFT_KEY)
+}
+
+/** A `session_launch` we asked for and have not seen a room for yet.
+ *
+ *  Worth storing because the correlation outlives the page: the machine echoes
+ *  the request id in the room it produces (`launchReq`, matched by
+ *  `launchedRoom`), so a reload can still recognise the session it started and
+ *  open it. Without the record, a refresh in the middle of a launch loses the
+ *  question — the page can no longer tell "still starting" from "refused" from
+ *  "never asked", and the session that did start sits unexplained in the list. */
+export interface PendingLaunch {
+  id: string
+  epk: string
+  cwd: string
+  askedAt: number
+}
+
+/** How long a launch stays worth waiting for. Deliberately far longer than the
+ *  panel's own note (60s): a cold start on a loaded machine is exactly when the
+ *  reader gives up on the tab and reloads, and an exact `launchReq` match cannot
+ *  be mistaken for anyone else's session. */
+export const PENDING_LAUNCH_TTL_MS = 10 * 60_000
+
+/** The launch still outstanding, or nothing if it has gone stale. Expired
+ *  records are dropped on the way out rather than left to be re-read forever. */
+export function pendingLaunch(now = Date.now()): PendingLaunch | undefined {
+  const held = readJson<PendingLaunch>(PENDING_LAUNCH_KEY)
+  if (!held || !held.id || !held.epk) return undefined
+  if (
+    typeof held.askedAt !== "number" ||
+    now - held.askedAt > PENDING_LAUNCH_TTL_MS
+  ) {
+    kv.remove(PENDING_LAUNCH_KEY)
+    return undefined
+  }
+  return held
+}
+
+export function rememberPendingLaunch(pending: PendingLaunch): void {
+  writeJson(PENDING_LAUNCH_KEY, pending)
+}
+
+export function forgetPendingLaunch(): void {
+  kv.remove(PENDING_LAUNCH_KEY)
 }
 
 /** The page to put back. Stored alongside the room, dropped with it: a record
