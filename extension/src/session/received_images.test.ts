@@ -313,10 +313,15 @@ type AnyEvent = { type: string; [k: string]: unknown }
 type EventHandler = (event: AnyEvent, ctx?: unknown) => unknown
 
 function captureEventHandler(eventName: string): EventHandler {
-  let captured: EventHandler | undefined
+  // Every listener for the event, in registration order — pi runs all of them.
+  // Keeping only the last one meant the newest `pi.on("agent_end", …)` in the
+  // extension (the pre-compaction warning) captured this instead of the
+  // image-preview handler, and these tests fired a listener that had nothing to
+  // do with what they assert.
+  const listeners: EventHandler[] = []
   const pi = {
     on(e: string, h: EventHandler) {
-      if (e === eventName) captured = h
+      if (e === eventName) listeners.push(h)
     },
     registerCommand: () => undefined,
     registerTool: () => undefined,
@@ -332,8 +337,13 @@ function captureEventHandler(eventName: string): EventHandler {
   // so a non-root capture pi would register handlers that no-op.
   _resetBridgeOwnersForTest()
   ;(extension as ExtensionFactory)(pi)
-  if (!captured) throw new Error(`event "${eventName}" handler not registered`)
-  return captured
+  if (listeners.length === 0)
+    throw new Error(`event "${eventName}" handler not registered`)
+  return (event, ctx) => {
+    let result: unknown
+    for (const listener of listeners) result = listener(event, ctx)
+    return result
+  }
 }
 
 function captureMessageRenderer(): {
@@ -627,49 +637,49 @@ describe("received-image previews", () => {
     "active image steering defers local preview until agent_end",
     { timeout: 15000 },
     async () => {
-    await _pairForTest("ownerA__1234567890")
-    const onInput = captureEventHandler("input")
-    const onAgentEnd = captureEventHandler("agent_end")
-    onInput({ type: "input", text: "already running", source: "interactive" })
+      await _pairForTest("ownerA__1234567890")
+      const onInput = captureEventHandler("input")
+      const onAgentEnd = captureEventHandler("agent_end")
+      onInput({ type: "input", text: "already running", source: "interactive" })
 
-    const sentToAgent: unknown[] = []
-    const sentMessages: unknown[][] = []
-    _setPiForTest({
-      sendUserMessage: (content: unknown) => {
-        sentToAgent.push(content)
-      },
-      sendMessage: (...messageArgs: unknown[]) => {
-        sentMessages.push(messageArgs)
-      },
-    })
+      const sentToAgent: unknown[] = []
+      const sentMessages: unknown[][] = []
+      _setPiForTest({
+        sendUserMessage: (content: unknown) => {
+          sentToAgent.push(content)
+        },
+        sendMessage: (...messageArgs: unknown[]) => {
+          sentMessages.push(messageArgs)
+        },
+      })
 
-    relayRef.current!.emit(
-      "message",
-      JSON.stringify({
-        peer: "ownerA__1234567890",
-        ct: Buffer.from(
-          JSON.stringify({
-            rpc: {
-              type: "prompt",
-              id: "steer-image",
-              message: "extra photo",
-              streamingBehavior: "steer",
-              images: [{ data: "QUJD", mime: "image/png" }],
-            },
-          }),
-        ).toString("base64"),
-      }),
-    )
-    await new Promise<void>((r) => setImmediate(r))
+      relayRef.current!.emit(
+        "message",
+        JSON.stringify({
+          peer: "ownerA__1234567890",
+          ct: Buffer.from(
+            JSON.stringify({
+              rpc: {
+                type: "prompt",
+                id: "steer-image",
+                message: "extra photo",
+                streamingBehavior: "steer",
+                images: [{ data: "QUJD", mime: "image/png" }],
+              },
+            }),
+          ).toString("base64"),
+        }),
+      )
+      await new Promise<void>((r) => setImmediate(r))
 
-    expect(sentToAgent).toHaveLength(1)
-    expect(sentMessages).toHaveLength(0)
+      expect(sentToAgent).toHaveLength(1)
+      expect(sentMessages).toHaveLength(0)
 
-    onAgentEnd({ type: "agent_end", messages: [] })
-    expect(sentMessages).toHaveLength(1)
-    expect((sentMessages[0][0] as { customType?: unknown }).customType).toBe(
-      "un-bien:received-image",
-    )
+      onAgentEnd({ type: "agent_end", messages: [] })
+      expect(sentMessages).toHaveLength(1)
+      expect((sentMessages[0][0] as { customType?: unknown }).customType).toBe(
+        "un-bien:received-image",
+      )
     },
   )
 
@@ -679,58 +689,58 @@ describe("received-image previews", () => {
     "slow idle JPEG conversion defers preview if another turn starts first",
     { timeout: 15000 },
     async () => {
-    let resolveConversion:
-      ((value: { data: string; mimeType: string }) => void) | undefined
-    _convertToPngMock.mockReturnValueOnce(
-      new Promise((resolve) => {
-        resolveConversion = resolve
-      }),
-    )
+      let resolveConversion:
+        ((value: { data: string; mimeType: string }) => void) | undefined
+      _convertToPngMock.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveConversion = resolve
+        }),
+      )
 
-    await _pairForTest("ownerA__1234567890")
-    const onInput = captureEventHandler("input")
-    const onAgentEnd = captureEventHandler("agent_end")
-    const sentMessages: unknown[][] = []
-    _setPiForTest({
-      sendUserMessage: () => undefined,
-      sendMessage: (...messageArgs: unknown[]) => {
-        sentMessages.push(messageArgs)
-      },
-    })
+      await _pairForTest("ownerA__1234567890")
+      const onInput = captureEventHandler("input")
+      const onAgentEnd = captureEventHandler("agent_end")
+      const sentMessages: unknown[][] = []
+      _setPiForTest({
+        sendUserMessage: () => undefined,
+        sendMessage: (...messageArgs: unknown[]) => {
+          sentMessages.push(messageArgs)
+        },
+      })
 
-    relayRef.current!.emit(
-      "message",
-      JSON.stringify({
-        peer: "ownerA__1234567890",
-        ct: Buffer.from(
-          JSON.stringify({
-            rpc: {
-              type: "prompt",
-              id: "slow-jpeg",
-              message: "slow photo",
-              images: [{ data: "QUJD", mime: "image/jpeg" }],
-            },
-          }),
-        ).toString("base64"),
-      }),
-    )
-    await vi.waitFor(() => expect(_convertToPngMock).toHaveBeenCalled())
+      relayRef.current!.emit(
+        "message",
+        JSON.stringify({
+          peer: "ownerA__1234567890",
+          ct: Buffer.from(
+            JSON.stringify({
+              rpc: {
+                type: "prompt",
+                id: "slow-jpeg",
+                message: "slow photo",
+                images: [{ data: "QUJD", mime: "image/jpeg" }],
+              },
+            }),
+          ).toString("base64"),
+        }),
+      )
+      await vi.waitFor(() => expect(_convertToPngMock).toHaveBeenCalled())
 
-    onInput({
-      type: "input",
-      text: "overtaking local turn",
-      source: "interactive",
-    })
-    resolveConversion?.({ data: "iVBORw0KGgo=", mimeType: "image/png" })
-    await new Promise<void>((r) => setImmediate(r))
+      onInput({
+        type: "input",
+        text: "overtaking local turn",
+        source: "interactive",
+      })
+      resolveConversion?.({ data: "iVBORw0KGgo=", mimeType: "image/png" })
+      await new Promise<void>((r) => setImmediate(r))
 
-    expect(sentMessages).toHaveLength(0)
+      expect(sentMessages).toHaveLength(0)
 
-    onAgentEnd({ type: "agent_end", messages: [] })
-    expect(sentMessages).toHaveLength(1)
-    expect((sentMessages[0][0] as { customType?: unknown }).customType).toBe(
-      "un-bien:received-image",
-    )
+      onAgentEnd({ type: "agent_end", messages: [] })
+      expect(sentMessages).toHaveLength(1)
+      expect((sentMessages[0][0] as { customType?: unknown }).customType).toBe(
+        "un-bien:received-image",
+      )
     },
   )
 

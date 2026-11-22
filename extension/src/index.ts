@@ -55,10 +55,11 @@ import {
   subagentRoomsEnabled,
   type SubagentRoomsController,
 } from "./subagent_rooms.js"
-import { createRpcEnvelope, type EnvelopeMessage } from "./session/rpc_envelope.js"
 import {
-  PiOnEventSource,
-} from "./pi_binding/pi_on_event_source.js"
+  createRpcEnvelope,
+  type EnvelopeMessage,
+} from "./session/rpc_envelope.js"
+import { PiOnEventSource } from "./pi_binding/pi_on_event_source.js"
 import {
   PiSessionControl,
   PiSessionPort,
@@ -71,7 +72,11 @@ import type {
   SubmitResult,
 } from "./core/port.js"
 import { envLog } from "./session/debug_log.js"
-import { chainUiNotify, notifyOwners, setOwnerNotifyHook } from "./session/owner_notify.js"
+import {
+  chainUiNotify,
+  notifyOwners,
+  setOwnerNotifyHook,
+} from "./session/owner_notify.js"
 import { roomIdForSession } from "./rooms.js"
 import { registerAgentTools } from "./session/tools.js"
 import {
@@ -149,8 +154,15 @@ import {
   _deployAgentNetworkSkill,
 } from "./commands/housekeeping.js"
 import { registerUnbienCommands } from "./commands/register.js"
-import { makeTestBusEmitter, runTestScenario } from "./commands/test_scenarios.js"
-import { routeRpcCommand, routeUnBienPlane, type PlaneRouterDeps } from "./routing.js"
+import {
+  makeTestBusEmitter,
+  runTestScenario,
+} from "./commands/test_scenarios.js"
+import {
+  routeRpcCommand,
+  routeUnBienPlane,
+  type PlaneRouterDeps,
+} from "./routing.js"
 import { createTestHooks } from "./test_hooks.js"
 import { type RpcHandlersDeps } from "./session/rpc_handlers.js"
 import { PiAgentConfig } from "./pi_binding/agent_config.js"
@@ -551,7 +563,10 @@ const _federatedAcks = new FederatedAcks()
 // Used by list_peers (discovery) + agent_send (routing via pi_envelope).
 // Also handles incoming pi_envelope_in frames (federated messages → mesh inbox).
 let _remoteRelayPeers: string[] = []
-let _remoteRelayPeerEpks: Map<string, { relayName: string; addresses: string[] }> = new Map()
+let _remoteRelayPeerEpks: Map<
+  string,
+  { relayName: string; addresses: string[] }
+> = new Map()
 // agent-run active/generation now live PER-SESSION in _stateFor(sid).agentRun;
 // mesh delivery targets the ROOT run, so the drain reads _rootState().agentRun.
 let _meshDrainScheduled = false
@@ -594,9 +609,7 @@ interface SessionState {
   sessionStartedAt: number | null
   /** This session's base ctx (compact/abort/ui fallback outside live events);
    *  base-ctx resolution reads the ROOT's. */
-  baseCtx:
-    | Pick<ExtensionContext, "compact" | "abort" | "ui" | "isIdle">
-    | null
+  baseCtx: Pick<ExtensionContext, "compact" | "abort" | "ui" | "isIdle"> | null
 }
 /** A freshly-zeroed session record (root or subagent child). */
 function _freshSessionState(): SessionState {
@@ -1092,8 +1105,20 @@ const relayDeps: RelayLifecycleDeps = {
         // no remote-relay peers and agent_send's federated routing no-ops.
         if (loadConfig().mesh?.federation === false) return
         try {
-          const frame = JSON.parse(line) as { type?: string; peers?: Array<{ epk?: string; relay_name?: string; rooms?: Array<{ cwd?: string; name?: string; room_id?: string }> }>; envelope?: FederatedEnvelope; from_pc?: string }
-          if (frame.type === "federated_peer_list" && Array.isArray(frame.peers)) {
+          const frame = JSON.parse(line) as {
+            type?: string
+            peers?: Array<{
+              epk?: string
+              relay_name?: string
+              rooms?: Array<{ cwd?: string; name?: string; room_id?: string }>
+            }>
+            envelope?: FederatedEnvelope
+            from_pc?: string
+          }
+          if (
+            frame.type === "federated_peer_list" &&
+            Array.isArray(frame.peers)
+          ) {
             const addresses: string[] = []
             for (const peer of frame.peers) {
               const relayName = peer.relay_name ?? "?"
@@ -1103,14 +1128,22 @@ const relayDeps: RelayLifecycleDeps = {
             }
             _remoteRelayPeers = addresses
             // Also store the detail map (epk → addresses) for agent_send routing.
-            const detail = new Map<string, { relayName: string; addresses: string[] }>()
+            const detail = new Map<
+              string,
+              { relayName: string; addresses: string[] }
+            >()
             for (const peer of frame.peers) {
               const relayName = peer.relay_name ?? "?"
               const peerAddresses: string[] = []
               for (const room of peer.rooms ?? []) {
-                peerAddresses.push(_federatedAddress(relayName, _roomAddress(room)))
+                peerAddresses.push(
+                  _federatedAddress(relayName, _roomAddress(room)),
+                )
               }
-              detail.set(peer.epk ?? "", { relayName, addresses: peerAddresses })
+              detail.set(peer.epk ?? "", {
+                relayName,
+                addresses: peerAddresses,
+              })
             }
             _remoteRelayPeerEpks = detail
           }
@@ -1118,7 +1151,10 @@ const relayDeps: RelayLifecycleDeps = {
           // mesh messages. Handles pi_envelope_in from federated peer relays
           // WITHOUT needing the cross-PC bridge (BrokerRemote).
           if (frame.type === "pi_envelope_in" && frame.envelope) {
-            _handleFederatedEnvelope(frame.envelope as FederatedEnvelope, frame.from_pc)
+            _handleFederatedEnvelope(
+              frame.envelope as FederatedEnvelope,
+              frame.from_pc,
+            )
           }
         } catch {
           // Not JSON or malformed — ignore
@@ -1420,7 +1456,10 @@ const deps: CommandDeps = {
   getState: _getState,
   runTestScenario: (scenario) =>
     runTestScenario(
-      { broadcast: (env) => _broadcastEnvelope(relayDeps, env), emitBus: makeTestBusEmitter(() => _pi) },
+      {
+        broadcast: (env) => _broadcastEnvelope(relayDeps, env),
+        emitBus: makeTestBusEmitter(() => _pi),
+      },
       scenario,
     ),
   safeNotify: _safeNotify,
@@ -1626,7 +1665,15 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   // true) — when false, the tools are NOT registered; the broker + relay
   // still work for the paired app, but the model can't send/list/wait.
   if (loadConfig().mesh?.tools !== false) {
-    registerAgentTools(pi, () => _meshNode?.peer() ?? null, () => _meshInbox, () => _remoteRelayPeers, () => _remoteRelayPeerEpks, () => _relay, () => _federatedAcks)
+    registerAgentTools(
+      pi,
+      () => _meshNode?.peer() ?? null,
+      () => _meshInbox,
+      () => _remoteRelayPeers,
+      () => _remoteRelayPeerEpks,
+      () => _relay,
+      () => _federatedAcks,
+    )
   }
   _registerReceivedImageRenderer(pi)
 
@@ -1838,7 +1885,19 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   // compaction lands, so a session parked at the threshold does not spam.
   let _compactionWarnThreshold: number | null = null
   pi.on("agent_end", (_event, ctx) => {
-    const usage = ctx.getContextUsage()
+    // Read defensively, like every other host capability this hook touches.
+    // `agent_end` contexts are not a fixed shape: pi's own hands one without
+    // `getSettings` (measured on 0.25.19), and a listener's second argument is
+    // not guaranteed at all — the extension's own test harness fires the event
+    // with none, which is how this was found: `ctx.getContextUsage()` threw
+    // inside `agent_end` and took the six mesh-delivery and received-image
+    // tests down with it. A throw here is not a test failure only in
+    // production: it happens at the end of a turn, in a listener the host does
+    // not expect to raise, next to the mesh delivery that runs on the same
+    // event. No usage numbers means no band to compare against, so the honest
+    // answer is silence about the coming fold — not a crash, and not a warning
+    // invented from a guess.
+    const usage = ctx?.getContextUsage?.()
     if (!usage || usage.tokens === null || usage.contextWindow <= 0) return
     // pi types `getSettings()` on the settings-bearing context, but the context
     // handed to agent_end has none (measured on 0.25.19: `ctx.getSettings` is
@@ -1937,8 +1996,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     // forget: a failure (broker down, timeout) leaves the mesh name stale — the
     // relay room_meta + evt above already updated the app tile, and a /reload
     // re-derives the mesh name as a fallback.
-    const renameCwd =
-      "cwd" in ctx ? (ctx as { cwd?: string }).cwd : undefined
+    const renameCwd = "cwd" in ctx ? (ctx as { cwd?: string }).cwd : undefined
     if (_meshNode && typeof renameCwd === "string" && renameCwd.length > 0) {
       void _meshNode
         .renameInPlace(resolveAgentName(renameCwd, name))
@@ -2179,8 +2237,13 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     // root-lifecycle authority (Tier 2), NOT the per-sid data path, so an
     // early return is correct here — there is no session-local state to cache.
     if (!_isRootSession(pi)) return
-    const shutdownReason = (event as { reason?: string } | undefined)?.reason ?? "unknown"
-    lifecycleLog("session_shutdown", { reason: shutdownReason, state: _state, mesh: _meshNode ? "joined" : "none" })
+    const shutdownReason =
+      (event as { reason?: string } | undefined)?.reason ?? "unknown"
+    lifecycleLog("session_shutdown", {
+      reason: shutdownReason,
+      state: _state,
+      mesh: _meshNode ? "joined" : "none",
+    })
     // Revoke async authority synchronously, before any teardown await. `_disposed`
     // blocks the outgoing continuation immediately; the root and candidate
     // generations keep queued work stale even if a same-module session_start
@@ -2255,7 +2318,8 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     let meshClose: Promise<void> | null = null
     try {
       meshClose = meshNode?.close() ?? null
-      if (meshNode) lifecycleLog("mesh_leave_started", { address: meshNode.address() })
+      if (meshNode)
+        lifecycleLog("mesh_leave_started", { address: meshNode.address() })
     } catch (err) {
       lifecycleLog("mesh_leave_failed", { error: String(err) })
     }
@@ -2271,7 +2335,10 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     }
     try {
       await meshClose
-      lifecycleLog("session_shutdown_done", { reason: shutdownReason, mesh_left: meshClose ? "yes" : "none" })
+      lifecycleLog("session_shutdown_done", {
+        reason: shutdownReason,
+        mesh_left: meshClose ? "yes" : "none",
+      })
     } catch (err) {
       lifecycleLog("mesh_leave_failed", { error: String(err) })
     }
@@ -2339,7 +2406,10 @@ function _piSessionControl(): PiSessionControl | null {
   // getBaseCtx: terminate reads abort/shutdown off the root session_start
   // ctx — they are ctx members, not factory-pi members (F2).
   return _pi
-    ? new PiSessionControl(() => _pi, () => _rootState().baseCtx)
+    ? new PiSessionControl(
+        () => _pi,
+        () => _rootState().baseCtx,
+      )
     : null
 }
 
@@ -2470,7 +2540,10 @@ function _scheduleMeshMessageDrain(): void {
  *     and acked when the sender asked: the ack says it reached the inbox,
  *     not that the agent read it, so neither side waits on the other's
  *     agent. Broadcasts are not acked. */
-function _handleFederatedEnvelope(env: FederatedEnvelope, fromPc: string | undefined): void {
+function _handleFederatedEnvelope(
+  env: FederatedEnvelope,
+  fromPc: string | undefined,
+): void {
   if (_federatedAcks.settle(env)) return
   if (isAckEnvelope(env)) return // late, or another session's
   if (_federatedAcks.isErrorForOwnAck(env)) return // an ack that could not go back
@@ -2485,10 +2558,14 @@ function _handleFederatedEnvelope(env: FederatedEnvelope, fromPc: string | undef
     randomUUID(),
   )
   try {
-    _relay.send(JSON.stringify({ type: "pi_envelope", to_pc: fromPc, envelope: ack }))
+    _relay.send(
+      JSON.stringify({ type: "pi_envelope", to_pc: fromPc, envelope: ack }),
+    )
     _federatedAcks.noteAckSent(ack.id)
   } catch (err) {
-    console.error(`[un-bien] federated ack for ${env.id} not sent: ${String(err)}`)
+    console.error(
+      `[un-bien] federated ack for ${env.id} not sent: ${String(err)}`,
+    )
   }
 }
 
@@ -2521,7 +2598,9 @@ function _deliverMeshMessageToAgent(env: MeshEnvelope): boolean {
   // A message already delivered (it reached this agent by two routes, e.g.
   // the relay and the cross-PC bridge) is not pushed into the turn again.
   if (!_meshInbox.add(message)) {
-    console.error(`[un-bien] agent-network message ${env.id} from "${env.from}" already delivered — ignored`)
+    console.error(
+      `[un-bien] agent-network message ${env.id} from "${env.from}" already delivered — ignored`,
+    )
     return true
   }
   try {
@@ -2546,7 +2625,9 @@ function _isAddressedToThisAgent(to: string): boolean {
   return _addressMatches(to, [
     _meshNode?.address(),
     meta ? _roomAddress({ cwd: meta.cwd, name: meta.name }) : null,
-    meta && st.myRoomId ? _roomAddress({ cwd: meta.cwd, room_id: st.myRoomId }) : null,
+    meta && st.myRoomId
+      ? _roomAddress({ cwd: meta.cwd, room_id: st.myRoomId })
+      : null,
   ])
 }
 
@@ -2749,8 +2830,13 @@ export async function probeListPeers(
           // to legacy bare names with no cwd group for older brokers.
           const detailed: RosterInfo[] = Array.isArray(body.peers_detailed)
             ? (body.peers_detailed as unknown[]).flatMap((d) => {
-                const e = d as { cwd?: unknown; name?: unknown; address?: unknown }
-                return typeof e?.address === "string" && typeof e?.name === "string"
+                const e = d as {
+                  cwd?: unknown
+                  name?: unknown
+                  address?: unknown
+                }
+                return typeof e?.address === "string" &&
+                  typeof e?.name === "string"
                   ? [
                       {
                         cwd: typeof e.cwd === "string" ? e.cwd : "",
@@ -2925,7 +3011,16 @@ export { getOrCreateEd25519Keypair } from "./pairing/storage.js"
 export { buildSignedAllowList } from "./pairing/signed_allow_list.js"
 export { resolveRelayUrl, toWebSocketUrl } from "./config.js"
 export { clampPairTtlMs } from "./pairing/qr.js"
-export { listPeers, addPeer, nextAllowListVersion, pairingAllowList } from "./pairing/storage.js"
+export {
+  listPeers,
+  addPeer,
+  nextAllowListVersion,
+  pairingAllowList,
+} from "./pairing/storage.js"
 export { TOKEN_TTL_MS } from "./pairing/qr.js"
 export type { KeyStoreBackend } from "./pairing/storage.js"
-export { _setKeyStoreBackendForTest, _setKeyringExpectedForTest, _setKeyringRetryForTest } from "./pairing/storage.js"
+export {
+  _setKeyStoreBackendForTest,
+  _setKeyringExpectedForTest,
+  _setKeyringRetryForTest,
+} from "./pairing/storage.js"

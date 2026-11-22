@@ -917,12 +917,18 @@ describe("agent-network mesh delivery", () => {
     const harness = captureEventHarness()
     const sendMessage = vi.fn()
     _setPiForTest({ sendMessage, sendUserMessage: () => undefined })
-    const env = { id: "mesh-dup-1", from: "/work/repo@reviewer", re: null, body: "hello" }
+    const env = {
+      id: "mesh-dup-1",
+      from: "/work/repo@reviewer",
+      re: null,
+      body: "hello",
+    }
     _deliverMeshMessageToAgentForTest(env)
     _deliverMeshMessageToAgentForTest({ ...env })
     await new Promise<void>((resolve) => setTimeout(resolve, 5))
     const delivered = sendMessage.mock.calls.filter(([m]) =>
-      String((m as { content?: unknown }).content).includes("mesh-dup-1"))
+      String((m as { content?: unknown }).content).includes("mesh-dup-1"),
+    )
     expect(delivered).toHaveLength(1)
     harness.handler("agent_end")({ type: "agent_end" })
     await new Promise<void>((resolve) => setTimeout(resolve, 5))
@@ -934,15 +940,27 @@ describe("agent-network mesh delivery", () => {
     _setPiForTest({ sendMessage, sendUserMessage: () => undefined })
     harness.handler("agent_start")({ type: "agent_start" })
     // Mid-run: the reply agent_request is blocked on, and an unrelated request.
-    _deliverMeshMessageToAgentForTest({ id: "mesh-read-1", from: "/work/repo@reviewer", re: "out-1", body: "pong" })
-    _deliverMeshMessageToAgentForTest({ id: "mesh-fresh-1", from: "/work/repo@worker", re: null, body: "ping" })
+    _deliverMeshMessageToAgentForTest({
+      id: "mesh-read-1",
+      from: "/work/repo@reviewer",
+      re: "out-1",
+      body: "pong",
+    })
+    _deliverMeshMessageToAgentForTest({
+      id: "mesh-fresh-1",
+      from: "/work/repo@worker",
+      re: null,
+      body: "ping",
+    })
     // agent_request returns the reply's body to the agent.
     _meshInboxForTest().markShown("mesh-read-1")
     harness.handler("agent_end")({ type: "agent_end" })
     await new Promise<void>((resolve) => setTimeout(resolve, 5))
     expect(sendMessage).toHaveBeenCalledTimes(1)
     expect(sendMessage.mock.calls[0]).toEqual([
-      expect.objectContaining({ content: expect.stringContaining("mesh-fresh-1") }),
+      expect.objectContaining({
+        content: expect.stringContaining("mesh-fresh-1"),
+      }),
       { triggerTurn: true, deliverAs: "followUp" },
     ])
     expect(_meshInboxForTest().wasShown("mesh-fresh-1")).toBe(true)
@@ -955,17 +973,63 @@ describe("agent-network mesh delivery", () => {
     const sendMessage = vi.fn()
     _setPiForTest({ sendMessage, sendUserMessage: () => undefined })
     harness.handler("agent_start")({ type: "agent_start" })
-    _deliverMeshMessageToAgentForTest({ id: "mesh-read-2", from: "/work/repo@reviewer", re: "out-2", body: "pong" })
+    _deliverMeshMessageToAgentForTest({
+      id: "mesh-read-2",
+      from: "/work/repo@reviewer",
+      re: "out-2",
+      body: "pong",
+    })
     _meshInboxForTest().markShown("mesh-read-2")
     harness.handler("agent_end")({ type: "agent_end" })
     await new Promise<void>((resolve) => setTimeout(resolve, 5))
     expect(sendMessage).not.toHaveBeenCalled()
     // The run is not left marked active: a later message is still pushed.
-    _deliverMeshMessageToAgentForTest({ id: "mesh-later-2", from: "/work/repo@worker", re: null, body: "ping" })
+    _deliverMeshMessageToAgentForTest({
+      id: "mesh-later-2",
+      from: "/work/repo@worker",
+      re: null,
+      body: "ping",
+    })
     await new Promise<void>((resolve) => setTimeout(resolve, 5))
     expect(sendMessage).toHaveBeenCalledTimes(1)
     harness.handler("agent_end")({ type: "agent_end" })
     await new Promise<void>((resolve) => setTimeout(resolve, 5))
+  })
+})
+
+// ── agent_end and the host context the extension cannot rely on ──────────────
+
+// pi's `agent_end` context is not a fixed shape: on 0.25.19 it has no
+// `getSettings`, and the second argument itself is not guaranteed — every
+// `agent_end` call in this file passes none. The pre-compaction warning read
+// `ctx.getContextUsage()` unguarded and threw inside the event, in a listener
+// the host does not expect to raise, alongside mesh delivery on the same event.
+describe("agent_end with a context that gives less than hoped", () => {
+  test("every agent_end listener survives the call with no context at all", () => {
+    const harness = captureEventHarness()
+    expect(() =>
+      harness.handler("agent_end")({ type: "agent_end" }),
+    ).not.toThrow()
+  })
+
+  test("a host that reports no usage stays silent rather than guessing", () => {
+    const harness = captureEventHarness()
+    expect(() =>
+      harness.handler("agent_end")(
+        { type: "agent_end" },
+        {
+          getContextUsage: () => null,
+        },
+      ),
+    ).not.toThrow()
+    expect(() =>
+      harness.handler("agent_end")(
+        { type: "agent_end" },
+        {
+          getContextUsage: () => ({ tokens: null, contextWindow: 0 }),
+        },
+      ),
+    ).not.toThrow()
   })
 })
 
@@ -975,10 +1039,16 @@ type AnyEvent = { type: string; [k: string]: unknown }
 type EventHandler = (event: AnyEvent, ctx?: unknown) => unknown
 
 function captureEventHandler(eventName: string): EventHandler {
-  let captured: EventHandler | undefined
+  // EVERY listener the extension registers for this event, in registration
+  // order — which is what pi runs. These helpers used to keep only the LAST one,
+  // so adding a second `pi.on("agent_end", …)` (the pre-compaction warning)
+  // silently re-pointed every test that fires `agent_end` at the newest
+  // listener: six tests failed on their own assertions, having never reached
+  // the code they were written to test.
+  const listeners: EventHandler[] = []
   const pi = {
     on(e: string, h: EventHandler) {
-      if (e === eventName) captured = h
+      if (e === eventName) listeners.push(h)
     },
     registerCommand: () => undefined,
     registerTool: () => undefined,
@@ -994,8 +1064,16 @@ function captureEventHandler(eventName: string): EventHandler {
   // so a non-root capture pi would register handlers that no-op.
   _resetBridgeOwnersForTest()
   ;(extension as ExtensionFactory)(pi)
-  if (!captured) throw new Error(`event "${eventName}" handler not registered`)
-  return captured
+  if (listeners.length === 0)
+    throw new Error(`event "${eventName}" handler not registered`)
+  return (event, ctx) => {
+    // Sequential, like the host: each listener sees the state the one before it
+    // left. The LAST listener's result is returned, since that is what a
+    // single-listener capture used to hand back.
+    let result: unknown
+    for (const listener of listeners) result = listener(event, ctx)
+    return result
+  }
 }
 
 function captureEventHarness(): {
@@ -1003,11 +1081,13 @@ function captureEventHarness(): {
   emitBus: (channel: string, data: unknown) => void
   busListenerCount: (channel: string) => number
 } {
-  const handlers = new Map<string, EventHandler>()
+  const handlers = new Map<string, EventHandler[]>()
   const busHandlers = new Map<string, Array<(data: unknown) => void>>()
   const pi = {
     on(e: string, h: EventHandler) {
-      handlers.set(e, h)
+      const list = handlers.get(e) ?? []
+      list.push(h)
+      handlers.set(e, list)
     },
     events: {
       emit(channel: string, data: unknown) {
@@ -1042,9 +1122,17 @@ function captureEventHarness(): {
   ;(extension as ExtensionFactory)(pi)
   return {
     handler(eventName: string) {
-      const h = handlers.get(eventName)
-      if (!h) throw new Error(`event "${eventName}" handler not registered`)
-      return h
+      const list = handlers.get(eventName)
+      if (!list || list.length === 0)
+        throw new Error(`event "${eventName}" handler not registered`)
+      // Fan out to every listener for the event, in registration order: one
+      // event has many listeners in pi, and a harness that fires only the newest
+      // one tests the newest feature and nothing else.
+      return (event, ctx) => {
+        let result: unknown
+        for (const listener of list) result = listener(event, ctx)
+        return result
+      }
     },
     emitBus(channel: string, data: unknown) {
       ;(
@@ -2079,21 +2167,38 @@ describe("rooms wiring", () => {
     await _connectForTest(makeMockCtx("/tmp/unbien-test-fed"))
     const sendMessage = vi.fn()
     _setPiForTest({ sendMessage, sendUserMessage: () => undefined })
-    const meta = _getRootProjectionForTest().myRoomMeta as { name: string; cwd: string } | null
+    const meta = _getRootProjectionForTest().myRoomMeta as {
+      name: string
+      cwd: string
+    } | null
     expect(meta).not.toBeNull()
     const frame = (id: string, to: string) =>
       JSON.stringify({
         type: "pi_envelope_in",
         from_pc: "remote-pc",
-        envelope: { id, from: "/remote/repo@asker", to, re: null, body: "hello" },
+        envelope: {
+          id,
+          from: "/remote/repo@asker",
+          to,
+          re: null,
+          body: "hello",
+        },
       })
     // How a sender on another machine addresses this room: the relay's room
     // list (display name, raw cwd) behind the relay's label.
-    relayRef.current!.emit("message", frame("fed-mine", `cascade:${meta!.cwd}@${meta!.name}`))
+    relayRef.current!.emit(
+      "message",
+      frame("fed-mine", `cascade:${meta!.cwd}@${meta!.name}`),
+    )
     // Another session on this machine, delivered to this connection too.
-    relayRef.current!.emit("message", frame("fed-other", `cascade:${meta!.cwd}@someone-else`))
+    relayRef.current!.emit(
+      "message",
+      frame("fed-other", `cascade:${meta!.cwd}@someone-else`),
+    )
     await new Promise<void>((resolve) => setTimeout(resolve, 5))
-    const contents = sendMessage.mock.calls.map(([m]) => String((m as { content?: unknown }).content))
+    const contents = sendMessage.mock.calls.map(([m]) =>
+      String((m as { content?: unknown }).content),
+    )
     expect(contents.filter((c) => c.includes("fed-mine"))).toHaveLength(1)
     expect(contents.filter((c) => c.includes("fed-other"))).toHaveLength(0)
   })
@@ -2103,35 +2208,96 @@ describe("rooms wiring", () => {
     await _connectForTest(makeMockCtx("/tmp/unbien-test-fed-ack"))
     const sendMessage = vi.fn()
     _setPiForTest({ sendMessage, sendUserMessage: () => undefined })
-    const meta = _getRootProjectionForTest().myRoomMeta as { name: string; cwd: string } | null
+    const meta = _getRootProjectionForTest().myRoomMeta as {
+      name: string
+      cwd: string
+    } | null
     const relay = relayRef.current!
     const emit = (envelope: Record<string, unknown>) =>
-      relay.emit("message", JSON.stringify({ type: "pi_envelope_in", from_pc: "remote-pc", envelope }))
+      relay.emit(
+        "message",
+        JSON.stringify({
+          type: "pi_envelope_in",
+          from_pc: "remote-pc",
+          envelope,
+        }),
+      )
     const sentAcks = () =>
       relay.send.mock.calls
-        .map(([line]) => JSON.parse(String(line)) as { type?: string; to_pc?: string; envelope?: { re?: string; body?: { type?: string } } })
-        .filter((f) => f.type === "pi_envelope" && f.envelope?.body?.type === "ack")
+        .map(
+          ([line]) =>
+            JSON.parse(String(line)) as {
+              type?: string
+              to_pc?: string
+              envelope?: { re?: string; body?: { type?: string } }
+            },
+        )
+        .filter(
+          (f) => f.type === "pi_envelope" && f.envelope?.body?.type === "ack",
+        )
     const mine = `cascade:${meta!.cwd}@${meta!.name}`
     relay.send.mockClear()
 
     // Asked for an ack, addressed here: delivered, and acked to the sender's machine.
-    emit({ id: "fed-ack-1", from: "/remote@asker", to: mine, re: null, body: "hi", ack: true })
+    emit({
+      id: "fed-ack-1",
+      from: "/remote@asker",
+      to: mine,
+      re: null,
+      body: "hi",
+      ack: true,
+    })
     // Not asked (an older sender): delivered, no ack.
-    emit({ id: "fed-ack-2", from: "/remote@asker", to: mine, re: null, body: "hi" })
+    emit({
+      id: "fed-ack-2",
+      from: "/remote@asker",
+      to: mine,
+      re: null,
+      body: "hi",
+    })
     // Another session's message: neither.
-    emit({ id: "fed-ack-3", from: "/remote@asker", to: `cascade:${meta!.cwd}@someone-else`, re: null, body: "hi", ack: true })
+    emit({
+      id: "fed-ack-3",
+      from: "/remote@asker",
+      to: `cascade:${meta!.cwd}@someone-else`,
+      re: null,
+      body: "hi",
+      ack: true,
+    })
     // A federated broadcast: delivered, never acked.
-    emit({ id: "fed-ack-4", from: "/remote@asker", to: "*:broadcast", re: null, body: "all", ack: true })
+    emit({
+      id: "fed-ack-4",
+      from: "/remote@asker",
+      to: "*:broadcast",
+      re: null,
+      body: "all",
+      ack: true,
+    })
     // A stray ack: never shown to the agent.
-    emit({ id: "fed-ack-5", from: "/remote@asker", to: mine, re: "not-pending", body: { type: "ack", status: "received" } })
+    emit({
+      id: "fed-ack-5",
+      from: "/remote@asker",
+      to: mine,
+      re: "not-pending",
+      body: { type: "ack", status: "received" },
+    })
     await new Promise<void>((resolve) => setTimeout(resolve, 5))
 
     expect(sentAcks()).toHaveLength(1)
-    expect(sentAcks()[0]).toMatchObject({ to_pc: "remote-pc", envelope: { re: "fed-ack-1" } })
-    const contents = sendMessage.mock.calls.map(([m]) => String((m as { content?: unknown }).content))
-    const deliveredIds = ["fed-ack-1", "fed-ack-2", "fed-ack-3", "fed-ack-4", "fed-ack-5"].filter((id) =>
-      contents.some((c) => c.includes(id)),
+    expect(sentAcks()[0]).toMatchObject({
+      to_pc: "remote-pc",
+      envelope: { re: "fed-ack-1" },
+    })
+    const contents = sendMessage.mock.calls.map(([m]) =>
+      String((m as { content?: unknown }).content),
     )
+    const deliveredIds = [
+      "fed-ack-1",
+      "fed-ack-2",
+      "fed-ack-3",
+      "fed-ack-4",
+      "fed-ack-5",
+    ].filter((id) => contents.some((c) => c.includes(id)))
     expect(deliveredIds).toEqual(["fed-ack-1", "fed-ack-2", "fed-ack-4"])
   })
 
