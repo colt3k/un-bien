@@ -18,6 +18,14 @@ import {
   type TrackedRoom,
 } from "./room-list.js"
 import {
+  canEndSession,
+  END_CONFIRM_MS,
+  END_LABELS,
+  END_REASON,
+  refusalNotice,
+  TERMINATE_QUIET_MS,
+} from "./session-end.js"
+import {
   TranscriptReducer,
   type AskRequest,
   type TranscriptItem,
@@ -422,6 +430,18 @@ export class App {
   private readonly input = $<HTMLTextAreaElement>("input")
   private readonly stopBtn = $<HTMLButtonElement>("stopBtn")
   private readonly sendBtn = $<HTMLButtonElement>("sendBtn")
+  /** End the session (the remote `/quit`). `endSentFor` holds the request id we
+   *  put on the wire — the machine answers by ENDING THE ROOM, never with a
+   *  result frame, so a request that is not followed by `room_ended` inside the
+   *  quiet window was refused by its gate, however the click felt. */
+  private readonly endBtn = $<HTMLButtonElement>("endSessionBtn")
+  private endArmed = false
+  private endSentFor: string | null = null
+  /** The open session is over. Its caps outlive the room in this client, so the
+   *  control needs the fact itself to go away. */
+  private sessionEnded = false
+  private endArmTimer: ReturnType<typeof setTimeout> | undefined
+  private endWaitTimer: ReturnType<typeof setTimeout> | undefined
   /** Hidden while a control room is open — see `joinControlRoom`. */
   private readonly composer = $<HTMLElement>("composer")
   private readonly launchPanel = $<HTMLElement>("launchPanel")
@@ -570,6 +590,7 @@ export class App {
     this.sendBtn.addEventListener("click", () => this.send("auto"))
     $("queueBtn").addEventListener("click", () => this.send("queue"))
     this.stopBtn.addEventListener("click", () => this.client?.abort())
+    this.endBtn.addEventListener("click", () => this.onEndSessionClick())
     this.input.addEventListener("keydown", (event: KeyboardEvent) => {
       if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault()
@@ -866,11 +887,14 @@ export class App {
           this.active.roomId === roomId
         ) {
           forgetLastRoom(epk)
+          this.clearEndRequest()
           this.toast("that session ended on the machine")
           this.title.textContent = `${this.active.name} (ended)`
           // The relay saying the room is gone IS the session ending for a
           // viewer, even when the machine never got to send `session_shutdown`.
           this.reducer.setEnded(true)
+          this.sessionEnded = true
+          this.refreshEndSession()
           this.render()
         }
         break
@@ -1103,6 +1127,7 @@ export class App {
     this.composer.hidden = false
     this.active = null
     this.cancelDirsRequest()
+    this.clearEndRequest()
     this.title.textContent = "not attached"
     this.sub.textContent = "pick a session from the machines panel"
   }
@@ -1223,6 +1248,67 @@ export class App {
     )
   }
 
+  /** The control appears only for a session whose machine advertises the cap —
+   *  a control room and a gated session both fail that test on their own. */
+  private refreshEndSession(): void {
+    this.endBtn.hidden = !canEndSession({
+      attached: this.active !== null,
+      caps: this.active?.caps ?? [],
+      ended: this.sessionEnded,
+    })
+    this.endBtn.dataset.state = this.endSentFor
+      ? "sent"
+      : this.endArmed
+        ? "armed"
+        : "idle"
+    this.endBtn.textContent = this.endSentFor
+      ? END_LABELS.sent
+      : this.endArmed
+        ? END_LABELS.armed
+        : END_LABELS.idle
+    this.endBtn.title = END_LABELS.title
+    this.endBtn.disabled = this.endSentFor !== null
+  }
+
+  /** Two clicks: arming says `sure?`, and only the second one sends. A session
+   *  that has been ended cannot be un-ended. */
+  private onEndSessionClick(): void {
+    if (!this.active || this.endSentFor) return
+    if (!this.endArmed) {
+      this.endArmed = true
+      clearTimeout(this.endArmTimer)
+      this.endArmTimer = setTimeout(() => this.disarmEnd(), END_CONFIRM_MS)
+      this.refreshEndSession()
+      return
+    }
+    this.disarmEnd()
+    this.endSentFor =
+      this.client?.sendUb("terminate", { reason: END_REASON }) ?? null
+    clearTimeout(this.endWaitTimer)
+    this.endWaitTimer = setTimeout(() => {
+      if (!this.endSentFor) return
+      this.endSentFor = null
+      this.toast(refusalNotice())
+      this.refreshEndSession()
+    }, TERMINATE_QUIET_MS)
+    this.refreshEndSession()
+  }
+
+  private disarmEnd(): void {
+    this.endArmed = false
+    clearTimeout(this.endArmTimer)
+    this.refreshEndSession()
+  }
+
+  /** Called when the room ends (the machine's only answer) or we leave it. */
+  private clearEndRequest(): void {
+    this.endSentFor = null
+    this.endArmed = false
+    clearTimeout(this.endWaitTimer)
+    clearTimeout(this.endArmTimer)
+    this.refreshEndSession()
+  }
+
   async attach(epk: string, roomId: string, name: string): Promise<void> {
     const client = this.client
     if (!client) return
@@ -1234,6 +1320,7 @@ export class App {
     this.pendingLaunch = null
     clearTimeout(this.launchTimer)
     this.cancelDirsRequest()
+    this.clearEndRequest()
     // Leaving a control room, if that is where we were: transcript and
     // composer come back.
     this.launchPanel.hidden = true
@@ -1243,6 +1330,7 @@ export class App {
     // Attaching means the room is live and drivable again — clear any ended flag
     // the previous room left behind.
     this.reducer.setEnded(false)
+    this.sessionEnded = false
     this.title.textContent = name
     this.sub.textContent = "syncing…"
     if (this.drawer.open) this.drawer.close()
@@ -1394,6 +1482,7 @@ export class App {
           this.active.caps = caps
           this.active.sessionId =
             typeof ub.sessionId === "string" ? ub.sessionId : undefined
+          this.refreshEndSession()
         }
         break
       }

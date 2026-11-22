@@ -27,6 +27,18 @@
           <div id="sessionTitle" class="title">not connected</div>
           <div id="sessionSub" class="sub">add a relay to start</div>
         </div>
+        <!-- End the session on the machine. Deliberately NOT in the composer:
+             the stop button there means one thing (stop this turn), and two
+             controls with similar meanings invites the wrong click. Two clicks
+             to fire: the first arms it, the second sends. -->
+        <button
+          id="endSessionBtn"
+          class="icon danger head-end"
+          data-state="idle"
+          hidden
+        >
+          end
+        </button>
         <span id="statusDot" class="dot idle" title="relay status"></span>
       </header>
 

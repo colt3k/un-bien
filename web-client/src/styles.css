@@ -139,6 +139,22 @@ button.icon {
 button.danger {
   color: var(--danger);
 }
+/* End the session. The armed state FILLS the button rather than only changing
+   its text: the difference between “not committed yet” and “the next click ends
+   a session” has to be visible without reading the label. */
+.bar .head-end {
+  padding: 5px 10px;
+  border-color: var(--danger);
+}
+.bar .head-end[data-state="armed"] {
+  background: var(--danger);
+  color: #17170f;
+  font-weight: 650;
+}
+.bar .head-end[data-state="sent"] {
+  border-color: var(--line);
+  color: var(--muted);
+}
 input:focus,
 textarea:focus {
   outline: 1px solid var(--accent);
