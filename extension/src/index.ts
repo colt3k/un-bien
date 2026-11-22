@@ -1823,10 +1823,68 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     // flicker the root's working indicator.
     if (!_isNonRootSid(_sidOf(ctx))) _publishWorking(true)
   })
+  // Pre-compaction warning. pi folds the transcript once
+  // `tokens > contextWindow - reserveTokens`
+  // (dist/core/compaction/compaction.js:173), and until now the first thing
+  // downstream saw was the fold itself: `session_before_compact` reaches
+  // extensions ~2 ms before `session_compact` (pi's guard pass has already
+  // produced the summary by then), so there is no in-progress window to mark.
+  // Warn BEFORE the fold instead, from pi's own numbers: `pi.getSettings()` is
+  // the merged global + project settings, `ctx.getContextUsage()` is what the TUI
+  // footer draws. The band is 1% of the window (floored at 256 tokens) — wide
+  // enough to finish the thought you are typing, narrow enough that "coming up"
+  // is not a lie.
+  // One notice per crossing, re-armed when usage falls back out of the band or a
+  // compaction lands, so a session parked at the threshold does not spam.
+  let _compactionWarnThreshold: number | null = null
+  pi.on("agent_end", (_event, ctx) => {
+    const usage = ctx.getContextUsage()
+    if (!usage || usage.tokens === null || usage.contextWindow <= 0) return
+    // pi types `getSettings()` on the settings-bearing context, but the context
+    // handed to agent_end has none (measured on 0.25.19: `ctx.getSettings` is
+    // undefined while `pi.getSettings()` returns the merged settings). Take
+    // whichever is present, and if neither is, fall back to pi's default reserve
+    // rather than going silent — the frame carries the numbers it used, so the
+    // client can show what was assumed.
+    type CompactionSettings = { enabled?: boolean; reserveTokens?: number }
+    const compactionOf = (host: unknown): CompactionSettings | undefined => {
+      const h = host as {
+        getSettings?: () => { compaction?: CompactionSettings }
+      } | null
+      return h?.getSettings?.()?.compaction
+    }
+    const compaction = compactionOf(pi) ?? compactionOf(ctx)
+    if (compaction?.enabled === false) return
+    const reserve = compaction?.reserveTokens ?? 16_384
+    const threshold = usage.contextWindow - reserve
+    const margin = threshold - usage.tokens
+    const band = Math.max(256, Math.round(usage.contextWindow * 0.01))
+    if (threshold <= 0 || margin > band || margin <= 0) {
+      _compactionWarnThreshold = null
+      return
+    }
+    if (_compactionWarnThreshold === threshold) return
+    _compactionWarnThreshold = threshold
+    _broadcastEnvelope(relayDeps, {
+      evt: {
+        channel: "compaction_warning",
+        data: {
+          tokens: usage.tokens,
+          contextWindow: usage.contextWindow,
+          threshold,
+          marginTokens: margin,
+          reserveTokens: reserve,
+        },
+      },
+    })
+  })
   pi.on("session_compact", (_event, ctx) => {
     // Live compaction result rides the rpc-envelope compaction_end (app applyRPC),
     // and the persisted CompactionEntry surfaces natively via get_entries. Only
     // the working=false bracket remains here — the ROOT room's, so guard it.
+    // Re-arm the pre-compaction warning too: the fold happened, so the next
+    // crossing is a new event and deserves a new notice.
+    _compactionWarnThreshold = null
     if (!_isNonRootSid(_sidOf(ctx))) _publishWorking(false)
   })
   // A compaction that FAILS or is cancelled (Esc in the TUI, a summary call that

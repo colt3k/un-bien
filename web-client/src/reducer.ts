@@ -1323,6 +1323,40 @@ export class TranscriptReducer {
       })
       return
     }
+    if (channel === "compaction_warning") {
+      // The extension's pre-fold notice. pi folds at
+      // `tokens > contextWindow - reserveTokens`; this arrives while the margin
+      // is still inside 1% of the window, so a reader can finish the thought
+      // before the transcript folds itself. Keyed by the THRESHOLD, not the text:
+      // the token numbers move every turn, and a row per turn would bury the
+      // transcript in warnings. `tokens === null` (right after a fold, before the
+      // next response) must not render as "0 tokens left" — drop the frame.
+      const tokens = typeof payload.tokens === "number" ? payload.tokens : null
+      const margin =
+        typeof payload.marginTokens === "number" ? payload.marginTokens : null
+      const window =
+        typeof payload.contextWindow === "number" ? payload.contextWindow : 0
+      const threshold =
+        typeof payload.threshold === "number" ? payload.threshold : window
+      if (tokens === null || margin === null || window <= 0) return
+      const row = `cwarn${threshold}`
+      if (this.byRow.has(row)) return
+      const n = (v: number): string => v.toLocaleString("en-US")
+      this.push({
+        kind: "notice",
+        row,
+        text: `Compaction coming — ${n(margin)} tokens of margin left (threshold ${n(threshold)}, ${n(tokens)} used of a ${n(window)} window)`,
+        streaming: false,
+        blocks: [],
+        images: 0,
+        code: "compaction",
+        // Live-only: no session entry carries the warning, so a replay cannot
+        // reproduce it. Marking it replay-stable would imply it survives a
+        // reconnect from the log, and it does not.
+        replayStable: false,
+      })
+      return
+    }
     if (channel.startsWith("subagents:")) {
       // The STATUS IS THE CHANNEL NAME: `subagents:started`, `:steered`,
       // `:completed`, `:failed`. A payload-level `status` is the exception, and
