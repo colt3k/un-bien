@@ -598,6 +598,7 @@ export class App {
       }
     })
     this.input.addEventListener("input", () => this.autogrow())
+    if (CAPTURE_FRAMES) this.installDebugHooks()
     // The browser's version of the app's foreground heal (RootView.swift:78 →
     // `AppModel.refreshBusyState`): a hidden tab is throttled and can miss the
     // frames that bracket a turn while its socket stays healthy — which is
@@ -1622,6 +1623,44 @@ export class App {
     // Not following the tail: hold the anchor row visually still, whatever grew
     // or moved above it.
     this.transcript.scrollTop += anchor.getBoundingClientRect().top - anchorTop!
+  }
+
+  /** Dev-only (`?capture=1`): drive the fold from the console or a driver
+   *  script. `__unbienFeed(frame|frames)` pushes envelopes through the SAME
+   *  `onEnvelope` the wire uses, so a conformance scenario — or one hand-written
+   *  `compaction_start` — replays into a live tab. `__unbienRows()` is what the
+   *  FOLD holds, `__unbienDrawn()` what the DOM has, `__unbienWindow()` the slice
+   *  between them, and `__unbienScroll()` where the reader sits relative to the
+   *  tail. Those four disagreeing is how "the frame arrived but nothing painted"
+   *  gets answered in one look rather than a guessing game. */
+  private installDebugHooks(): void {
+    const store = globalThis as Record<string, unknown>
+    store.__unbienFeed = (frames: unknown) => {
+      const list = Array.isArray(frames) ? frames : [frames]
+      for (const frame of list) this.onEnvelope(frame as EnvelopeMessage)
+      return this.reducer.snapshot().items.length
+    }
+    store.__unbienRows = () =>
+      this.reducer.snapshot().items.map((item) => ({
+        kind: item.kind,
+        row: item.row,
+        text: item.text,
+        streaming: item.streaming,
+        state: item.state,
+      }))
+    store.__unbienDrawn = () =>
+      [...this.transcript.children].map(
+        (node) => (node as HTMLElement).dataset.row,
+      )
+    store.__unbienWindow = () => this.window
+    store.__unbienScroll = () => ({
+      belowTail:
+        this.transcript.scrollHeight -
+        this.transcript.scrollTop -
+        this.transcript.clientHeight,
+      window: this.window,
+      rows: this.transcript.children.length,
+    })
   }
 
   /** The control that pulls earlier history into the window. */
