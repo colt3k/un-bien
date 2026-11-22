@@ -1507,12 +1507,17 @@ export class App {
     // answer (wildcard, locked, roots that are all gone) stays silent here: the
     // hint under the list names that case in its own words, and saying it twice
     // reads as two different problems.
+    //
+    // Written about the STATE of the field, not about typing into it. The same
+    // line now fires for a path the client put there on a resume, where nobody
+    // typed anything a second ago — "what you typed" blamed an action the reader
+    // did not just take, which reads like a complaint about the restore.
     if (rows.length === 0 && filter) {
       list.append(
         el(
           "p",
           "dir-empty",
-          "no folder on the machine matches what you typed — it still launches if the path exists there",
+          "no folder listed by this machine matches what is in the field — it still launches if the folder exists there",
         ),
       )
       list.hidden = false
@@ -2313,7 +2318,13 @@ export class App {
     if (!active?.control) return
     const cwd = this.launchCwd.value.trim()
     const name = this.launchName.value.trim()
-    if (!cwd && !name) return
+    if (!cwd && !name) {
+      // An empty form has nothing to put back, so the record goes rather than
+      // being skipped: erasing the field by hand has to erase the memory too, or
+      // a path the reader deleted comes back on the next open.
+      forgetLaunchDraft()
+      return
+    }
     rememberLaunchDraft({ epk: active.epk, roomId: active.roomId, cwd, name })
   }
 

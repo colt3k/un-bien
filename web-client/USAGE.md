@@ -251,10 +251,10 @@ Four things about that room are worth knowing, because all four look like a clie
   folder is worth keeping precisely because the machine cannot supply it: it is the
   one field you type by hand on a phone keyboard. Reopening the panel on purpose
   also refills it — and the folder list re-filters to whatever is in the field, so
-  a restored path arrives with its group open (or with "no folder on the machine
-  matches what you typed — it still launches if the path exists there" when it is
-  outside the allow-list, which is not an error). A resumed form does not steal
-  focus; the keyboard only appears when you asked to type.
+  a restored path arrives with its group open (or with "no folder listed by this
+  machine matches what is in the field — it still launches if the folder exists
+  there" when it is outside the allow-list, which is not an error). A resumed form
+  does not steal focus; the keyboard only appears when you asked to type.
   **close** puts back the page the launcher was opened on top of: reading a
   session, tapping _new conversation_, then closing the panel leaves that session
   as the page a reload returns to — scroll position included. Going to the
