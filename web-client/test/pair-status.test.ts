@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest"
-import { pairResultMessage } from "../src/pair-status.js"
+import {
+  pairResultMessage,
+  pairSectionBadge,
+  pairSectionOpens,
+} from "../src/pair-status.js"
 import type { PairVerdict } from "../src/session-client.js"
 
 // A real pair_ok shape: `hostname` is the MACHINE, `sessionName` the session
@@ -61,5 +65,25 @@ describe("pairResultMessage", () => {
     expect(pairResultMessage({ ok: true, machine: {} }, false)).toContain(
       "the machine",
     )
+  })
+})
+
+describe("pairSectionOpens / pairSectionBadge", () => {
+  it("stays open and unbadged with nothing paired", () => {
+    expect(pairSectionOpens(0)).toBe(true)
+    expect(pairSectionBadge(0)).toBeNull()
+  })
+
+  it("folds and says so from the first machine on", () => {
+    expect(pairSectionOpens(1)).toBe(false)
+    expect(pairSectionBadge(1)).toBe("paired")
+    expect(pairSectionBadge(3)).toBe("3 paired")
+  })
+
+  it("never claims paired for a negative count", () => {
+    // Defensive only: `peers.size` cannot go below zero, but the badge is a
+    // claim about the user's state and a false one is worse than silence.
+    expect(pairSectionBadge(-1)).toBeNull()
+    expect(pairSectionOpens(-1)).toBe(false)
   })
 })

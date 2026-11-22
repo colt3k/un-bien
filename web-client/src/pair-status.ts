@@ -55,3 +55,25 @@ export function pairResultMessage(
     "session below — a fresh code is only needed for a device that has never paired."
   )
 }
+
+/**
+ * The "Pair a machine" section once pairing is not the task at hand.
+ *
+ * Pairing happens once per machine, but the section is built for the first run:
+ * an empty code field, a `pair` button, and a paragraph about single-use codes —
+ * rendered every time, above a list of machines that are already paired. A week
+ * in, the drawer reads as a step still owed. So the form is a disclosure, folded
+ * whenever at least one machine is paired, and the fold is labelled with the fact
+ * the list below it proves.
+ */
+
+/** `paired` / `3 paired`; null when there is nothing to claim. */
+export function pairSectionBadge(count: number): string | null {
+  if (count <= 0) return null
+  return count === 1 ? "paired" : `${count} paired`
+}
+
+/** Folded once anything is paired: the form is for the NEXT machine. */
+export function pairSectionOpens(count: number): boolean {
+  return count === 0
+}

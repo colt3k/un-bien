@@ -54,9 +54,25 @@ export interface RoomInfo {
   /** The room's own advertised caps (remote_terminate, models, …) — known
    *  BEFORE attach, so the UI can gate controls on discovery. */
   caps?: string[]
+  /** Room metadata the relay carries on `rooms_check` entries and pushes again
+   *  under `meta` on `room_meta_updated`. Modelled because they arrive, not
+   *  because the UI reads them yet: whether a turn is running comes from the
+   *  session plane (`turn_start`/`turn_end`), which is the only place it is
+   *  trustworthy for the viewer. */
+  model?: string
+  thinking?: string
+  working?: boolean
   /** Present for federated (remote-relay) rooms; the peer relay's name. */
   peerRelay?: string
   peer_epk?: string
+  /** Launch-correlation echo. A pi spawned by `session_launch` carries
+   *  `UNBIEN_LAUNCH_REQ=<request id>`, which the extension echoes into its own
+   *  `room_meta` (extension/src/commands/lifecycle.ts). The relay flattens
+   *  room_meta into `room_announced` verbatim, so the device that asked for the
+   *  launch can match the announcing room to its own request id and open it —
+   *  instead of guessing "whichever new room appeared". Absent for sessions
+   *  started by hand. */
+  launchReq?: string
 }
 
 export type RelayRoomList =
@@ -556,15 +572,21 @@ export class SessionClient {
     this.sendEnvelope({ rpc: response })
   }
 
-  /** un-bien's own plane: session_launch, sessions_list, fork, navigate… */
-  sendUb(type: string, params: Record<string, unknown> = {}): void {
+  /** un-bien's own plane: session_launch, sessions_list, fork, navigate…
+   *  Returns the request id it put on the wire, because the machine's answer
+   *  (`session_launch_result.in_reply_to`) and the room the launch produces
+   *  (`room_meta.launchReq`) both carry it — that is how a caller correlates
+   *  the two without a second round trip. */
+  sendUb(type: string, params: Record<string, unknown> = {}): string {
+    const id = correlationId()
     this.sendEnvelope({
       ub: {
         type,
-        id: correlationId(),
+        id,
         ...params,
       } as unknown as EnvelopeMessage["ub"],
     })
+    return id
   }
 
   private sendEnvelope(env: EnvelopeMessage): void {

@@ -1,5 +1,11 @@
+import { readFileSync } from "node:fs"
+import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
-import { describeError, toastMessage } from "../src/notice.js"
+import {
+  describeError,
+  launchFailureHint,
+  toastMessage,
+} from "../src/notice.js"
 
 describe("toastMessage", () => {
   it("refuses the empty string that used to render as an empty amber pill", () => {
@@ -46,5 +52,74 @@ describe("describeError", () => {
 
   it("keeps a non-Error string that has content", () => {
     expect(describeError("room ended")).toBe("room ended")
+  })
+})
+
+// Every code the machine can answer a `session_launch` with, read from the
+// extension itself: an unmapped code is a refusal the user cannot act on, and
+// this client ships separately from the machine, so drift would otherwise show
+// up as a bare `launch failed: backend_on_fire` toast on someone's phone.
+function machineLaunchCodes(): string[] {
+  const source = fileURLToPath(
+    new URL("../../extension/src/launch.ts", import.meta.url),
+  )
+  const after =
+    readFileSync(source, "utf8").split("export type LaunchErrorCode =")[1] ?? ""
+  const codes: string[] = []
+  for (const line of after.split("\n")) {
+    if (line.trim() === "") continue // the tail of the declaration line itself
+    const member = /^\s*\|?\s*"([a-z_]+)"\s*$/.exec(line)
+    if (!member) break
+    codes.push(member[1]!)
+  }
+  return codes
+}
+
+const LAUNCH_CODES = [
+  "remote_launch_disabled",
+  "unknown_peer",
+  "permission_denied",
+  "cwd_missing",
+  "backend_missing",
+  "backend_unavailable",
+  "spawn_failed",
+  "exited_early",
+]
+
+describe("launchFailureHint", () => {
+  it("covers exactly the codes the machine can refuse with", () => {
+    const codes = machineLaunchCodes()
+    // A moved or renamed type must not silently disable the guard.
+    expect(
+      codes.length,
+      "could not read LaunchErrorCode from extension/src/launch.ts",
+    ).toBeGreaterThan(4)
+    expect([...codes].sort()).toEqual([...LAUNCH_CODES].sort())
+  })
+
+  it("gives every code a hint that names what to change", () => {
+    for (const code of LAUNCH_CODES) {
+      const hint = launchFailureHint(code)
+      expect(hint, code).not.toBe("")
+      expect(hint.length, code).toBeGreaterThan(20)
+    }
+  })
+
+  it("points at the two different gates the two refusals come from", () => {
+    // `permission_denied` is the launch.dirs allow-list; `remote_launch_disabled`
+    // is the per-folder allow_remote_launch flag. Both used to be one toast.
+    expect(launchFailureHint("permission_denied")).toContain("launch.dirs")
+    expect(launchFailureHint("remote_launch_disabled")).toContain(
+      "allow_remote_launch",
+    )
+  })
+
+  it("says what an empty cwd means, since the machine just calls it cwd_missing", () => {
+    expect(launchFailureHint("cwd_missing")).toContain("does not exist")
+  })
+
+  it("keeps an unknown code instead of inventing a reason", () => {
+    expect(launchFailureHint("backend_on_fire")).toContain("backend_on_fire")
+    expect(launchFailureHint("")).not.toBe("")
   })
 })
