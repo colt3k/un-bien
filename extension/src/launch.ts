@@ -689,7 +689,7 @@ function _watchTmuxWindow(windowId: string, onLater?: (result: LaunchResult) => 
         ok: false,
         backend: "tmux",
         code: "exited_early",
-        message: `pi exited${status ? ` with status ${status}` : ""} right after starting`,
+        message: `pi exited${probe.status ? ` with status ${probe.status}` : ""} right after starting`,
         output,
       })
     })()
