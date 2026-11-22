@@ -6,6 +6,8 @@ import {
   _buildHerdrAgentStartArgs,
   _herdrPaneIdFromCreate,
   _expandTilde,
+  _paneProbe,
+  PANE_PROBE_MARK,
 } from "./launch.js"
 
 describe("launch backends — tmux/herdr argv + tilde expansion", () => {
@@ -177,5 +179,39 @@ describe("launch backends — resume passthrough", () => {
     })
     expect(result).toMatchObject({ ok: false, code: "cwd_missing" })
     expect(result.message).not.toMatch(/resume/i)
+  })
+})
+
+describe("pane probe parsing — the early-exit watcher's only evidence", () => {
+  // The watcher decides from this whether pi is alive. Reading stdout POSITION-
+  // ally (the first token) broke on any machine whose login shell prints
+  // something: a dead pane's `1` arrived on the second line, behind a banner,
+  // and the dead pane was classified as alive — a crashed launch was reported to
+  // the app as a success, and its window was left with a dead pane nobody reaped.
+  const probe = (dead: string, status = "0") =>
+    `${PANE_PROBE_MARK} ${dead} ${status}`
+
+  test("a live pane", () => {
+    expect(_paneProbe(`${probe("0")}\n`)).toEqual({ dead: false, status: "0" })
+  })
+
+  test("a dead pane with its exit status", () => {
+    expect(_paneProbe(`${probe("1", "143")}\n`)).toEqual({ dead: true, status: "143" })
+  })
+
+  test("a login-shell banner before the answer does not move the answer", () => {
+    // Measured live: `~/.bashrc` echoes a startup timer, so stdout really looked
+    // like this for a pane that had already exited.
+    const stdout = `4 milliseconds\n${probe("1", "0")}\n`
+    expect(_paneProbe(stdout)).toEqual({ dead: true, status: "0" })
+  })
+
+  test("no answer at all is 'could not read', never 'alive'", () => {
+    expect(_paneProbe("6 milliseconds\n")).toBeNull()
+    expect(_paneProbe("")).toBeNull()
+  })
+
+  test("a similar line is not mistaken for the answer", () => {
+    expect(_paneProbe(`0 milliseconds\n${PANE_PROBE_MARK} not-a-digit\n`)).toBeNull()
   })
 })

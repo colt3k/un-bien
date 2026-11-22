@@ -626,6 +626,36 @@ async function launchTmux(
   return { ok: true, backend: "tmux" }
 }
 
+/** Sentinel prefix for the pane probe. A login shell may print its own lines
+ *  before tmux's answer — a startup timer in `~/.bashrc` does on the machine
+ *  this was found on — so the probe's answer is located by marker, never by
+ *  position in stdout. */
+export const PANE_PROBE_MARK = "unbien-pane-probe"
+
+/**
+ * Read the pane probe's answer (`<mark> <pane_dead> <pane_dead_status>`) out of
+ * login-shell stdout, or `null` when it is not there.
+ *
+ * The old code took the FIRST whitespace token of stdout as the dead flag. A
+ * shell banner made that token the banner's number, so `dead !== "1"` was true
+ * for a dead pane: an exited pi was read as a living one, its window was left
+ * with `remain-on-exit on` and a dead pane nobody reaped, and a pi that died at
+ * startup was reported to the app as a successful launch. "I cannot read it"
+ * must not become "it is alive", so an unparsable probe returns null and the
+ * caller says so out loud.
+ */
+export function _paneProbe(
+  stdout: string,
+): { dead: boolean; status: string | null } | null {
+  const mark = PANE_PROBE_MARK.replace(/[.$]/g, "\\$&")
+  for (const line of stdout.split("\n")) {
+    const m = new RegExp(`^\\s*${mark}\\s+(\\d)(?:\\s+(\\S+))?\\s*$`).exec(line)
+    if (!m) continue
+    return { dead: m[1] === "1", status: m[2] ?? null }
+  }
+  return null
+}
+
 /** After EARLY_EXIT_WINDOW_MS: a dead pane means pi exited early. Report it
  *  with the pane's output and close the window; a live pane stops keeping
  *  itself after exit (pi's normal exit closes the window, as before). */
@@ -633,12 +663,19 @@ function _watchTmuxWindow(windowId: string, onLater?: (result: LaunchResult) => 
   const timer = setTimeout(() => {
     void (async () => {
       const panes = await _loginShellRun(
-        `exec tmux list-panes -t ${q(windowId)} -F '#{pane_dead} #{pane_dead_status}'`,
+        `exec tmux list-panes -t ${q(windowId)} -F '${PANE_PROBE_MARK} #{pane_dead} #{pane_dead_status}'`,
         5_000,
       )
-      const [dead, status] = panes.stdout.trim().split(/\s+/)
-      if (panes.code !== 0) return   // the window is gone (closed by hand)
-      if (dead !== "1") {
+      if (panes.code !== 0) return // the window is gone (closed by hand)
+      const probe = _paneProbe(panes.stdout)
+      if (!probe) {
+        // Say it rather than guess: an unread probe used to be read as "alive".
+        launcherLog(
+          `launch tmux watch: cannot read pane state for ${windowId}: ${_outputTail(panes.stdout, 3)}`,
+        )
+        return
+      }
+      if (!probe.dead) {
         await _loginShellRun(`exec tmux set-option -w -t ${q(windowId)} remain-on-exit off`, 5_000)
         return
       }
@@ -647,7 +684,7 @@ function _watchTmuxWindow(windowId: string, onLater?: (result: LaunchResult) => 
         captured.stdout.split("\n").filter((l) => !/^Pane is dead \(/.test(l)).join("\n"),
       )
       await _loginShellRun(`exec tmux kill-window -t ${q(windowId)}`, 5_000)
-      launcherLog(`launch tmux: pi exited early (status ${status ?? "?"}): ${output.slice(-400)}`)
+      launcherLog(`launch tmux: pi exited early (status ${probe.status ?? "?"}): ${output.slice(-400)}`)
       onLater?.({
         ok: false,
         backend: "tmux",
