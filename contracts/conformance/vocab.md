@@ -194,6 +194,23 @@ by `web-client/test/compaction-durability.test.ts`, and by the reference's
 `compaction_end` frame, which would replace inference with identity — is written up
 in `docs/pi-compaction-identity.md`.
 
+**A live marker can now be born before it ends**, and the vocabulary does not care.
+The summary request is a model call, so a viewer that only learned of a compaction
+at its `compaction_end` watched the transcript stop moving for tens of seconds with
+nothing on screen; pi's own TUI says "Auto-compacting..." the whole time. The
+extension therefore emits `compaction_start` — sourced from the
+`session_before_compact` hook, since pi's own frame of that name is subscribe-only
+(`docs/rpc-on-event-map.md` §A) — and the fold opens the marker THERE. It is the
+SAME row: `compaction_end` settles it in place, the entry anchors it, a failed or
+cancelled compaction settles it as a refusal. So the row count, the ids and the
+sequence number are exactly what they were — `1` for a live marker, the entry id
+after a walk — and no existing golden moves. What changes is that a scenario
+recorded from now on has a `compaction_start` frame in its input, three frames per
+compaction instead of one, and a row whose TEXT differs between the middle and the
+end of the run. Only `web-client` folds the running state yet; the app and the CLI
+ignore the frame (harmlessly — unknown rpc frames are dropped), so their projection
+of the same capture is unchanged until they say the same words.
+
 ### What 021 pinned, and what it found
 
 - A `compaction` ENTRY folds to the same `compaction` row a live

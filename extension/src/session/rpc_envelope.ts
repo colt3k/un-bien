@@ -383,10 +383,47 @@ function compactionEndFrame(p: Payload): Frame {
   }
 }
 
+// THE PAUSE EXPLAINED. A compaction's summary request is a full model call —
+// tens of seconds in which NOTHING else reaches the wire, so a viewer sees the
+// transcript stop moving with no reason given. pi shows its own "Auto-compacting…"
+// status line for that window, and its rpc `compaction_start` frame is the
+// subscribe-stream twin of it — which an in-process extension cannot read
+// (docs/rpc-on-event-map.md §B). But pi DOES fire the `session_before_compact`
+// HOOK for every compaction, manual, threshold and overflow, and fires it at the
+// same moment it emits `compaction_start`. So the hook IS the cue: remap it to a
+// byte-faithful `compaction_start` frame. Only `reason` is picked up — the hook
+// payload also carries `preparation` (the whole message set) and an AbortSignal,
+// neither of which belongs on the wire.
+function compactionStartFrame(p: Payload): Frame {
+  return { type: "compaction_start", reason: p.reason }
+}
+
+// A compaction that fails or is cancelled (Esc in the TUI) appends no entry, so
+// pi never fires `session_compact` — without this, the row that opened for it
+// would sit claiming the machine is summarizing forever. pi's own failure frame
+// is a `compaction_end` with NO `result`, plus `aborted` / `errorMessage`
+// (agent-session.ts, both the manual and the auto catch blocks); mirror that
+// shape rather than inventing a fourth compaction frame.
+function compactionFailedFrame(p: Payload): Frame {
+  return {
+    type: "compaction_end",
+    reason: p.reason,
+    aborted: p.aborted === true,
+    willRetry: false,
+    ...(typeof p.errorMessage === "string" && p.errorMessage.length > 0
+      ? { errorMessage: p.errorMessage }
+      : {}),
+  }
+}
+
 /** Event names we register a `pi.on()` cue for (the live plane). */
 export const RPC_EVENT_NAMES: readonly string[] = [
   ...Object.keys(BUILDERS),
+  // The compaction triple: it starts, it lands, or it fails. See the three
+  // frame builders above.
+  "session_before_compact",
   "session_compact",
+  "session_compact_failed",
 ]
 
 /**
@@ -399,6 +436,10 @@ export function envelopeForEvent(
   payload: Payload,
 ): EnvelopeMessage | null {
   if (name === "session_compact") return { rpc: compactionEndFrame(payload) }
+  if (name === "session_before_compact")
+    return { rpc: compactionStartFrame(payload) }
+  if (name === "session_compact_failed")
+    return { rpc: compactionFailedFrame(payload) }
   const build = BUILDERS[name]
   return build ? { rpc: build(payload) } : null
 }

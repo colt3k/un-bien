@@ -1829,6 +1829,15 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     // the working=false bracket remains here — the ROOT room's, so guard it.
     if (!_isNonRootSid(_sidOf(ctx))) _publishWorking(false)
   })
+  // A compaction that FAILS or is cancelled (Esc in the TUI, a summary call that
+  // errors) fires neither `session_compact` nor a turn — so the working=true above
+  // had no partner, and the room tile stayed busy until the NEXT turn ended.
+  // Close the bracket. The transcript side of the same event — a `compaction_end`
+  // frame with no `result`, which settles the app's "Auto-compacting..." row — is
+  // emitted by createRpcEnvelope off this very event (session/rpc_envelope.ts).
+  pi.on("session_compact_failed", (_event, ctx) => {
+    if (!_isNonRootSid(_sidOf(ctx))) _publishWorking(false)
+  })
 
   // RENAME FORWARD (pre-release 2026-09-18): the session display name
   // changed — via /name in the TUI, RPC, or the app's own set_session_name
