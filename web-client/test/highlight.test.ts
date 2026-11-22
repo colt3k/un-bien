@@ -35,7 +35,10 @@ describe("tokenize", () => {
       "number",
     ])
     expect(
-      rolesOf(tokenize("# find the tests\nrg -l vitest", "bash")!, "# find the tests"),
+      rolesOf(
+        tokenize("# find the tests\nrg -l vitest", "bash")!,
+        "# find the tests",
+      ),
     ).toEqual(["comment"])
   })
 
@@ -60,7 +63,10 @@ describe("tokenize", () => {
   })
 
   it("names a tag and its attributes in markup", () => {
-    const tokens = tokenize('<datalist id="launchDirOptions"></datalist>', "html")!
+    const tokens = tokenize(
+      '<datalist id="launchDirOptions"></datalist>',
+      "html",
+    )!
     expect(rolesOf(tokens, "datalist")).toEqual(["keyword", "keyword"])
     expect(rolesOf(tokens, "id")).toEqual(["variable"])
   })
@@ -74,8 +80,14 @@ describe("tokenize keeps the text intact", () => {
       "ts",
       "function f(a: string): number {\n  // unterminated string: '\n  return a.length\n}",
     ],
-    ["css", ".a { color: #fff; background: color-mix(in oklab, var(--c) 10%, transparent) }"],
-    ["bash", 'echo "a | b" # pipe not a table\nfor i in 1 2; do sleep 0.1; done'],
+    [
+      "css",
+      ".a { color: #fff; background: color-mix(in oklab, var(--c) 10%, transparent) }",
+    ],
+    [
+      "bash",
+      'echo "a | b" # pipe not a table\nfor i in 1 2; do sleep 0.1; done',
+    ],
     ["json", '{"a": "unterminated'],
     ["html", "<!-- a comment -->\n<p class='x'>a &amp; b</p>"],
     ["py", "def f(x):\n    return x  # note"],
@@ -90,6 +102,7 @@ describe("tokenize keeps the text intact", () => {
   }
 
   it("never leaves a token empty", () => {
-    for (const token of tokenize("  \n\n\t ", "ts")!) expect(token.text).not.toBe("")
+    for (const token of tokenize("  \n\n\t ", "ts")!)
+      expect(token.text).not.toBe("")
   })
 })
