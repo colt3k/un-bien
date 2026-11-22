@@ -1317,7 +1317,21 @@ export class App {
   private closeLaunchPanel(): void {
     const under = lastRoom()?.under
     const view = lastView()
+    // A launch already sent is not part of the panel. Pressing launch put the
+    // request with the MACHINE; closing the form does not take it back, so the
+    // wait survives the close — in memory (the room still opens itself when it
+    // lands) and in storage (a reload after the close still recognises it).
+    // `clearRoomView` puts the whole view down, so the wait is re-armed against
+    // the record's remaining life rather than the panel's 60s note.
+    const remaining = this.remainingLaunchWaitMs()
     this.clearRoomView()
+    if (remaining > 0) {
+      const stored = storedPendingLaunch()!
+      this.armLaunchWait(
+        { id: stored.id, epk: stored.epk, cwd: stored.cwd },
+        remaining,
+      )
+    }
     if (!under || !this.peers.has(under.epk)) return
     rememberLastRoom(under)
     if (view && view.epk === under.epk && view.roomId === under.roomId) {
@@ -1344,6 +1358,9 @@ export class App {
   private detach(): void {
     const was = this.active
     if (!was) return
+    // A launch still outstanding goes with it: leaving the room is the reader
+    // saying stop, which closing a form does not say.
+    forgetPendingLaunch()
     this.clearRoomView()
     this.toast(`detached from ${was.name} — it keeps running on the machine`)
   }
@@ -1367,9 +1384,12 @@ export class App {
     forgetLastView()
     this.pendingRestore = null
     this.pendingAnchor = null
+    // The in-memory watch goes with the view; whether the RECORD of the ask
+    // survives is the caller's call — `detach` drops it, `closeLaunchPanel`
+    // re-arms it, because closing a form does not take the request back from the
+    // machine.
     this.pendingLaunch = null
     clearTimeout(this.launchTimer)
-    forgetPendingLaunch()
     this.cancelDirsRequest()
     this.clearLaunchDirs()
     this.clearEndRequest()
@@ -1602,22 +1622,47 @@ export class App {
       return
     }
     const id = this.launch(cwd, name || undefined)
-    this.pendingLaunch = { id, epk: this.active.epk, cwd }
-    // Stored as well as held: the machine's answer can be a minute away, and a
-    // reload used to lose the question (see `recoverPendingLaunch`).
+    // The note on the form lasts 60s; the RECORD of the ask lasts as long as an
+    // exact `launchReq` match is believable (see store.ts). They are different
+    // clocks answering different questions: "is this answer late?" versus "is
+    // this room still mine?".
+    this.armLaunchWait({ id, epk: this.active.epk, cwd }, 60_000)
     rememberPendingLaunch({
       id,
       epk: this.active.epk,
       cwd,
       askedAt: Date.now(),
     })
-    clearTimeout(this.launchTimer)
-    this.launchTimer = setTimeout(() => {
-      this.pendingLaunch = null
-    }, 60_000)
     this.setLaunchNote(
       `asked the machine for ${cwd} — waiting for it to answer…`,
     )
+  }
+
+  /** Watch, in memory, for the room a launch produced, for `remainingMs`.
+   *
+   *  One helper because three places need the same thing — the form that asked,
+   *  a page that resumed mid-launch, and a panel that was closed while the
+   *  machine still had the request. */
+  private armLaunchWait(
+    pending: { id: string; epk: string; cwd: string },
+    remainingMs: number,
+  ): void {
+    this.pendingLaunch = pending
+    clearTimeout(this.launchTimer)
+    this.launchTimer = setTimeout(
+      () => {
+        this.pendingLaunch = null
+      },
+      Math.max(0, remainingMs),
+    )
+  }
+
+  /** How long a launch asked for in THIS page is still worth waiting for, after
+   *  this page stopped showing the form. */
+  private remainingLaunchWaitMs(): number {
+    const stored = storedPendingLaunch()
+    if (!stored) return 0
+    return PENDING_LAUNCH_TTL_MS - (Date.now() - stored.askedAt)
   }
 
   /** The control appears only for a session whose machine advertises the cap —
@@ -1814,15 +1859,9 @@ export class App {
     }
     const launched = launchedRoom(this.rooms.get(stored.epk) ?? [], stored.id)
     // Re-arm the in-memory match either way: the announce may still be coming.
-    // How long is the record's remaining life rather than the 60s the panel
-    // gives its note — the panel is probably not even open now.
-    this.pendingLaunch = { id: stored.id, epk: stored.epk, cwd: stored.cwd }
-    clearTimeout(this.launchTimer)
-    this.launchTimer = setTimeout(
-      () => {
-        this.pendingLaunch = null
-      },
-      Math.max(0, PENDING_LAUNCH_TTL_MS - (Date.now() - stored.askedAt)),
+    this.armLaunchWait(
+      { id: stored.id, epk: stored.epk, cwd: stored.cwd },
+      PENDING_LAUNCH_TTL_MS - (Date.now() - stored.askedAt),
     )
     const peer = this.peers.get(stored.epk)
     const label = peer?.hostname ?? peer?.machineName ?? "the machine"

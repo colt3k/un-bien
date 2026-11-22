@@ -270,7 +270,9 @@ Four things about that room are worth knowing, because all four look like a clie
   record goes away when the room is in hand, when the machine refuses, when the
   machine is unpaired, and after 10 minutes of silence — long because a cold start
   on a loaded machine is exactly when you reload, and an exact id match cannot be
-  mistaken for another device's session.
+  mistaken for another device's session. **close** on the panel does NOT cancel
+  it: the request is with the machine, so the room still opens itself when it
+  lands, and a reload after the close still recognises it. **detach** does.
 - **`refresh` twice can print "relay did not answer the session listing".** The relay keeps
   the last `rooms` response per connection and SUPPRESSES an identical repeat
   (`rooms_suppressed` metric), so the second identical listing never arrives and
