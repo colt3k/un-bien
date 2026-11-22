@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest"
 import {
   forgetLastRoom,
+  forgetLastView,
+  forgetLaunchDraft,
   hideReasoning,
   lastRoom,
+  lastView,
+  launchDraft,
   monoProse,
   rememberLastRoom,
+  rememberLastView,
+  rememberLaunchDraft,
   setHideReasoning,
   setMonoProse,
 } from "../src/store.js"
@@ -45,6 +51,91 @@ describe("the session to resume", () => {
     rememberLastRoom({ epk: "M1", roomId: "room-a" })
     forgetLastRoom()
     expect(lastRoom()).toBeUndefined()
+  })
+})
+
+/**
+ * The page, not just the session. `lastRoom` says what to open; this says where
+ * in it the reader was standing, which is the half a reload otherwise drops.
+ */
+describe("the page to restore", () => {
+  const view = {
+    epk: "M1",
+    roomId: "room-a",
+    row: "entry-9f3a",
+    index: 40,
+    dy: 12,
+    window: { start: 100, count: 800 },
+    savedAt: 1700000000000,
+  }
+
+  it("remembers the row, its height, and how much history was drawn", () => {
+    forgetLastView()
+    expect(lastView()).toBeUndefined()
+    rememberLastView(view)
+    expect(lastView()).toEqual(view)
+  })
+
+  it("the newest position wins", () => {
+    rememberLastView({ ...view, row: "entry-old" })
+    rememberLastView({ ...view, row: "entry-new" })
+    expect(lastView()?.row).toBe("entry-new")
+  })
+
+  it("leaving a session drops the page with it", () => {
+    rememberLastView(view)
+    forgetLastView()
+    expect(lastView()).toBeUndefined()
+    // …and does not take the room record with it: they are separate facts, and
+    // forgetting where to go is not the same as forgetting where you were.
+    rememberLastRoom({ epk: "M1", roomId: "room-a" })
+    forgetLastView()
+    expect(lastRoom()?.roomId).toBe("room-a")
+  })
+})
+
+/**
+ * The launch form. The folder path is the one field on that page a person types
+ * by hand, and the page they were on is a control room, not a transcript.
+ */
+describe("the launch form to put back", () => {
+  it("keeps which room was a launcher room, so the form is the thing restored", () => {
+    rememberLastRoom({
+      epk: "M1",
+      roomId: "_29T25gf-dAop",
+      name: "Gils-MBP.localdomain",
+      control: true,
+    })
+    expect(lastRoom()).toEqual({
+      epk: "M1",
+      roomId: "_29T25gf-dAop",
+      name: "Gils-MBP.localdomain",
+      control: true,
+    })
+  })
+
+  it("remembers the folder and name as typed", () => {
+    forgetLaunchDraft()
+    expect(launchDraft()).toBeUndefined()
+    rememberLaunchDraft({
+      epk: "M1",
+      roomId: "_29T25gf-dAop",
+      cwd: "/Users/gfcollin/dev/myai/un-bien",
+      name: "un-bien",
+    })
+    expect(launchDraft()?.cwd).toBe("/Users/gfcollin/dev/myai/un-bien")
+    expect(launchDraft()?.name).toBe("un-bien")
+  })
+
+  it("unpairing drops it with the machine's other records", () => {
+    rememberLaunchDraft({
+      epk: "M1",
+      roomId: "_29T25gf-dAop",
+      cwd: "/repo/x",
+      name: "",
+    })
+    forgetLaunchDraft()
+    expect(launchDraft()).toBeUndefined()
   })
 })
 

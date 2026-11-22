@@ -187,6 +187,38 @@ export function mergeRoomLists(
 }
 
 /**
+ * The room a reload should reopen, and which page that is.
+ *
+ * `held.control` is decisive, because the two records describe different pages:
+ * a session record means "put the reader back in that transcript", a control
+ * room record means "put the launch form back". A control room carries no pi
+ * session id and answers no `get_entries`, so opening it as if it were a session
+ * is the bug this branch prevents (it sat at "machine not answering" forever).
+ *
+ * Room ids rotate when the machine re-announces, so the recorded id is honoured
+ * only when the machine still advertises it; otherwise the machine's launcher
+ * room is taken — the same machine, still the same page to reopen. For a
+ * session, a machine advertising several and none of them the recorded one is
+ * left for the reader to pick: guessing between two live sessions means opening
+ * a transcript the reader did not leave.
+ */
+export function resumeTarget(
+  held: { roomId: string; control?: boolean },
+  rooms: readonly TrackedRoom[],
+): { kind: "control" | "session"; room: TrackedRoom } | null {
+  if (held.control) {
+    const room =
+      rooms.find((room) => room.room_id === held.roomId) ?? controlRoomOf(rooms)
+    return room ? { kind: "control", room } : null
+  }
+  const sessions = rooms.filter(isViewableSession)
+  const room =
+    sessions.find((session) => session.room_id === held.roomId) ??
+    (sessions.length === 1 ? sessions[0]! : undefined)
+  return room ? { kind: "session", room } : null
+}
+
+/**
  * Apply a frame that speaks about ONE room — `room_announced`,
  * `room_meta_updated` — without reading it as a listing.
  *

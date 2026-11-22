@@ -166,8 +166,23 @@ Things worth knowing, because they explain the failures you'll otherwise chase:
 - **Hide thinking** (drawer) toggles reasoning rows. Note the asymmetry: pi does not
   replay thinking blocks, so a thinking row exists only for a viewer that was
   watching while it streamed — a client that arrives cold never sees it.
+- **detach** on the room card you are in. The card of the room this device is
+  following is marked **open** and its button says **detach** instead of
+  **attach**: it stops this device reading the room, clears the transcript, and
+  stops the next reload going back to it. Nothing changes on the machine — the
+  session keeps running, its other viewers keep their view, and **attach** puts
+  you straight back in. (Before this, `attach` was the only control on the card,
+  so the only way out of a session was into another one.)
+- **A refresh keeps the page.** The reload re-opens the room you were in AND puts
+  you back on the row you were reading, with the history you had pulled in
+  ("load earlier rows" included) — not at the newest row. It restores by row, not
+  by pixel offset, so a session that grew while the tab was closed still lands
+  you where you stopped. If that row is gone (the session restarted, a branch
+  changed), it falls back to the newest rows and says so in the entry count.
+  `?fresh=1` skips the resume altogether — see §9.
 - **Restart/resync**: if the machine restarts, the relay re-announces the room and the
-  client re-attaches and re-syncs. Same after a relay restart (reconnect,
+  client re-attaches and re-syncs — keeping your place in the transcript, same as a
+  reload. Same after a relay restart (reconnect,
   re-subscribe, re-attach, pin still valid).
 - **unpair** on a machine card drops the local identity — **also** revoke the pairing
   on the machine with `/unbien revoke`. **forget** on a relay card drops that relay.
@@ -218,7 +233,7 @@ What the answer is not, it says out loud: `wildcard` (`launch.dirs: "*"` — typ
 isn't on the machine right now, or an older daemon that never answers (then the form keeps
 working with a typed path).
 
-Two things about that room are worth knowing, because both look like a client bug:
+Three things about that room are worth knowing, because all three look like a client bug:
 
 - **The control room is a room like any other.** `rooms_check` lists it — measured on a
   live relay: `HI5OxguNw8Nl`, name `Gils-MacBook-Pro.local`, cwd `/Users/gfcollin`, caps
@@ -230,6 +245,17 @@ Two things about that room are worth knowing, because both look like a client bu
   shows `last exit code = 78: EX_CONFIG`: the classic cause is a **stale absolute node path**
   baked into the LaunchAgent after a Homebrew node bump. `unbien-admin install` re-snapshots
   node and PATH; the daemon then re-announces and the button is back.
+- **A refresh puts the form back, folder and all.** With the panel open, the page
+  you are on is that control room, so it is what a reload reopens — the heading,
+  the folder path and the name you had typed (`unbien.web.launchDraft.v1`). The
+  folder is worth keeping precisely because the machine cannot supply it: it is the
+  one field you type by hand on a phone keyboard. Reopening the panel on purpose
+  also refills it — and the folder list re-filters to whatever is in the field, so
+  a restored path arrives with its group open (or with "no folder on the machine
+  matches what you typed — it still launches if the path exists there" when it is
+  outside the allow-list, which is not an error). A resumed form does not steal
+  focus; the keyboard only appears when you asked to type.
+  **close** means you left the page, so a later reload does not walk you back in.
 - **`refresh` twice can print "relay did not answer the session listing".** The relay keeps
   the last `rooms` response per connection and SUPPRESSES an identical repeat
   (`rooms_suppressed` metric), so the second identical listing never arrives and

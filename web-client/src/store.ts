@@ -1,3 +1,4 @@
+import type { SavedView } from "./view-state.js"
 import { kv, readJson, writeJson } from "./storage.js"
 
 /**
@@ -12,6 +13,12 @@ const PEERS_KEY = "unbien.web.peers.v1"
  *  sleep should resume the transcript, not dump the user back on an empty
  *  screen at the top — and nothing else in storage says WHICH room that was. */
 const LAST_ROOM_KEY = "unbien.web.lastRoom.v1"
+/** Where in that session the reader was standing — see view-state.ts. The room
+ *  record says what to open; this says what the page looked like when it was
+ *  open, which is the part a refresh otherwise loses. */
+const LAST_VIEW_KEY = "unbien.web.lastView.v1"
+/** The half-typed launch form, keyed to the control room it belongs to. */
+const LAUNCH_DRAFT_KEY = "unbien.web.launchDraft.v1"
 /** Viewer preferences. Named after the app's (`hideReasoning`) so a preference
  *  means the same thing on both devices. */
 const PREFS_KEY = "unbien.web.prefs.v1"
@@ -115,6 +122,9 @@ export interface LastRoom {
   epk: string
   roomId: string
   name?: string
+  /** The launcher's control room, not a session: the page to put back is the
+   *  launch form, and there is no transcript to replay into it. */
+  control?: boolean
 }
 
 export function lastRoom(): LastRoom | undefined {
@@ -134,6 +144,43 @@ export function forgetLastRoom(epk?: string): void {
   }
   const held = lastRoom()
   if (held && held.epk === epk) kv.remove(LAST_ROOM_KEY)
+}
+
+/** What had been typed into the launch form. A folder path is the one thing on
+ *  that page a person had to type by hand (it is the MACHINE's filesystem, and
+ *  a phone keyboard is in the way), so losing it on a refresh costs more than
+ *  any other field here. */
+export interface LaunchDraft {
+  epk: string
+  roomId: string
+  cwd: string
+  name: string
+}
+
+export function launchDraft(): LaunchDraft | undefined {
+  return readJson<LaunchDraft>(LAUNCH_DRAFT_KEY)
+}
+
+export function rememberLaunchDraft(draft: LaunchDraft): void {
+  writeJson(LAUNCH_DRAFT_KEY, draft)
+}
+
+export function forgetLaunchDraft(): void {
+  kv.remove(LAUNCH_DRAFT_KEY)
+}
+
+/** The page to put back. Stored alongside the room, dropped with it: a record
+ *  of a scroll position in a session that is gone is just noise. */
+export function lastView(): SavedView | undefined {
+  return readJson<SavedView>(LAST_VIEW_KEY)
+}
+
+export function rememberLastView(view: SavedView): void {
+  writeJson(LAST_VIEW_KEY, view)
+}
+
+export function forgetLastView(): void {
+  kv.remove(LAST_VIEW_KEY)
 }
 
 interface Prefs {

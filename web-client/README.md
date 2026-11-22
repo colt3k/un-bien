@@ -597,6 +597,49 @@ at 920x2000. Multiply coordinates by 1.31…`. pi re-encodes and downscales, and
   advertises it and has exactly one live room, that one is taken; with several,
   the client says so and waits for a pick. Unpairing, or the room being reported
   ended, drops the record so a boot does not chase a dead session.
+- **A reload keeps the page, not just the room.** The room record says what to
+  open; it says nothing about where in it the reader was, so a refresh replayed the
+  session and dropped them at the tail — the half-read answer they had scrolled up
+  to gone, and the "load earlier rows" they had pressed forgotten. The position is
+  stored too (`unbien.web.lastView.v1`, `src/view-state.ts`): the ROW at the top
+  edge of the scroll box, its offset inside it, and the window the reader had
+  asked for. A row and not a pixel offset, because an offset means nothing across a
+  reload (row heights depend on images that have not loaded and on rows the window
+  has not drawn yet) while an entry-born row id is the same row on the next replay.
+  The saved window is re-seated on wherever that row landed, so the reader's place
+  survives a turn finishing while the tab was closed. A row that did not survive
+  the replay (session restarted, branch switched, "Hide thinking" flipped between
+  loads) means the view is stale and the tail is the honest answer. Written on a
+  scroll debounce and again on `pagehide`/backgrounding — a recycled phone tab
+  never fires a load event. And armed only AFTER the entry replay: armed at the top
+  of `attach` it was consumed by the first live frame's render, which looked for
+  the anchor in a transcript that had just been emptied, did not find it, and gave
+  up (measured: the restore worked only on a session idle enough to send no frames
+  during the replay).
+- **A room can be left.** The card of the room this device is following is marked
+  `open` and carries **detach** in place of **attach**: routing cleared,
+  transcript emptied, resume records dropped so the next load does not walk back
+  in. Only `attach` existed before, so the only way OUT of a session was into
+  another one, and a device that had finished reading a machine stayed pointed at
+  it. Clearing the routing is the part that matters: `session-client.ts` drops
+  inbound envelopes that are not for the room the view holds (ONE VIEW, ONE ROOM),
+  so leaving a room in the UI without emptying it would keep folding a room the
+  page no longer claims to show into a transcript the reader cannot explain.
+  Nothing on the machine changes — the session keeps running, and its other
+  viewers keep their view.
+- **A reload puts the launch form back.** The resume record carries
+  `control: true` when the page that was open was a launcher's room, and
+  `resumeTarget` (`src/room-list.ts`) decides which page that is: the launch
+  panel, or a transcript. Both halves were missing before — the panel vanished on
+  refresh, and the folder path went with it, which is the one field on that page a
+  person types by hand (`unbien.web.launchDraft.v1`; the machine's allow-list can
+  never supply an arbitrary path). Restoring the path also restores the folder
+  list's filter and the group it sits in, because the machine's answer paints
+  against the field as it now stands. A resumed panel does NOT take focus: a page
+  load that pops a keyboard over half a phone screen is a page doing something the
+  reader never asked for. And a control room is still never opened as a session —
+  it answers no `get_entries`, and an older client that tried sat at "machine not
+  answering" forever (`test/room-list.test.ts` pins that both ways).
 - **Scrolling holds still.** The row at the top edge is the anchor: a render that
   adds rows above it (a rootward extension) or re-keys rows compensates the
   scroll so the anchor does not move. Only when the reader was already at the
@@ -608,6 +651,15 @@ at 920x2000. Multiply coordinates by 1.31…`. pi re-encodes and downscales, and
   thing on both devices. Like the app's, it is a VIEW preference: the fold keeps
   every thinking delta, so flipping it back mid-session shows what already
   arrived — and hidden rows stop pinning a reader to the tail.
+- **Checkbox rows line up.** The drawer's Display toggles are `.check-row`: the
+  box leads at a fixed inline offset and the label follows it, so consecutive rows
+  form a column under the heading. They were `.row`, which is the input+button line
+  (relay URL + connect) whose `input { flex: 1 }` hands a checkbox the whole
+  leftover width — and the shared `input` rule gave a checkbox the text field's
+  9px/11px padding on top. Result: a 16px control sitting in a 40px box, drawn at a
+  different x per row, scattered across the panel instead of lined up with it. The
+  control is now excluded from that rule, sized to what it draws (18px), and the
+  whole 40px row is the tap target.
 - **Notices stack, three deep.** A batch can carry several real problems; one
   label showed only the last, so the important one was lost to a later cosmetic
   one.
@@ -638,7 +690,8 @@ at 920x2000. Multiply coordinates by 1.31…`. pi re-encodes and downscales, and
 | `src/session-client.ts`           | port of `unbien-cli/src/client.ts`: pairing awaited, `rooms_check` honesty, paged `get_entries`, identity pin      |
 | `src/framing.ts`                  | outer envelope, plane stamping (`rpc`/`evt`/`ub` — an unstamped frame is silently dropped), inbound classification |
 | `src/reducer.ts`                  | the fold: live frames and replayed entries through one path                                                        |
-| `src/identity.ts`, `src/store.ts` | device Ed25519 key in localStorage, relay pins (TOFU), pairing records                                             |
+| `src/identity.ts`, `src/store.ts` | device Ed25519 key in localStorage, relay pins (TOFU), pairing records, the room and page to resume |
+| `src/view-state.ts`               | the page to put back after a reload: anchor row, its offset, the window the reader asked for          |
 | `src/invite.ts`                   | `unbien://pair?…` parsing + key canonicalization                                                                   |
 | `src/app.ts`                      | DOM: drawer, transcript patching, composer, dialogs                                                                |
 | `src/shims/`                      | `node:crypto` (noble), `ws` (native socket), `debug_log`                                                           |

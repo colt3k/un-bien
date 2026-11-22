@@ -11,6 +11,7 @@ import {
   isViewableSession,
   launchedRoom,
   mergeRoomLists,
+  resumeTarget,
   roomFacts,
   roomTag,
   roomTitle,
@@ -71,21 +72,28 @@ import {
 import {
   forgetPeer,
   forgetLastRoom,
+  forgetLastView,
+  forgetLaunchDraft,
   forgetRelay,
   hideReasoning,
+  launchDraft,
   lastRoom,
+  lastView,
   listPeers,
   listRelays,
   monoProse,
   recordRelayPin,
   rememberPeer,
   rememberLastRoom,
+  rememberLastView,
+  rememberLaunchDraft,
   rememberRelay,
   relayPinFor,
   setHideReasoning,
   setMonoProse,
   type PairedPeer,
 } from "./store.js"
+import { restoredWindow, type SavedView } from "./view-state.js"
 
 /**
  * The controller: relay connection, pairing, discovery, attach, transcript
@@ -101,7 +109,8 @@ import {
  * attach) instead of hand-written frames. Frames are kept raw and unscrubbed —
  * the scenario's own capture script is what scrubs, and it never sees this
  * window's contents unless a human copies them out. Nothing else in the app
- * reads it; the flag is not sticky across a reload.
+ * reads it; the flag stays in the address bar until you take it out, which is
+ * what a capture driver wants — it re-drives the same page after a reload.
  */
 const CAPTURE_FRAMES = /(?:\?|&)capture=1(?:&|$)/.test(
   typeof location === "object" ? location.search : "",
@@ -114,6 +123,15 @@ const CAPTURE_FRAMES = /(?:\?|&)capture=1(?:&|$)/.test(
  * for minutes on load — and a wedged tab cannot load a fix.
  */
 const SKIP_RESTORE = /(?:\?|&)fresh=1(?:&|$)/.test(location.search)
+if (SKIP_RESTORE && typeof history?.replaceState === "function") {
+  // One use, so the hatch does not become the setting. A reload keeps the query
+  // string, so after someone escapes a wedged tab once, every later refresh of
+  // that page silently skipped the resume and looked like a different bug: "I
+  // refreshed and lost my place". The flag has been read; take it back out.
+  const url = new URL(location.href)
+  url.searchParams.delete("fresh")
+  history.replaceState(history.state, "", url)
+}
 
 const capturedFrames: EnvelopeMessage[] = []
 if (CAPTURE_FRAMES) {
@@ -523,6 +541,18 @@ export class App {
   private autoFilledName = ""
   /** Debounce for the post-turn re-read (a turn ends with several frames). */
   private resyncTimer: ReturnType<typeof setTimeout> | undefined
+  /** The view to put back after the next attach's replay, and the one-shot
+   *  scroll that lands it. Set only for a resume/reconnect — an attach the
+   *  reader asked for by name goes to the tail, which is what "open this
+   *  conversation" means. */
+  private pendingRestore: SavedView | null = null
+  private pendingAnchor: { row: string; dy: number } | null = null
+  /** Debounce for writing the reader's position: a flick writes on every wheel
+   *  tick, and localStorage is synchronous. */
+  private viewTimer: ReturnType<typeof setTimeout> | undefined
+  /** The same, for the launch form's folder field (typed, unlike everything
+   *  else on that page). */
+  private draftTimer: ReturnType<typeof setTimeout> | undefined
 
   constructor() {
     for (const peer of listPeers()) this.peers.set(peer.epk, peer)
@@ -599,6 +629,7 @@ export class App {
     // the chip re-aims on scroll too. Measured once per animation frame, not
     // once per wheel tick.
     this.transcript.addEventListener("scroll", () => {
+      this.scheduleViewSave()
       if (this.chipQueued) return
       this.chipQueued = true
       requestAnimationFrame(() => {
@@ -627,10 +658,15 @@ export class App {
         this.expandForCwd()
       }
       this.renderLaunchDirList()
+      this.scheduleDraftSave()
     })
     // A TYPED path is a selection too, once the field commits: tabbing out or
     // pressing Enter names the session after the folder they wrote.
-    this.launchCwd.addEventListener("change", () => this.applyNameForCwd())
+    this.launchCwd.addEventListener("change", () => {
+      this.applyNameForCwd()
+      this.scheduleDraftSave()
+    })
+    this.launchName.addEventListener("input", () => this.scheduleDraftSave())
     this.sendBtn.addEventListener("click", () => this.send("auto"))
     $("queueBtn").addEventListener("click", () => this.send("queue"))
     this.stopBtn.addEventListener("click", () => this.client?.abort())
@@ -650,7 +686,14 @@ export class App {
     // state again when the tab comes back and let the fold reconcile.
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible") this.refreshBusyState()
+      // A phone backgrounding the tab is the other way this page dies: iOS
+      // recycles the tab without ever firing a load event, so the position has
+      // to be written on the way out rather than assumed from the last scroll.
+      else this.savePage()
     })
+    // Refresh and navigate-away. `pagehide`, not `beforeunload`: it is the one
+    // that also fires on the bfcache path and on iOS. See view-state.ts.
+    window.addEventListener("pagehide", () => this.savePage())
     const hideBox = $<HTMLInputElement>("hideReasoning")
     hideBox.checked = this.reasoningHidden
     hideBox.addEventListener("change", () => {
@@ -720,7 +763,14 @@ export class App {
         this.client?.setRoutingPeer(this.active.epk)
         this.client?.setRoom(this.active.roomId)
       } else if (this.active)
-        void this.attach(this.active.epk, this.active.roomId, this.active.name)
+        void this.attach(
+          this.active.epk,
+          this.active.roomId,
+          this.active.name,
+          {
+            resume: true,
+          },
+        )
     })
 
     try {
@@ -912,7 +962,9 @@ export class App {
           this.active.roomId === room.room_id
         ) {
           this.toast("machine re-announced this session — re-syncing")
-          void this.attach(epk, room.room_id, room.name ?? this.active.name)
+          void this.attach(epk, room.room_id, room.name ?? this.active.name, {
+            resume: true,
+          })
         }
         break
       }
@@ -932,6 +984,7 @@ export class App {
           this.active.roomId === roomId
         ) {
           forgetLastRoom(epk)
+          forgetLastView()
           this.clearEndRequest()
           this.toast("that session ended on the machine")
           this.title.textContent = `${this.active.name} (ended)`
@@ -1005,6 +1058,8 @@ export class App {
       forget.addEventListener("click", () => {
         forgetPeer(peer.epk)
         forgetLastRoom(peer.epk)
+        forgetLastView()
+        forgetLaunchDraft()
         this.peers.delete(peer.epk)
         this.rooms.delete(peer.epk)
         this.renderPeerList()
@@ -1056,9 +1111,18 @@ export class App {
         title.append(
           el("span", control ? "tag tag-control" : "tag", roomTag(room)),
         )
+        // Say which room this device is IN, because the control on it is
+        // "detach" and that only reads as "leave" once the card says you are
+        // here. Room ids rotate, so this is matched on the live pair
+        // (epk + room id), not on a remembered one.
+        const watching = this.watchingRoom(peer.epk, room.room_id)
+        if (watching) {
+          title.append(el("span", "tag tag-open", "open"))
+          row.classList.add("room-active")
+        }
         row.append(title)
         row.append(el("div", "meta", roomFacts(room).join(" · ")))
-        if (control) {
+        if (control)
           row.append(
             el(
               "div",
@@ -1066,6 +1130,16 @@ export class App {
               "no transcript — this room starts sessions on the machine",
             ),
           )
+        // The control that matches the state. Before, "attach" was the only one,
+        // so the only way OUT of a session was into another one: a device that
+        // had finished reading a machine stayed pointed at it (and back at it on
+        // every reload), with no way to say "stop following this".
+        if (watching) {
+          const leave = el("button", "detach", "detach")
+          leave.title =
+            "stop following this session on this device — it keeps running on the machine"
+          leave.addEventListener("click", () => this.detach())
+          row.append(leave)
         } else {
           const open = el("button", undefined, "attach")
           open.addEventListener(
@@ -1128,7 +1202,11 @@ export class App {
    * refuses the same room for the same reason), so a normal attach would sit
    * at "machine not answering" forever.
    */
-  private joinControlRoom(epk: string, room: TrackedRoom): void {
+  private joinControlRoom(
+    epk: string,
+    room: TrackedRoom,
+    opts: { resume?: boolean } = {},
+  ): void {
     const client = this.client
     if (!client) return
     client.setRoutingPeer(epk)
@@ -1140,12 +1218,24 @@ export class App {
       caps: room.caps ?? [],
       control: true,
     }
-    // Not remembered as the last room: there is nothing to restore into a
-    // control room, and `resumeSession` filters to viewable sessions anyway —
-    // a reload should come back to the chat, not to a launch form.
+    // Remembered, with `control: true` to say what kind of page it was. This is
+    // the page the reader was on, so a reload has to come back to the launch
+    // form — not to a transcript they had left, and not to an empty one. It is
+    // replaced by a session record the moment a session is attached (including
+    // the one this form starts).
+    rememberLastRoom({
+      epk,
+      roomId: room.room_id,
+      name: room.name ?? room.room_id,
+      control: true,
+    })
     this.reducer.reset()
     this.rowEls.clear()
     this.window = null
+    // A half-applied restore from the room we are leaving must not fire on the
+    // next render into an empty transcript.
+    this.pendingRestore = null
+    this.pendingAnchor = null
     this.lastItemCount = 0
     this.transcript.replaceChildren()
     this.transcript.hidden = true
@@ -1155,28 +1245,106 @@ export class App {
     // The daemon's own cwd is a hint about where this machine starts, not an
     // answer: it is the launcher process's cwd, almost never the project.
     this.launchCwd.placeholder = room.cwd || "/absolute/path/to/project"
+    // Put back what had been typed. Of everything on this page the folder is the
+    // one field a person had to type by hand — it names the MACHINE's
+    // filesystem, so the device cannot derive it — and losing it to a refresh
+    // costs a re-typed absolute path on a phone keyboard. Matched on the machine
+    // rather than the room id: a control room's id can rotate while the machine,
+    // and the path being aimed at, are the same.
+    const draft = launchDraft()
+    if (draft && draft.epk === epk) {
+      this.launchCwd.value = draft.cwd
+      this.launchName.value = draft.name
+      this.autoFilledName = draft.name
+    } else {
+      this.launchCwd.value = ""
+      this.launchName.value = ""
+      this.autoFilledName = ""
+    }
     // Ask what may be launched into — the machine is the only one who knows.
+    // The answer repaints the list against the field as it now stands, so a
+    // restored path arrives already filtered and with its group open.
     this.requestLaunchDirs(epk)
     this.setLaunchNote("")
     this.launchPanel.hidden = false
     if (this.drawer.open) this.drawer.close()
     this.title.textContent = room.name ?? "control room"
     this.sub.textContent = `launcher room ${room.room_id.slice(0, 8)} · ${room.caps?.length ?? 0} capabilities`
-    // preventScroll: on a phone this focus raises the on-screen keyboard, and
-    // letting the browser scroll to the field can push the folder list (and the
-    // launch button) under it.
-    this.launchCwd.focus({ preventScroll: true })
+    // A resume must not steal the keyboard. Clicking "new conversation" means
+    // "let me type", so focusing the field is right; a page load doing it
+    // unprompted covers half the screen with the keyboard on a phone.
+    // preventScroll: even on a deliberate open, letting the browser scroll to
+    // the field can push the folder list (and the launch button) under it.
+    if (!opts.resume) this.launchCwd.focus({ preventScroll: true })
   }
 
   /** Back to a normal viewer: the panel goes away, the composer returns. */
   private closeLaunchPanel(): void {
-    this.launchPanel.hidden = true
-    this.transcript.hidden = false
-    this.composer.hidden = false
+    this.clearRoomView()
+  }
+
+  /** Is this the room this device is pointed at right now? Matched on the live
+   *  pair (machine + room id), not on a remembered one — pi mints a new room id
+   *  when the machine re-announces, so the remembered id is only ever a hint. */
+  private watchingRoom(epk: string, roomId: string): boolean {
+    const active = this.active
+    return !!active && active.epk === epk && active.roomId === roomId
+  }
+
+  /** Stop following the room this client is pointed at — the way out of a
+   *  session that is the mirror of `attach`. Nothing changes on the machine: the
+   *  session keeps running, its other viewers keep their view, and the room
+   *  stays in the list to be opened again. What stops here is this device's
+   *  reading of it, and its habit of going back to it on the next load. */
+  private detach(): void {
+    const was = this.active
+    if (!was) return
+    this.clearRoomView()
+    this.toast(`detached from ${was.name} — it keeps running on the machine`)
+  }
+
+  /** Put the room down: routing, transcript, and the records that would bring
+   *  it back on the next load.
+   *
+   *  Clearing the routing is the part that matters. `session-client.ts` drops
+   *  inbound envelopes that are not for the room this view holds, so leaving the
+   *  old room id in place would keep folding a room the UI no longer claims to
+   *  be showing into a transcript the reader cannot explain (ONE VIEW, ONE
+   *  ROOM). Emptying it makes that the same rule that already protects a switch
+   *  between two rooms. */
+  private clearRoomView(): void {
+    this.client?.setRoutingPeer("")
+    this.client?.setRoom("")
     this.active = null
+    this.sessionEnded = false
+    // The reader asked to leave, so a reload must not walk them back in.
+    forgetLastRoom()
+    forgetLastView()
+    this.pendingRestore = null
+    this.pendingAnchor = null
+    this.pendingLaunch = null
+    clearTimeout(this.launchTimer)
     this.cancelDirsRequest()
     this.clearLaunchDirs()
     this.clearEndRequest()
+    this.launchPanel.hidden = true
+    this.transcript.hidden = false
+    this.composer.hidden = false
+    $("loadEarlier").hidden = true
+    this.compactionJump.hidden = true
+    this.chipRowId = null
+    // `reset()` clears the ended flag too, so the composer comes back armed for
+    // whatever is opened next rather than still greyed out for the room that is
+    // gone.
+    this.reducer.reset()
+    this.rowEls.clear()
+    this.window = null
+    this.jumpWindow = null
+    this.lastItems = []
+    this.lastItemCount = 0
+    this.transcript.replaceChildren()
+    this.render()
+    this.renderPeerList()
     this.title.textContent = "not attached"
     this.sub.textContent = "pick a session from the machines panel"
   }
@@ -1454,12 +1622,25 @@ export class App {
     this.refreshEndSession()
   }
 
-  async attach(epk: string, roomId: string, name: string): Promise<void> {
+  async attach(
+    epk: string,
+    roomId: string,
+    name: string,
+    opts: { resume?: boolean } = {},
+  ): Promise<void> {
     const client = this.client
     if (!client) return
     client.setRoutingPeer(epk)
     client.setRoom(roomId)
     this.active = { epk, roomId, name, caps: [] }
+    // Where the reader was, or where they asked to be. A resume (a reload, a
+    // recycled phone tab, a socket reconnect, a machine re-announce) puts them
+    // back on the row they were reading; an attach they asked for by name
+    // starts at the newest rows, because that is what "open this conversation"
+    // means.
+    this.pendingRestore = null
+    this.pendingAnchor = null
+    const resumeView = opts.resume ? lastView() : undefined
     // Attaching to a session by hand drops any launch we were waiting on, so a
     // late announce cannot yank the reader into another room mid-read.
     this.pendingLaunch = null
@@ -1504,6 +1685,14 @@ export class App {
     // real leaf id and a too-short entry set, and folding that as authoritative
     // would let a divergence reset the transcript to a partial path.
     this.reducer.applyEntries(entries, leafId ?? null, complete)
+    // Arm the restore HERE, not at the top of attach: the replay is what puts
+    // the reader's anchor row back on the list. Arming it early lost it on any
+    // session that is streaming — a live frame renders while the transcript is
+    // still empty, does not find the row, and gives up. A row that is really
+    // gone is the right reason to fall back to the tail; "not loaded yet" is
+    // not. Only the same machine's view is trusted, and it only lands if its
+    // anchor row survived the replay — see render().
+    if (resumeView && resumeView.epk === epk) this.pendingRestore = resumeView
     // Turn state comes from pi, not from guessing at the history: a completed
     // entry may still contain tool calls. `get_state.isStreaming` is the same
     // signal the iOS app gates its send/steer button on. Skipped when nothing
@@ -1519,6 +1708,9 @@ export class App {
     }
     client.requestSync()
     this.render()
+    // The machine list carries the attach/detach control, so it needs to know
+    // which room is the live one now.
+    this.renderPeerList()
     this.sub.textContent = `${name} · ${entries.length} entries`
   }
 
@@ -1527,7 +1719,7 @@ export class App {
    *  not carry the field) leaves the folded state alone instead of guessing idle. */
   private refreshBusyState(): void {
     const client = this.client
-    if (!client) return
+    if (!client || !this.active) return
     void client
       .request<Record<string, unknown>>("get_state")
       .then((state) => {
@@ -1537,11 +1729,12 @@ export class App {
       .catch(() => undefined)
   }
 
-  /** Re-attach the session this client was last driving. The room id is only a
-   *  hint — pi's room rotates per session — so the recorded room is honoured
-   *  when the machine is still advertising it, and otherwise the machine's
-   *  single live room is taken. Attaching nothing on purpose is right when the
-   *  machine has no live room: there is nothing to read. */
+  /** Re-open the page this client was last on: the session it was driving, or
+   *  the launcher's form. The room id is only a hint — pi's room rotates per
+   *  session — so the recorded room is honoured when the machine is still
+   *  advertising it, and otherwise the machine's single live room is taken.
+   *  Reopening nothing on purpose is right when the machine has no live room:
+   *  there is nothing to read. */
   private async resumeSession(): Promise<void> {
     if (this.active || !this.client) return
     const held = lastRoom()
@@ -1549,24 +1742,35 @@ export class App {
     const peer = this.peers.get(held.epk)
     if (!peer) {
       forgetLastRoom(held.epk)
+      forgetLastView()
+      forgetLaunchDraft()
       return
     }
-    // Only sessions can be restored: a control room has no transcript, and
-    // restoring into one used to be possible when it was the machine's only
-    // room.
-    const rooms = (this.rooms.get(held.epk) ?? []).filter(isViewableSession)
-    if (rooms.length === 0) return
-    const target =
-      rooms.find((room) => room.room_id === held.roomId) ??
-      (rooms.length === 1 ? rooms[0]! : undefined)
+    const all = this.rooms.get(held.epk) ?? []
+    const label = peer.hostname ?? peer.machineName ?? "machine"
+    const target = resumeTarget(held, all)
     if (!target) {
-      this.sub.textContent = `${rooms.length} sessions on ${peer.hostname ?? peer.machineName ?? "machine"} — pick one`
+      // Nothing to reopen. Say which kind of nothing, because both cases look
+      // identical on screen: an empty page and a subtitle nobody reads.
+      const sessions = all.filter(isViewableSession)
+      if (held.control)
+        this.sub.textContent = `no launcher room on ${label} right now — start it in Pi with /unbien install`
+      else if (sessions.length > 1)
+        this.sub.textContent = `${sessions.length} sessions on ${label} — pick one`
+      return
+    }
+    // A control room has no transcript to replay, so restoring it means opening
+    // the form again — the same machine, the same folder already typed, and no
+    // keyboard popped up over the page on someone who did not ask for one.
+    if (target.kind === "control") {
+      this.joinControlRoom(held.epk, target.room, { resume: true })
       return
     }
     await this.attach(
       held.epk,
-      target.room_id,
-      target.name ?? held.name ?? target.room_id,
+      target.room.room_id,
+      target.room.name ?? held.name ?? target.room.room_id,
+      { resume: true },
     )
   }
 
@@ -1634,11 +1838,14 @@ export class App {
       case "session_sync_end": {
         const name =
           typeof ub.session_name === "string" ? ub.session_name : undefined
-        if (name && this.active) {
+        // Detached: a late protocol frame must not write a session name into a
+        // page that is no longer showing one.
+        if (!this.active) break
+        if (name) {
           this.active.name = name
           this.title.textContent = name
         }
-        this.sub.textContent = `${this.active?.name ?? "session"} · synced`
+        this.sub.textContent = `${this.active.name} · synced`
         break
       }
       case "session_launch_dirs_result": {
@@ -1721,6 +1928,22 @@ export class App {
     this.jumpWindow = null
     this.lastItems = items
     this.lastItemCount = items.length
+    // A resume puts the reader back where they were, not at the tail.
+    // `followTail` above was measured against the transcript this attach had
+    // just emptied — it is always true here — so the saved window has to
+    // outrank it, exactly as an explicit jump does. The anchor row is the gate:
+    // if the replay did not produce that row (different session in the same
+    // room, a branch switch, "Hide thinking" flipped in between), the view is
+    // stale and the tail is the honest answer.
+    if (this.pendingRestore) {
+      const saved = this.pendingRestore
+      this.pendingRestore = null
+      const index = items.findIndex((item) => item.row === saved.row)
+      if (index >= 0) {
+        this.window = restoredWindow(saved, index, items.length)
+        this.pendingAnchor = { row: saved.row, dy: saved.dy }
+      }
+    }
     const shown = sliceWindow(items, this.window)
     this.syncLoadEarlier(items.length)
     const live = new Set(shown.map((item) => item.row))
@@ -1772,6 +1995,16 @@ export class App {
       const row = this.pendingJump
       this.pendingJump = null
       this.centerRow(this.rowEls.get(row) ?? null)
+      this.syncCompactionChip(items)
+      return
+    }
+    // The resumed position: the saved row at the saved height. It outranks
+    // follow-tail for the same render, and only for it.
+    if (this.pendingAnchor !== null) {
+      const { row, dy } = this.pendingAnchor
+      this.pendingAnchor = null
+      if (!this.placeAnchor(row, dy))
+        this.transcript.scrollTop = this.transcript.scrollHeight
       this.syncCompactionChip(items)
       return
     }
@@ -1904,6 +2137,77 @@ export class App {
     const rect = node.getBoundingClientRect()
     this.transcript.scrollTop +=
       rect.top - box.top - (box.height - rect.height) / 2
+  }
+
+  /** Put a row back at the height it was at, for a resumed view. False when the
+   *  row is not drawn, so the caller can fall back to the tail. */
+  private placeAnchor(row: string, dy: number): boolean {
+    const node = this.rowEls.get(row)
+    if (!node || !node.isConnected) return false
+    const box = this.transcript.getBoundingClientRect()
+    this.transcript.scrollTop += node.getBoundingClientRect().top - box.top - dy
+    return true
+  }
+
+  /** Write where the reader is standing, for the next load. Debounced on scroll
+   *  (a flick is dozens of events and localStorage is synchronous), and called
+   *  directly on the way out — see the `pagehide`/visibilitychange hooks. */
+  private scheduleViewSave(): void {
+    clearTimeout(this.viewTimer)
+    this.viewTimer = setTimeout(() => this.saveViewState(), 250)
+  }
+
+  private saveViewState(): void {
+    clearTimeout(this.viewTimer)
+    this.viewTimer = undefined
+    const active = this.active
+    const drawn = this.window
+    // A transcript position only exists for a session. A control room has no
+    // rows to stand on; the page it goes back to is the launch form, and that is
+    // carried by the launch draft instead.
+    if (!active || active.control || !drawn) return
+    const anchor = this.anchorRow()
+    const row = anchor?.dataset.row
+    if (!anchor || !row) return
+    const index = this.lastItems.findIndex((item) => item.row === row)
+    if (index < 0) return
+    const box = this.transcript.getBoundingClientRect()
+    rememberLastView({
+      epk: active.epk,
+      roomId: active.roomId,
+      row,
+      index,
+      dy: Math.round(anchor.getBoundingClientRect().top - box.top),
+      window: drawn,
+      savedAt: Date.now(),
+    })
+  }
+
+  /** Both halves of "the page I was on": where the reader stood in a
+   *  transcript, and what they had typed into a launch form. One call at the two
+   *  hooks that fire when the page is going away. */
+  private savePage(): void {
+    this.saveViewState()
+    this.saveLaunchDraft()
+  }
+
+  private scheduleDraftSave(): void {
+    clearTimeout(this.draftTimer)
+    this.draftTimer = setTimeout(() => this.saveLaunchDraft(), 250)
+  }
+
+  /** The launch form, kept while it is open. An empty form is not stored: there
+   *  is nothing to put back, and a stale empty record would overwrite the fields
+   *  of someone who has since typed something. */
+  private saveLaunchDraft(): void {
+    clearTimeout(this.draftTimer)
+    this.draftTimer = undefined
+    const active = this.active
+    if (!active?.control) return
+    const cwd = this.launchCwd.value.trim()
+    const name = this.launchName.value.trim()
+    if (!cwd && !name) return
+    rememberLaunchDraft({ epk: active.epk, roomId: active.roomId, cwd, name })
   }
 
   /** The row at the top edge of the scroll area — the thing the reader is

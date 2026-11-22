@@ -1080,6 +1080,18 @@ details[open] > .collapsed {
   border-color: color-mix(in oklab, var(--ok) 45%, var(--line));
 }
 
+/* "open" is the same kind of fact — which room THIS device is in, not what kind
+   of room it is. It has to be said on the card because the control there is
+   "detach", and that only reads as "leave" once the card says you are in. */
+.tag-open {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--line));
+}
+.room-active {
+  border-color: color-mix(in oklab, var(--accent) 40%, var(--line));
+  background: #1f2028;
+}
+
 .section-head {
   display: flex;
   align-items: center;

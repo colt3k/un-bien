@@ -6,6 +6,7 @@ import {
   isViewableSession,
   launchedRoom,
   mergeRoomLists,
+  resumeTarget,
   roomFacts,
   roomTag,
   sortRooms,
@@ -283,6 +284,71 @@ describe("single-room updates (room_announced / room_meta_updated)", () => {
     for (let i = 0; i < MISSING_GRACE + 1; i++)
       tracked = mergeRoomLists(tracked, [{ room_id: session.room_id }])
     expect(tracked.map((r) => r.room_id)).toEqual([session.room_id])
+  })
+})
+
+describe("resume targets (what a reload reopens)", () => {
+  it("re-attaches the recorded session while the machine still advertises it", () => {
+    const t = resumeTarget({ roomId: session.room_id }, [session, daemon])
+    expect(t?.kind).toBe("session")
+    expect(t?.room.room_id).toBe(session.room_id)
+  })
+
+  it("takes the machine's one live session when the room id rotated", () => {
+    const renamed = { ...session, room_id: "NEWroom-aaaa" }
+    const t = resumeTarget({ roomId: session.room_id }, [renamed])
+    expect(t?.room.room_id).toBe("NEWroom-aaaa")
+  })
+
+  it("refuses to guess between two live sessions", () => {
+    // Opening a transcript the reader did not leave is worse than a page that
+    // says "pick one".
+    const other = {
+      ...session,
+      room_id: "otherRoom",
+      sessionId: "9a9a9a9a-0000-4000-8000-000000000000",
+    }
+    expect(resumeTarget({ roomId: "goneRoom-xx" }, [session, other])).toBeNull()
+  })
+
+  it("never reopens a control room as if it were a transcript", () => {
+    // The bug this pins: a session record plus a machine whose only room is a
+    // launcher used to attach the launcher room, which answers no `get_entries`
+    // — the client sat at "machine not answering" forever.
+    expect(resumeTarget({ roomId: session.room_id }, [daemon])).toBeNull()
+    expect(resumeTarget({ roomId: "goneRoom" }, [daemon])).toBeNull()
+  })
+
+  it("puts the launch form back for a control room record", () => {
+    const t = resumeTarget({ roomId: daemon.room_id, control: true }, [
+      session,
+      daemon,
+    ])
+    expect(t?.kind).toBe("control")
+    expect(t?.room.room_id).toBe(daemon.room_id)
+  })
+
+  it("follows a rotated control room id to the machine's daemon", () => {
+    const t = resumeTarget({ roomId: "OLDcontrol", control: true }, [
+      session,
+      daemon,
+    ])
+    expect(t?.kind).toBe("control")
+    expect(t?.room.room_id).toBe(daemon.room_id)
+  })
+
+  it("says there is nothing to reopen when the launcher stopped", () => {
+    expect(
+      resumeTarget({ roomId: daemon.room_id, control: true }, [session]),
+    ).toBeNull()
+  })
+
+  it("still finds an older daemon that never stamps is_daemon", () => {
+    const t = resumeTarget({ roomId: "gone", control: true }, [
+      session,
+      control,
+    ])
+    expect(t?.room.room_id).toBe(control.room_id)
   })
 })
 
