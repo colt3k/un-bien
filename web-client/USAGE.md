@@ -184,11 +184,31 @@ be a dead input): **folder** plus an optional **name**, then **launch** sends
 `ub.session_launch_dirs`, and the daemon answers `session_launch_dirs_result`: each
 `launch.dirs` root, absolute, with its **immediate** child folders (never deeper — that
 is the machine's decision, and a device that could walk the tree could read a home
-directory). They appear in the folder field's OWN dropdown (a `<datalist>`), labelled
-with the whole path and sorted by full path ignoring case — `myai` alone would not tell
-you which root it came from. There is no second list of folders on the panel: one control,
-one set of paths. `~` in the config is expanded machine-side; the device never guesses, and
-a typed path is always accepted.
+directory). The panel paints them as **rows you can see and tap**: one per allow-listed
+root, labelled with the WHOLE path (sorted by full path ignoring case — `myai` alone
+would not tell you which root it came from), each saying how many folders sit inside it,
+and one tap on a root both chooses it and opens what is inside it. A root that is
+allow-listed but not on the machine stays on the list, dimmed, with the reason, because
+it cannot be launched into.
+
+**One control, not two.** The folder field is a plain text box: a row fills it, and you
+can still edit what is in it. Typing does not open a second dropdown — it **filters these
+rows** (substring of the full path, ignoring case), keeping each match's root above it as
+a header that says how much of the root the filter kept. There is no `list=` attribute and
+no `datalist` element on the field: the same 168 paths in two controls meant one popup
+landing on top of the list that was already showing them, and the dropdown was the part
+phones get wrong anyway (iOS Safari's datalist support is partial; Chrome on Android will
+not open one for an empty field — that was the original bug: the paths were present and
+invisible at the same time). `dirRows` in `src/launch-dirs.ts` is the row model, and
+`test/launch-dirs.test.ts` pins both halves: the panel carries a list element, and the
+field carries no dropdown.
+
+Groups are closed by default — this machine's real allow-list is 7 roots and 161 folders,
+which is neither scannable nor scrollable on a phone. `~` in the config is expanded
+machine-side; the device never guesses, and a typed path is always accepted even when no
+row matches it (the list is a convenience, not a whitelist — a filter that matches nothing
+says so in words rather than going blank). Typing or pasting a path that IS one of the
+offered folders marks its row and opens its group.
 Picking a folder sets the path **and moves the name to its last component**
 (`/Users/gfcollin/x/a/b/c` → `c`) — picking a different folder means a different project,
 so the name follows. A name you typed yourself is never replaced; only the client's own
@@ -299,17 +319,18 @@ That output file **is your session** — prompts, tool output, paths. `/tmp`, ne
 
 ## 9. When it does not work
 
-| Symptom                                                       | Likely cause                                                                                    |
-| ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `pairing refused: …`                                          | code already used, or you are on a different relay than when it was minted                      |
-| red line: `Token was not issued by this Pi` / `token expired` | the code is spent or older than 60s — run `/unbien pair` again                                  |
-| green line: `already paired … re-confirmed`, no new card      | this browser already holds that pairing — press **attach** on a room                            |
-| Header stuck at `not connected`                               | relay URL typo/scheme, relay not up, or port 3000 in use by another relay                       |
-| Client refuses the socket, mentions "a different relay"       | relay key changed since you paired — the TOFU pin, working as designed                          |
-| Page full-reloads on a phone                                  | you are on `dev`, not `preview`                                                                 |
-| Transcript stops mid-turn but the machine kept going          | you are attached to a different room, or the machine re-announced and the re-attach is mid-walk |
-| `__unbienDump` returns a tiny count                           | you were never attached — attach first, the tee only records while connected                    |
-| Port 5173 busy                                                | `strictPort: true`: the server refuses to pick another port, kill the other instance            |
+| Symptom                                                       | Likely cause                                                                                                                                                                                                                                                |
+| ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pairing refused: …`                                          | code already used, or you are on a different relay than when it was minted                                                                                                                                                                                  |
+| red line: `Token was not issued by this Pi` / `token expired` | the code is spent or older than 60s — run `/unbien pair` again                                                                                                                                                                                              |
+| green line: `already paired … re-confirmed`, no new card      | this browser already holds that pairing — press **attach** on a room                                                                                                                                                                                        |
+| Header stuck at `not connected`                               | relay URL typo/scheme, relay not up, or port 3000 in use by another relay                                                                                                                                                                                   |
+| Client refuses the socket, mentions "a different relay"       | relay key changed since you paired — the TOFU pin, working as designed                                                                                                                                                                                      |
+| Page full-reloads on a phone                                  | you are on `dev`, not `preview`                                                                                                                                                                                                                             |
+| **new conversation** shows no folders                         | the panel shows what the machine answers: `wildcard`/`locked`/remote-launch-off is said in the hint under the list, an old launcher daemon does not answer at all (type the path), and the folders are painted as ROWS — there is no dropdown to be missing |
+| Transcript stops mid-turn but the machine kept going          | you are attached to a different room, or the machine re-announced and the re-attach is mid-walk                                                                                                                                                             |
+| `__unbienDump` returns a tiny count                           | you were never attached — attach first, the tee only records while connected                                                                                                                                                                                |
+| Port 5173 busy                                                | `strictPort: true`: the server refuses to pick another port, kill the other instance                                                                                                                                                                        |
 
 This is a **spike**: no offline story, no push notifications, one file per concern, and
 the dev-server exposure above is not a deployment. A real one wants TLS, a static host,

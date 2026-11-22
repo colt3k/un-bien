@@ -67,6 +67,12 @@ That double is **not** a second implementation of the extension and proves
 nothing about the real one; it exists so the browser end can be driven against
 the real Rust relay. Everything it emits was copied from `extension/src`.
 
+`--daemon` announces it as a launcher **control room** instead of a session, and
+answers `session_launch_dirs` / `session_launch` with the frames the real daemon
+sends (`extension/src/launch_request.ts`). That is how the new-conversation
+folder picker gets driven from a browser without starting a pi: the double
+answers a launch, it never honours one.
+
 To capture what a REAL session sends, as a fixture for this fold:
 
 ```sh

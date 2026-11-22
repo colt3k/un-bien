@@ -202,22 +202,34 @@
           The folder must already exist there, and the machine must allow remote
           launch for it.
         </p>
+        <!-- A PLAIN text field. The folder paths live below it, in the list —
+             no `list=` attribute and no `datalist` element: a second dropdown of
+             the same paths duplicates a list that is already on screen, and it
+             is the part phones get wrong (iOS Safari's datalist support is
+             partial, Chrome on Android will not open one for an empty field).
+             Typing filters the rows; tapping a row fills this field, which stays
+             editable. -->
         <label class="field">
           <span>folder</span>
           <input
             id="launchCwd"
-            list="launchDirOptions"
             placeholder="/absolute/path/to/project"
             autocomplete="off"
             autocapitalize="off"
             spellcheck="false"
           />
         </label>
-        <!-- The machine's own allow-list, one level deep, offered AS THE FIELD'S
-             OWN DROPDOWN. The device cannot derive it: `launch.dirs` is a prefix
-             test against the MACHINE's filesystem, written in the machine's
-             shorthand (`~/dev/myai`). -->
-        <datalist id="launchDirOptions"></datalist>
+        <!-- The machine's own allow-list, one level deep, as rows you can see
+             and tap. The device cannot derive it: `launch.dirs` is a prefix test
+             against the MACHINE's filesystem, written in the machine's shorthand
+             (`~/dev/myai`). -->
+        <div
+          id="launchDirList"
+          class="dir-list"
+          role="group"
+          aria-label="folders this machine will launch into"
+          hidden
+        ></div>
         <p id="launchDirsHint" class="hint" hidden></p>
         <label class="field">
           <span>name (optional)</span>

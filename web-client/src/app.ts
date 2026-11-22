@@ -52,11 +52,14 @@ import { RELAY_PORT, relayUrlForPage } from "./framing.js"
 import { tokenize } from "./highlight.js"
 import {
   dirChoices,
+  dirRows,
   dirsHint,
   launchNameFor,
   nextAutoName,
   parseLaunchDirs,
+  rootsCovering,
   type LaunchDirChild,
+  type LaunchDirRow,
   type LaunchDirsAnswer,
 } from "./launch-dirs.js"
 import { describeError, launchFailureHint, toastMessage } from "./notice.js"
@@ -453,11 +456,14 @@ export class App {
   private readonly launchCwd = $<HTMLInputElement>("launchCwd")
   private readonly launchName = $<HTMLInputElement>("launchName")
   private readonly launchNote = $<HTMLElement>("launchNote")
-  /** The machine-reported allow-list, offered as the FOLDER FIELD'S OWN dropdown
-   *  (`<datalist>`), so picking a path is part of filling the field in rather
-   *  than a second control to cross-reference. See `launch-dirs.ts`. */
+  /** The one-line explanation of what the machine's answer is NOT (wildcard,
+   *  locked, remote launch off, folders that are gone). It has to be a sentence
+   *  because a short list is otherwise indistinguishable from a broken one. */
   private readonly launchDirsHint = $<HTMLElement>("launchDirsHint")
-  private readonly launchDirOptions = $<HTMLDataListElement>("launchDirOptions")
+  /** The machine's folders, and the ONLY way to pick one. The field above it is
+   *  a plain text input: rows fill it, it never pops a second list of the same
+   *  paths over the list that is already on screen. */
+  private readonly launchDirList = $<HTMLElement>("launchDirList")
   /** Reasoning rows are folded always and hidden here — see `render`. */
   private reasoningHidden = hideReasoning()
   /** One monospace grid for the whole transcript, as pi's terminal sets it. A
@@ -507,6 +513,11 @@ export class App {
   /** The paths the machine offered. Kept so a value that is EXACTLY one of them
    *  counts as a pick while typing (and only then does the name follow). */
   private launchChoices: LaunchDirChild[] = []
+  /** The machine's answer, kept so the visible list can be repainted when a
+   *  group is opened without asking the machine again. */
+  private dirsAnswer: LaunchDirsAnswer | null = null
+  /** Which allow-listed roots have their folders revealed. */
+  private readonly expandedDirs = new Set<string>()
   /** The name this client last pre-filled. That is what makes it safe to
    *  replace later: a name the user typed themselves never is. */
   private autoFilledName = ""
@@ -605,10 +616,18 @@ export class App {
         }
       })
     }
-    // A value that is exactly one of the offered paths — a dropdown pick, a
-    // paste, or retyping a whole path — counts as picking it, so the name
-    // follows it.
-    this.launchCwd.addEventListener("input", () => this.applyNameIfPicked())
+    // The field is a free text box: a value that is exactly one of the offered
+    // paths counts as picking it (so the name follows and the list opens to
+    // it), and anything else TYPES — which filters the list rather than
+    // replacing it with a dropdown of the same paths.
+    this.launchCwd.addEventListener("input", () => {
+      const typed = this.launchCwd.value.trim()
+      if (this.launchChoices.some((c) => c.path === typed)) {
+        this.applyNameIfPicked()
+        this.expandForCwd()
+      }
+      this.renderLaunchDirList()
+    })
     // A TYPED path is a selection too, once the field commits: tabbing out or
     // pressing Enter names the session after the folder they wrote.
     this.launchCwd.addEventListener("change", () => this.applyNameForCwd())
@@ -1143,7 +1162,10 @@ export class App {
     if (this.drawer.open) this.drawer.close()
     this.title.textContent = room.name ?? "control room"
     this.sub.textContent = `launcher room ${room.room_id.slice(0, 8)} · ${room.caps?.length ?? 0} capabilities`
-    this.launchCwd.focus()
+    // preventScroll: on a phone this focus raises the on-screen keyboard, and
+    // letting the browser scroll to the field can push the folder list (and the
+    // launch button) under it.
+    this.launchCwd.focus({ preventScroll: true })
   }
 
   /** Back to a normal viewer: the panel goes away, the composer returns. */
@@ -1153,6 +1175,7 @@ export class App {
     this.composer.hidden = false
     this.active = null
     this.cancelDirsRequest()
+    this.clearLaunchDirs()
     this.clearEndRequest()
     this.title.textContent = "not attached"
     this.sub.textContent = "pick a session from the machines panel"
@@ -1173,6 +1196,15 @@ export class App {
     clearTimeout(this.dirsTimer)
   }
 
+  /** Drop the answer and everything painted from it — a panel that is closed,
+   *  or asking again, must not keep showing the previous machine's folders. */
+  private clearLaunchDirs(): void {
+    this.dirsAnswer = null
+    this.expandedDirs.clear()
+    this.launchDirList.replaceChildren()
+    this.launchDirList.hidden = true
+  }
+
   /** Ask the machine which folders may be launched into.
    *
    * The allow-list lives on the machine and is a prefix test against ITS
@@ -1184,7 +1216,7 @@ export class App {
   private requestLaunchDirs(epk: string): void {
     this.cancelDirsRequest()
     this.launchChoices = []
-    this.launchDirOptions.replaceChildren()
+    this.clearLaunchDirs()
     this.setLaunchDirsHint("")
     const client = this.client
     if (!client) return
@@ -1202,22 +1234,109 @@ export class App {
     }, 8_000)
   }
 
-  /** Put the answer in the field's own dropdown, ordered by full path.
+  /** Put the answer in the list under the folder field, ordered by full path.
    *
-   * Labels stay the WHOLE path, not the leaf: in a dropdown that pops open under
-   * the field, `myai` next to `aichats` says nothing about which root each came
-   * from, and a pick has to be readable before it is made. */
+   * Labels stay the WHOLE path, not the leaf: `myai` next to `aichats` says
+   * nothing about which root each came from, and a pick has to be readable
+   * before it is made. */
   private renderLaunchDirs(answer: LaunchDirsAnswer): void {
     this.launchChoices = dirChoices(answer)
-    const options = this.launchDirOptions
-    options.replaceChildren()
-    for (const choice of this.launchChoices) {
-      const option = document.createElement("option")
-      option.value = choice.path
-      option.label = choice.path
-      options.append(option)
-    }
+    this.dirsAnswer = answer
+    this.expandForCwd()
+    this.renderLaunchDirList()
     this.setLaunchDirsHint(dirsHint(answer))
+  }
+
+  /** Paint the machine's folders as rows. Repainted on every keystroke, pick
+   *  and group toggle — the list is at most a few hundred small buttons and the
+   *  alternative (patching one row's classes) is more code than the redraw. */
+  private renderLaunchDirList(): void {
+    const answer = this.dirsAnswer
+    if (!answer) return
+    const typed = this.launchCwd.value.trim()
+    // An EXACT path is a choice, not a search: browsing stays browsing. Only
+    // half-typed text filters, so tapping a folder does not collapse the list
+    // down to the row you just tapped.
+    const exact = this.launchChoices.some((c) => c.path === typed)
+    const filter = exact ? "" : typed
+    const rows = dirRows(answer, this.expandedDirs, filter)
+    const list = this.launchDirList
+    list.replaceChildren()
+    for (const row of rows) {
+      const btn = el("button", "dir-row")
+      btn.type = "button"
+      if (row.depth === 1) btn.classList.add("dir-child")
+      if (!row.pickable) btn.classList.add("dir-missing")
+      if (row.path === typed) btn.classList.add("dir-chosen")
+      // A root's marker is its state, not a second control: one tap both
+      // chooses the folder and opens what is inside it.
+      const caret = el(
+        "span",
+        "dir-caret",
+        row.expandable ? (row.expanded ? "\u25be" : "\u25b8") : "",
+      )
+      const path = el("span", "dir-path", row.label)
+      const meta = el(
+        "span",
+        "dir-meta",
+        row.note ?? (row.childCount ? `${row.childCount} inside` : ""),
+      )
+      btn.append(caret, path, meta)
+      btn.disabled = !row.pickable
+      btn.addEventListener("click", () => this.chooseDir(row))
+      list.append(btn)
+    }
+    // A filter that matches nothing has to SAY so: silence looks like the
+    // machine stopped answering, and the typed path is still perfectly
+    // launchable — the list is a convenience, not a whitelist of what the field
+    // accepts. No echo of the text: it is in the field one line above. An EMPTY
+    // answer (wildcard, locked, roots that are all gone) stays silent here: the
+    // hint under the list names that case in its own words, and saying it twice
+    // reads as two different problems.
+    if (rows.length === 0 && filter) {
+      list.append(
+        el(
+          "p",
+          "dir-empty",
+          "no folder on the machine matches what you typed — it still launches if the path exists there",
+        ),
+      )
+      list.hidden = false
+      return
+    }
+    list.hidden = rows.length === 0
+  }
+
+  /** Open the group(s) a folder in the field came from, so the marked row is a
+   *  row the user can see. Only for a value that is one of the offered paths —
+   *  half-typed text filters the list instead of opening groups in it. */
+  private expandForCwd(): void {
+    const answer = this.dirsAnswer
+    if (!answer) return
+    for (const root of rootsCovering(answer, this.launchCwd.value))
+      this.expandedDirs.add(root)
+  }
+
+  /** A folder from the list: it goes in the field, the name follows it (see
+   *  `nextAutoName`), and a root with folders inside it opens or closes them. A
+   *  row is one control doing both — the caret is its state, not a second
+   *  button to aim at with a thumb. Programmatic assignment fires no
+   *  `input`/`change`, so the naming happens here. */
+  private chooseDir(row: LaunchDirRow): void {
+    if (row.expandable) {
+      if (this.expandedDirs.has(row.path)) this.expandedDirs.delete(row.path)
+      else this.expandedDirs.add(row.path)
+    }
+    // A child pick also opens its root: after the tap the field holds the full
+    // path, the filter clears, and the chosen row must still be on screen
+    // rather than folded away behind a closed group.
+    if (row.depth === 1 && this.dirsAnswer)
+      for (const root of rootsCovering(this.dirsAnswer, row.path))
+        this.expandedDirs.add(root)
+    this.launchCwd.value = row.path
+    this.applyNameForCwd()
+    this.renderLaunchDirList()
+    this.setLaunchNote("")
   }
 
   /** Follow the name after the folder. Picking a DIFFERENT folder means picking

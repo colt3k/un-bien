@@ -54,6 +54,51 @@ const CAPS = [
   "remote_terminate",
 ]
 
+/**
+ * `--daemon`: announce as the LAUNCHER's control room instead of a pi session,
+ * so the browser's "new conversation" panel (folder picker included) can be
+ * driven end to end without running a real daemon. The caps are the daemon's
+ * own (`extension/src/launcher/launcher.ts` `DAEMON_CAPS`) and the two launch
+ * frames below are the real shapes (`extension/src/launch_request.ts`) — the
+ * double ANSWERS them and starts nothing, which is the point: the browser end
+ * is what is under test.
+ */
+const DAEMON = process.argv.includes("--daemon")
+const ROOM_CAPS = DAEMON
+  ? ["remote_launch", "is_daemon", "session_resume"]
+  : CAPS
+const ROOM_NAME = DAEMON ? HOSTNAME : SESSION_NAME
+/** Folders the double offers, as `launchDirOptions` (extension/src/launch.ts)
+ *  shapes them: absolute, one level deep, with `exists` on the root. */
+const FAKE_ROOTS = [
+  {
+    path: "/tmp/fake-project",
+    name: "fake-project",
+    exists: true,
+    truncated: false,
+    children: [
+      { path: "/tmp/fake-project/alpha", name: "alpha" },
+      { path: "/tmp/fake-project/Beta", name: "Beta" },
+      { path: "/tmp/fake-project/web-client", name: "web-client" },
+    ],
+  },
+  {
+    path: "/tmp/fake-project/nested/deep",
+    name: "deep",
+    exists: true,
+    truncated: false,
+    children: [{ path: "/tmp/fake-project/nested/deep/one", name: "one" }],
+  },
+  {
+    path: "/Volumes/unmounted",
+    name: "unmounted",
+    exists: false,
+    truncated: false,
+    error: "no such directory",
+    children: [],
+  },
+]
+
 interface Persisted {
   seed: string // base64 Ed25519 secret key
   paired: string[] // owner device keys, canonical base64
@@ -430,7 +475,7 @@ relay.on("message", (line: string) => {
       harness: { name: "Pi coding agent", version: "0.0.0-smoke" },
       hostname: HOSTNAME,
       protocol_version: 1,
-      capabilities: CAPS,
+      capabilities: ROOM_CAPS,
     })
     log(`paired ${short(sender)} (${req.device_name ?? "?"})`)
     return
@@ -440,7 +485,7 @@ relay.on("message", (line: string) => {
   if (ub?.type === "session_sync") {
     sendEnvelope(sender, "ub", {
       type: "hello",
-      caps: CAPS,
+      caps: ROOM_CAPS,
       sessionId: SESSION_ID,
     })
     sendEnvelope(sender, "ub", {
@@ -450,6 +495,38 @@ relay.on("message", (line: string) => {
       session_name: SESSION_NAME,
     })
     log(`session_sync from ${short(sender)} → hello + session_sync_end`)
+    return
+  }
+
+  if (ub?.type === "session_launch_dirs") {
+    sendEnvelope(sender, "ub", {
+      type: "session_launch_dirs_result",
+      in_reply_to: typeof ub.id === "string" ? ub.id : "",
+      ok: true,
+      wildcard: false,
+      locked: false,
+      remote_launch: true,
+      roots: FAKE_ROOTS,
+    })
+    log(
+      `session_launch_dirs → ${FAKE_ROOTS.length} roots, ${FAKE_ROOTS.reduce((n, r) => n + r.children.length, 0)} folders`,
+    )
+    return
+  }
+
+  if (ub?.type === "session_launch") {
+    // Answered, NOT honoured: a double that spawned things would be a way to
+    // run commands from a browser. The client's own result handling is what is
+    // under test here.
+    sendEnvelope(sender, "ub", {
+      type: "session_launch_result",
+      in_reply_to: typeof ub.id === "string" ? ub.id : "",
+      ok: true,
+      backend: "tmux",
+    })
+    log(
+      `session_launch cwd=${String(ub.cwd ?? "?")} → ok (double launched nothing)`,
+    )
     return
   }
 
@@ -537,9 +614,9 @@ async function main(): Promise<void> {
   await relay.connect({
     roomId: ROOM_ID,
     roomMeta: {
-      name: SESSION_NAME,
+      name: ROOM_NAME,
       cwd: "/tmp/fake-project",
-      caps: CAPS,
+      caps: ROOM_CAPS,
       model: "claude-test",
     },
   })
@@ -548,7 +625,7 @@ async function main(): Promise<void> {
   console.log(`[fake-machine] room   ${ROOM_ID}`)
   console.log(`[fake-machine] relay  ${RELAY}`)
   console.log(
-    `[fake-machine] pair with:\nunbien://pair?t=${token}&epk=${Buffer.from(keypair.publicKey).toString("base64url")}&n=${encodeURIComponent(SESSION_NAME)}&rm=${ROOM_ID}`,
+    `[fake-machine] pair with:\nunbien://pair?t=${token}&epk=${Buffer.from(keypair.publicKey).toString("base64url")}&n=${encodeURIComponent(ROOM_NAME)}&rm=${ROOM_ID}`,
   )
 }
 

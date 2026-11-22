@@ -4,10 +4,12 @@ import { describe, expect, it } from "vitest"
 import {
   compareFolders,
   dirChoices,
+  dirRows,
   dirsHint,
   launchNameFor,
   nextAutoName,
   parseLaunchDirs,
+  rootsCovering,
   sortedRoots,
 } from "../src/launch-dirs.js"
 
@@ -88,6 +90,112 @@ describe("dirChoices", () => {
       "/Users/gfcollin/dev/myai",
       "/Users/gfcollin/dev/myai/dotfiles",
       "/Users/gfcollin/dev/myai/scrape-examples",
+    ])
+  })
+})
+
+describe("dirRows", () => {
+  // What the PANEL paints, as opposed to what the field autocompletes against.
+  // A `<datalist>` is invisible until something is typed — and on a phone it
+  // may stay invisible — so these rows are the only folder list a thumb can
+  // see. That is the bug these tests exist over.
+  const parsed = parseLaunchDirs(answer)!
+
+  it("shows every allow-listed root with its folders closed by default", () => {
+    const rows = dirRows(parsed, new Set())
+    expect(rows.map((r) => [r.path, r.depth])).toEqual([
+      ["/Users/gfcollin/dev/myai", 0],
+      ["/Volumes/gone", 0],
+    ])
+    // A closed root still says what is inside it, or it reads as an empty one.
+    expect(rows[0]?.childCount).toBe(2)
+    expect(rows[0]?.expandable).toBe(true)
+    expect(rows[1]?.expandable).toBe(false)
+  })
+
+  it("reveals a root's folders, sorted, when it is opened", () => {
+    const rows = dirRows(parsed, new Set(["/Users/gfcollin/dev/myai"]))
+    expect(rows.map((r) => [r.path, r.depth])).toEqual([
+      ["/Users/gfcollin/dev/myai", 0],
+      ["/Users/gfcollin/dev/myai/dotfiles", 1],
+      ["/Users/gfcollin/dev/myai/scrape-examples", 1],
+      ["/Volumes/gone", 0],
+    ])
+  })
+
+  it("keeps a folder that is not on the machine on the list, unpickable, with a reason", () => {
+    const gone = dirRows(parsed, new Set()).find(
+      (r) => r.path === "/Volumes/gone",
+    )
+    expect(gone?.pickable).toBe(false)
+    expect(gone?.note).toBeTruthy()
+  })
+
+  it("flags a root the machine would only list part-way", () => {
+    const cut = parseLaunchDirs({
+      ...answer,
+      roots: [
+        {
+          path: "/Users/gfcollin/dev/GoLang/src/colt3k",
+          exists: true,
+          truncated: true,
+          children: [
+            { path: "/Users/gfcollin/dev/GoLang/src/colt3k/a", name: "a" },
+          ],
+        },
+      ],
+    })!
+    const [root] = dirRows(cut, new Set())
+    expect(root?.truncated).toBe(true)
+    expect(root?.note).toContain("part-way")
+  })
+
+  // Typing filters THESE rows. It used to open the field's own `<datalist>`
+  // instead, which repeated the same paths in a popup on top of the list — and
+  // on a phone never opened at all.
+  it("filters to what typed text matches, keeping the root as a header", () => {
+    const rows = dirRows(parsed, new Set(), "myai/dot")
+    expect(rows.map((r) => [r.path, r.depth])).toEqual([
+      ["/Users/gfcollin/dev/myai", 0],
+      ["/Users/gfcollin/dev/myai/dotfiles", 1],
+    ])
+    expect(rows[0]?.expanded).toBe(true)
+  })
+
+  it("matches roots too, ignoring case", () => {
+    const rows = dirRows(parsed, new Set(), "VOLUMES")
+    expect(rows.map((r) => r.path)).toEqual(["/Volumes/gone"])
+    expect(rows[0]?.pickable).toBe(false)
+  })
+
+  it("says how much of a root the filter kept", () => {
+    // `2 inside` above a single row would read as a list that lost a folder.
+    const [root] = dirRows(parsed, new Set(), "dotfiles")
+    expect(root?.note).toBe("1 of 2 match")
+  })
+
+  it("matches nothing rather than inventing a row", () => {
+    expect(dirRows(parsed, new Set(), "zzz-no-such-folder")).toEqual([])
+  })
+})
+
+describe("rootsCovering", () => {
+  const parsed = parseLaunchDirs(answer)!
+
+  it("opens the group a folder already in the field came from", () => {
+    expect(rootsCovering(parsed, "/Users/gfcollin/dev/myai/dotfiles")).toEqual([
+      "/Users/gfcollin/dev/myai",
+    ])
+    expect(rootsCovering(parsed, "/Users/gfcollin/dev/myai")).toEqual([
+      "/Users/gfcollin/dev/myai",
+    ])
+  })
+
+  it("does not open a group on a half-written path or a lookalike sibling", () => {
+    expect(rootsCovering(parsed, "")).toEqual([])
+    expect(rootsCovering(parsed, "/Users/gfcollin/dev/mya")).toEqual([])
+    expect(rootsCovering(parsed, "/Volumes/gone/sub")).toEqual([
+      "/Volumes/gone",
     ])
   })
 })
@@ -286,6 +394,34 @@ function extensionSource(rel: string): string {
     "utf8",
   )
 }
+
+describe("the folder picker is one control, in the page", () => {
+  // Two regressions pinned here.
+  // 1. The panel offered its paths ONLY as `<datalist>` options, which a phone
+  //    will not open for an empty field — the folder list was there and
+  //    invisible at the same time.
+  // 2. Keeping BOTH the rows and the field's own dropdown put one set of paths
+  //    in two controls, one of which popped up on top of the other. The rows
+  //    are the picker; the field is a text box that a row fills and the user
+  //    can still edit.
+  const html = readFileSync(
+    fileURLToPath(new URL("../index.html", import.meta.url)),
+    "utf8",
+  )
+
+  it("the panel carries a list element the client can paint", () => {
+    expect(html).toContain('id="launchDirList"')
+  })
+
+  it("the folder field is a plain input, with no dropdown attached", () => {
+    expect(html).not.toContain("<datalist")
+    const field = html.match(/<input[^>]*id="launchCwd"[^>]*>/)?.[0] ?? ""
+    expect(field.length, "could not read the #launchCwd input").toBeGreaterThan(
+      20,
+    )
+    expect(field).not.toContain("list=")
+  })
+})
 
 describe("wire parity with the extension", () => {
   it("the machine sends the request type this client asks for", () => {

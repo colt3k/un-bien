@@ -114,6 +114,120 @@ export function dirChoices(answer: LaunchDirsAnswer): LaunchDirChild[] {
 }
 
 /**
+ * The roots a given path sits under, so the list can open itself to whatever
+ * the field already holds. A path typed or pasted into the field should not
+ * hide behind a closed group; the folder you have already chosen should be the
+ * one row visibly marked.
+ */
+export function rootsCovering(
+  answer: LaunchDirsAnswer,
+  path: string,
+): string[] {
+  const cwd = path.trim().replace(/\/+$/, "")
+  if (!cwd) return []
+  return answer.roots
+    .filter((root) => cwd === root.path || cwd.startsWith(`${root.path}/`))
+    .map((root) => root.path)
+}
+
+/** One row of the VISIBLE folder list. */
+export interface LaunchDirRow {
+  path: string
+  /** Always the WHOLE path: in a list under the field, `myai` next to `aichats` cannot say which root it came from. */
+  label: string
+  /** 0 = an allow-listed root, 1 = one folder inside it. */
+  depth: 0 | 1
+  /** False for a folder the machine cannot launch into — a root that is configured but not on the machine right now. */
+  pickable: boolean
+  /** A root with folders one level down: tapping it opens them as well as choosing it. */
+  expandable: boolean
+  expanded: boolean
+  /** How many folders sit one level down, so a closed root does not read as an empty one. */
+  childCount: number
+  /** The machine stopped listing after its own cap. */
+  truncated: boolean
+  /** Why the row is dimmed, in words. Nothing to act on — the launch would simply be refused. */
+  note?: string
+}
+
+/**
+ * The rows the panel paints — the ONE place the machine's folders are shown.
+ *
+ * The field above the list is a plain text input and stays editable; the list
+ * is what you look at and tap. There is deliberately no `<datalist` on the
+ * field: a second dropdown of the same 168 paths duplicates what is already on
+ * screen, positions itself over the list it is repeating, and is the part that
+ * is broken on phones in the first place (iOS Safari's `datalist` support is
+ * partial — WebKit bug 305919 — and Chrome on Android will not open one for an
+ * empty field). Typing filters these rows instead, so one control does what the
+ * two used to.
+ *
+ * Groups are closed by default because the real allow-list is wide: measured on
+ * the machine that reported the phone bug, 7 roots and 161 child folders, which
+ * is a screen and a half of full paths. Roots are 7 lines, and the folders
+ * under a root are already beside it.
+ *
+ * `filter` is what the field holds when it is NOT one of the offered paths —
+ * half-typed text. A filter ignores `expanded` and shows every match in place,
+ * with its root kept above it as a header, because a match like
+ * `…/colt3k/2fasdec` is meaningless without the root it sits in. An EXACT path
+ * is not a filter: the panel then browses normally (and opens that group), so
+ * picking a folder does not collapse the list to one row.
+ */
+export function dirRows(
+  answer: LaunchDirsAnswer,
+  expanded: ReadonlySet<string>,
+  filter = "",
+): LaunchDirRow[] {
+  const needle = filter.trim().toLowerCase()
+  const out: LaunchDirRow[] = []
+  for (const root of sortedRoots(answer)) {
+    const open = expanded.has(root.path)
+    const matches = (path: string) => path.toLowerCase().includes(needle)
+    const kids = needle
+      ? root.children.filter((child) => matches(child.path))
+      : root.children
+    const filtered = needle !== ""
+    if (filtered && !matches(root.path) && kids.length === 0) continue
+    out.push({
+      path: root.path,
+      label: root.path,
+      depth: 0,
+      pickable: root.exists,
+      expandable: root.children.length > 0,
+      expanded: filtered ? kids.length > 0 : open,
+      childCount: root.children.length,
+      truncated: root.truncated,
+      ...(!root.exists
+        ? { note: root.error ?? "not on this machine right now" }
+        : filtered && kids.length > 0 && !matches(root.path)
+          ? // The header of a filtered group: it is here for context, and the
+            // count says how much of it the filter kept — `49 inside` over 3
+            // rows would read as a list that lost its folders.
+            { note: `${kids.length} of ${root.children.length} match` }
+          : root.truncated
+            ? { note: "listed only part-way" }
+            : {}),
+    })
+    if (filtered ? kids.length === 0 : !open) continue
+    // `sortedRoots` has ordered them; do not reorder here.
+    for (const child of kids) {
+      out.push({
+        path: child.path,
+        label: child.path,
+        depth: 1,
+        pickable: true,
+        expandable: false,
+        expanded: false,
+        childCount: 0,
+        truncated: false,
+      })
+    }
+  }
+  return out
+}
+
+/**
  * Case-insensitive folder ordering, and DETERMINISTIC at that.
  *
  * `localeCompare(b, undefined, { sensitivity: "base" })` ignores case but then
