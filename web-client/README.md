@@ -664,10 +664,22 @@ at 920x2000. Multiply coordinates by 1.31…`. pi re-encodes and downscales, and
   label showed only the last, so the important one was lost to a later cosmetic
   one.
 - No model/thinking pickers, no session list controls (fork/compact/new/navigate),
-  no `session_launch` UI beyond `App.launch()`, no syntax highlighting (the file
-  face records its language and nothing paints it), and the call's ARGUMENTS are
-  not shown — only the face chip and the result. Partial output streams as the
-  running face (terminal text for a shell, plain text otherwise).
+  and the call's ARGUMENTS are not shown — only the face chip and the result.
+  Partial output streams as the running face (terminal text for a shell, plain
+  text otherwise).
+- **Two claims this list used to make have been false for a while, and are
+  retired here rather than left to mislead.** There IS a `session_launch` UI —
+  the panel behind **new conversation**, which asks the machine what it will
+  launch into and paints the answer as rows you tap ("Remote launch"). And code
+  faces ARE painted: `src/highlight.ts` tokenises per language *family* (a C-ish
+  family covering js/ts/go/rs/java/cpp, a shell family, a CSS family, python and
+  ruby, JSON, and a markup family — ~30 aliases), the faces carry `--tk-*`
+  colours for comments, keywords, strings, numbers and functions, and it is wired
+  into the markdown code face. What is actually true is the smaller thing: a
+  language outside those families gets no highlighting at all (`tokenize` returns
+  null and the block stays plain text), there is no detection from the code's
+  content — the language is only what the fenced block declared — and the rules
+  are hand-written token patterns, not a parser.
 - **Images are drawn, and they cost memory.** pi rides image content blocks
   inline as base64, so a screenshot session carries the bytes in the transcript
   for as long as the tab lives. The view caps a row at 8 images (the projected
