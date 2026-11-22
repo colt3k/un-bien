@@ -734,10 +734,7 @@ export class TranscriptReducer {
           // No result: pi's failure/cancel frame (a failed compaction appends no
           // entry, so `session_compact` never fires). Whatever row is still
           // waiting for this compaction has to stop saying the machine is
-          // summarizing. With NO open row there is nothing to explain — the hook
-          // that opens one never ran (`/compact` on a session too small to
-          // compact fails before the hook), and a failure row for a compaction
-          // no viewer ever saw start is a phantom.
+          // summarizing.
           const row = this.openCompactions.shift()
           if (row !== undefined) {
             const item = this.byRow.get(row)
@@ -751,7 +748,33 @@ export class TranscriptReducer {
             }
             const at = this.unanchoredLiveCompactions.indexOf(row)
             if (at >= 0) this.unanchoredLiveCompactions.splice(at, 1)
+            break
           }
+          // With NO open row the refusal landed BEFORE pi's hook — a session too
+          // small to compact, or `Already compacted` — so no viewer ever saw a
+          // start. Dropping the frame (the earlier call, called a phantom) is
+          // what made `/compact` look like a no-op: pi prints the error in its
+          // own TUI, so the terminal says "Compaction failed: Nothing to compact
+          // (session too small)" while the viewer shows a blank transcript. The
+          // refusal is the event; there is nothing else to report.
+          //
+          // Deliberately NOT registered as an unanchored live compaction: a
+          // refusal writes no entry, so nothing will ever anchor it, and letting
+          // a later compaction's entry match this row would stamp the wrong
+          // token count onto the wrong event.
+          this.push({
+            kind: "compaction",
+            row: this.nextCompactionId(),
+            text: compactionFailureCaption(
+              rpc.errorMessage,
+              rpc.aborted === true,
+            ),
+            streaming: false,
+            state: "failed",
+            blocks: [],
+            images: 0,
+            replayStable: false,
+          })
           break
         }
         const tokens =
@@ -1300,6 +1323,40 @@ export class TranscriptReducer {
       })
       return
     }
+    if (channel === "compaction_warning") {
+      // The extension's pre-fold notice. pi folds at
+      // `tokens > contextWindow - reserveTokens`; this arrives while the margin
+      // is still inside 1% of the window, so a reader can finish the thought
+      // before the transcript folds itself. Keyed by the THRESHOLD, not the text:
+      // the token numbers move every turn, and a row per turn would bury the
+      // transcript in warnings. `tokens === null` (right after a fold, before the
+      // next response) must not render as "0 tokens left" — drop the frame.
+      const tokens = typeof payload.tokens === "number" ? payload.tokens : null
+      const margin =
+        typeof payload.marginTokens === "number" ? payload.marginTokens : null
+      const window =
+        typeof payload.contextWindow === "number" ? payload.contextWindow : 0
+      const threshold =
+        typeof payload.threshold === "number" ? payload.threshold : window
+      if (tokens === null || margin === null || window <= 0) return
+      const row = `cwarn${threshold}`
+      if (this.byRow.has(row)) return
+      const n = (v: number): string => v.toLocaleString("en-US")
+      this.push({
+        kind: "notice",
+        row,
+        text: `Compaction coming — ${n(margin)} tokens of margin left (threshold ${n(threshold)}, ${n(tokens)} used of a ${n(window)} window)`,
+        streaming: false,
+        blocks: [],
+        images: 0,
+        code: "compaction",
+        // Live-only: no session entry carries the warning, so a replay cannot
+        // reproduce it. Marking it replay-stable would imply it survives a
+        // reconnect from the log, and it does not.
+        replayStable: false,
+      })
+      return
+    }
     if (channel.startsWith("subagents:")) {
       // The STATUS IS THE CHANNEL NAME: `subagents:started`, `:steered`,
       // `:completed`, `:failed`. A payload-level `status` is the exception, and
@@ -1562,7 +1619,13 @@ export class TranscriptReducer {
     return {
       items: this.items.slice(),
       flags: { streaming: this.streaming, ended: this.ended },
-      busy: this.streaming || this.peerBusy,
+      // A compaction is not a turn: pi fires no `turn_start` for it, so on a
+      // manual `/compact` of an idle session the frame stream says "idle" while
+      // the machine is inside a model call that can take a minute. An open
+      // compaction row IS that evidence, and `busy` is the view's surface — the
+      // stop button and the working affordance — so it has to say so. Kept out
+      // of `flags.streaming`, which is what the conformance corpus compares.
+      busy: this.streaming || this.peerBusy || this.openCompactions.length > 0,
       subagents: this.subagents.slice(),
       plan: this.plan,
       panels: [...this.panels.values()],

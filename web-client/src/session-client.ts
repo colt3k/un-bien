@@ -620,6 +620,25 @@ export class SessionClient {
       return
     }
     if (inbound.kind === "envelope") {
+      // ONE VIEW, ONE ROOM. A pairing reaches every room a machine owns and the
+      // extension broadcasts to every attached peer, so switching rooms in the UI
+      // does not stop the room you left from streaming into this one — the fold
+      // silently mixes two transcripts, and the event you went looking for (a
+      // compaction, an error) lands in a log full of another session's rows. The
+      // relay already tells us which room a frame came from; use it. `ub` frames
+      // are the exception — un-bien's own protocol plane names its room in the
+      // payload (launch results, sync terminators) and the app routes those.
+      const env = inbound.frame as {
+        rpc?: unknown
+        evt?: unknown
+        ub?: unknown
+      }
+      if (
+        inbound.room !== undefined &&
+        inbound.room !== this.room &&
+        env.ub === undefined
+      )
+        return
       this.events.emit("envelope", inbound.frame)
       return
     }

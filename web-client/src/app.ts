@@ -39,6 +39,7 @@ import {
 } from "./markdown.js"
 import { bodyRenderKey, mayClamp, wantsMarkdown } from "./body-render.js"
 import {
+  INITIAL_WINDOW,
   LOAD_MORE,
   growWindow,
   hiddenBefore,
@@ -429,6 +430,9 @@ export class App {
   private readonly noticeEl = $<HTMLElement>("noticeBar")
   private readonly input = $<HTMLTextAreaElement>("input")
   private readonly stopBtn = $<HTMLButtonElement>("stopBtn")
+  /** The "↑ <what the compaction said>" pointer in the header. It exists only
+   *  because the marker row itself gets buried. See `syncCompactionChip`. */
+  private readonly compactionJump = $<HTMLButtonElement>("compactionJump")
   private readonly sendBtn = $<HTMLButtonElement>("sendBtn")
   /** End the session (the remote `/quit`). `endSentFor` holds the request id we
    *  put on the wire — the machine answers by ENDING THE ROOM, never with a
@@ -477,6 +481,15 @@ export class App {
   private window: TranscriptWindow | null = null
   /** Rows in the last render's item list, for the "load earlier" control. */
   private lastItemCount = 0
+  /** The newest compaction row that is NOT on screen, and the one-shot window
+   *  and row the reader asked to jump to. See `syncCompactionChip`. */
+  private chipRowId: string | null = null
+  private jumpWindow: TranscriptWindow | null = null
+  private pendingJump: string | null = null
+  /** What the last render drew, so a bare scroll can re-aim the chip without
+   *  asking the fold for another snapshot. */
+  private lastItems: TranscriptItem[] = []
+  private chipQueued = false
   private active: ActiveSession | null = null
   private busy = false
   /** A pair request in flight (up to the 15s verdict timeout). */
@@ -570,6 +583,18 @@ export class App {
       this.window = growWindow(this.window, this.lastItemCount, LOAD_MORE)
       this.render()
     })
+    this.compactionJump.addEventListener("click", () => this.jumpToCompaction())
+    // Scrolling changes what is on screen without a single frame arriving, so
+    // the chip re-aims on scroll too. Measured once per animation frame, not
+    // once per wheel tick.
+    this.transcript.addEventListener("scroll", () => {
+      if (this.chipQueued) return
+      this.chipQueued = true
+      requestAnimationFrame(() => {
+        this.chipQueued = false
+        this.syncCompactionChip(this.lastItems)
+      })
+    })
     $("launchClose").addEventListener("click", () => this.closeLaunchPanel())
     $("launchBtn").addEventListener("click", () => this.requestLaunch())
     for (const field of [this.launchCwd, this.launchName]) {
@@ -598,6 +623,7 @@ export class App {
       }
     })
     this.input.addEventListener("input", () => this.autogrow())
+    if (CAPTURE_FRAMES) this.installDebugHooks()
     // The browser's version of the app's foreground heal (RootView.swift:78 →
     // `AppModel.refreshBusyState`): a hidden tab is throttled and can miss the
     // frames that bracket a turn while its socket stays healthy — which is
@@ -1568,7 +1594,13 @@ export class App {
     // screenful, not the whole history: this is the difference between a tab
     // that paints and one that freezes for minutes (14 MB / 8571 entries / 244
     // base64 image blocks is a real session here, not a hypothetical).
-    this.window = nextWindow(this.window, items.length, followTail)
+    // A jump the reader asked for outranks the scroll rules for one render —
+    // `followTail` is computed from where they were standing, which is the
+    // bottom, which would snap the window straight back to the tail.
+    this.window =
+      this.jumpWindow ?? nextWindow(this.window, items.length, followTail)
+    this.jumpWindow = null
+    this.lastItems = items
     this.lastItemCount = items.length
     const shown = sliceWindow(items, this.window)
     this.syncLoadEarlier(items.length)
@@ -1615,13 +1647,62 @@ export class App {
     this.input.disabled = snapshot.flags.ended
     if (snapshot.flags.ended)
       this.sub.textContent = `${this.active?.name ?? "session"} · ended`
-    if (followTail || !anchor || !anchor.isConnected) {
-      this.transcript.scrollTop = this.transcript.scrollHeight
+    // A jump wins over both scroll rules: the row asked for gets centred, and
+    // the chip re-aims at whatever is now off screen.
+    if (this.pendingJump !== null) {
+      const row = this.pendingJump
+      this.pendingJump = null
+      this.centerRow(this.rowEls.get(row) ?? null)
+      this.syncCompactionChip(items)
       return
     }
-    // Not following the tail: hold the anchor row visually still, whatever grew
-    // or moved above it.
-    this.transcript.scrollTop += anchor.getBoundingClientRect().top - anchorTop!
+    if (followTail || !anchor || !anchor.isConnected) {
+      this.transcript.scrollTop = this.transcript.scrollHeight
+    } else {
+      // Not following the tail: hold the anchor row visually still, whatever
+      // grew or moved above it.
+      this.transcript.scrollTop +=
+        anchor.getBoundingClientRect().top - anchorTop!
+    }
+    this.syncCompactionChip(items)
+  }
+
+  /** Dev-only (`?capture=1`): drive the fold from the console or a driver
+   *  script. `__unbienFeed(frame|frames)` pushes envelopes through the SAME
+   *  `onEnvelope` the wire uses, so a conformance scenario — or one hand-written
+   *  `compaction_start` — replays into a live tab. `__unbienRows()` is what the
+   *  FOLD holds, `__unbienDrawn()` what the DOM has, `__unbienWindow()` the slice
+   *  between them, and `__unbienScroll()` where the reader sits relative to the
+   *  tail. Those four disagreeing is how "the frame arrived but nothing painted"
+   *  gets answered in one look rather than a guessing game. */
+  private installDebugHooks(): void {
+    const store = globalThis as Record<string, unknown>
+    store.__unbienFeed = (frames: unknown) => {
+      const list = Array.isArray(frames) ? frames : [frames]
+      for (const frame of list) this.onEnvelope(frame as EnvelopeMessage)
+      return this.reducer.snapshot().items.length
+    }
+    store.__unbienRows = () =>
+      this.reducer.snapshot().items.map((item) => ({
+        kind: item.kind,
+        row: item.row,
+        text: item.text,
+        streaming: item.streaming,
+        state: item.state,
+      }))
+    store.__unbienDrawn = () =>
+      [...this.transcript.children].map(
+        (node) => (node as HTMLElement).dataset.row,
+      )
+    store.__unbienWindow = () => this.window
+    store.__unbienScroll = () => ({
+      belowTail:
+        this.transcript.scrollHeight -
+        this.transcript.scrollTop -
+        this.transcript.clientHeight,
+      window: this.window,
+      rows: this.transcript.children.length,
+    })
   }
 
   /** The control that pulls earlier history into the window. */
@@ -1633,6 +1714,77 @@ export class App {
     const ask = Math.min(LOAD_MORE, hidden)
     $<HTMLButtonElement>("loadEarlierBtn").textContent =
       `load ${ask} earlier rows · ${hidden} above not shown`
+  }
+
+  /** The compaction marker is a centred caption about 37px tall, and the turn
+   *  it just enabled lands rows underneath it immediately — by the time a
+   *  reader looks up, the event that explains the pause is screens above the
+   *  tail. Two reports of "it didn't show" were really that: the row was in the
+   *  DOM the whole time, 23 rows below the fold. So the header says where it
+   *  went: the newest compaction that is NOT on screen gets a chip carrying its
+   *  own text, and clicking it walks the window back to the row. */
+  private syncCompactionChip(items: TranscriptItem[]): void {
+    const chip = this.compactionJump
+    let target: TranscriptItem | null = null
+    for (let i = items.length - 1; i >= 0; i--) {
+      const item = items[i]
+      if (item && item.kind === "compaction") {
+        target = item
+        break
+      }
+    }
+    if (target === null || this.onScreen(target.row)) {
+      chip.hidden = true
+      this.chipRowId = null
+      return
+    }
+    this.chipRowId = target.row
+    chip.textContent = `↑ ${target.text}`
+    chip.title = "jump to the compaction"
+    chip.hidden = false
+  }
+
+  /** Drawn at all (it may be outside the window), and inside the scroll box. */
+  private onScreen(row: string): boolean {
+    const node = this.rowEls.get(row)
+    if (!node || !node.isConnected) return false
+    const box = this.transcript.getBoundingClientRect()
+    const rect = node.getBoundingClientRect()
+    return rect.bottom > box.top && rect.top < box.bottom
+  }
+
+  /** Widen the window to cover the row, then centre it. `this.window` is set as
+   *  well as `jumpWindow` so a scroll that arrives before the next frame does
+   *  not measure against the old slice. */
+  private jumpToCompaction(): void {
+    const row = this.chipRowId
+    if (row === null) return
+    const items = this.lastItems
+    const index = items.findIndex((item) => item.row === row)
+    if (index < 0) return
+    const count = Math.max(INITIAL_WINDOW, this.window?.count ?? INITIAL_WINDOW)
+    const start = Math.max(
+      0,
+      Math.min(
+        index - Math.floor(count / 2),
+        Math.max(0, items.length - count),
+      ),
+    )
+    this.window = { start, count }
+    this.jumpWindow = { start, count }
+    this.pendingJump = row
+    this.render()
+  }
+
+  /** Centre a row inside the transcript's own scroll box. `scrollIntoView` is
+   *  the obvious call and the wrong one: it scrolls every scrollable ANCESTOR
+   *  too, which can move the page and the drawer under the reader. */
+  private centerRow(node: HTMLElement | null): void {
+    if (!node) return
+    const box = this.transcript.getBoundingClientRect()
+    const rect = node.getBoundingClientRect()
+    this.transcript.scrollTop +=
+      rect.top - box.top - (box.height - rect.height) / 2
   }
 
   /** The row at the top edge of the scroll area — the thing the reader is

@@ -27,8 +27,11 @@ export interface OuterEnvelope {
 export type Inbound =
   /** A relay control frame (rooms / presence / errors) — has no `ct`. */
   | { kind: "control"; frame: Record<string, unknown> }
-  /** An envelope frame from the pi (rpc spine, evt panels, ub un-bien plane). */
-  | { kind: "envelope"; frame: EnvelopeMessage }
+  /** An envelope frame from the pi (rpc spine, evt panels, ub un-bien plane).
+   *  `room` is the ROUTING room off the outer envelope: the relay tells us which
+   *  of a machine's rooms a frame came from. A viewer needs it because one
+   *  pairing reaches every room a machine owns — see `SessionClient.onLine`. */
+  | { kind: "envelope"; frame: EnvelopeMessage; room?: string }
   /** A stock (non-envelope) inner frame — in practice pair_ok / pair_error. */
   | { kind: "stock"; frame: Record<string, unknown> }
 
@@ -111,9 +114,9 @@ export function encodeOuter(
  *  frames with a `_raw` field rather than swallowed, so a protocol mismatch is
  *  visible in the UI instead of looking like silence. */
 export function decodeInbound(line: string): Inbound {
-  let frame: Record<string, unknown>
+  let outer: Record<string, unknown>
   try {
-    frame = JSON.parse(line) as Record<string, unknown>
+    outer = JSON.parse(line) as Record<string, unknown>
   } catch {
     return {
       kind: "control",
@@ -121,8 +124,8 @@ export function decodeInbound(line: string): Inbound {
     }
   }
 
-  const ct = frame.ct
-  if (typeof ct !== "string") return { kind: "control", frame }
+  const ct = outer.ct
+  if (typeof ct !== "string") return { kind: "control", frame: outer }
 
   let inner: unknown
   try {
@@ -136,7 +139,11 @@ export function decodeInbound(line: string): Inbound {
 
   const record = (inner ?? {}) as Record<string, unknown>
   if ("rpc" in record || "evt" in record || "ub" in record) {
-    return { kind: "envelope", frame: record as EnvelopeMessage }
+    return {
+      kind: "envelope",
+      frame: record as EnvelopeMessage,
+      room: typeof outer.room === "string" ? outer.room : undefined,
+    }
   }
   return { kind: "stock", frame: record }
 }
