@@ -27,6 +27,16 @@
           <div id="sessionTitle" class="title">not connected</div>
           <div id="sessionSub" class="sub">add a relay to start</div>
         </div>
+        <!-- The compaction marker is a centred caption in the middle of the log,
+             and the turn it just enabled buries it under new rows within
+             seconds. This says where it went, in the compaction's own words, and
+             clicking it walks the transcript back to the row. -->
+        <button
+          id="compactionJump"
+          class="compaction-jump"
+          type="button"
+          hidden
+        ></button>
         <!-- End the session on the machine. Deliberately NOT in the composer:
              the stop button there means one thing (stop this turn), and two
              controls with similar meanings invites the wrong click. Two clicks

@@ -408,13 +408,17 @@ textarea {
   background: #241a12;
 }
 .item.compaction {
-  /* A marker, not a message: centred caption, no card fill. Mirrors the app's
-     caption row (`.font(.caption)`, secondary text, centred). */
+  /* A marker, not a message: centred caption, no card FILL — it is not a
+     turn. The band is the one concession: a marker with nothing behind it is
+     invisible while scrolling, and a compaction is an event boundary in the
+     middle of a long turn (see `.compaction-jump`, which finds it when the
+     reader has scrolled past). */
   border-style: dashed;
-  background: none;
+  background: color-mix(in srgb, var(--muted) 10%, transparent);
   color: var(--muted);
   text-align: center;
-  font-size: 12px;
+  font-size: 12.5px;
+  font-weight: 550;
 }
 /* A compaction is the one marker that can be RUNNING: the summary is a model
    call, and this row is what explains why the transcript stopped moving. It has
@@ -425,6 +429,7 @@ textarea {
 .item.compaction.streaming {
   color: var(--accent);
   border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 @media (prefers-reduced-motion: no-preference) {
   .item.compaction.streaming {
@@ -445,6 +450,29 @@ textarea {
 .item.compaction[data-state="failed"] {
   color: var(--danger);
   border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+/* The pointer to a compaction the reader has scrolled past. It carries the
+   compaction's own sentence — "Context compacted (213,850 tokens)" tells you
+   which event you are jumping back to; "jump to marker" would not — so it
+   ellipsizes rather than wrapping, and sits where the eye already goes. */
+.compaction-jump {
+  flex: 0 1 auto;
+  min-width: 0;
+  padding: 4px 10px;
+  font-size: 11.5px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.compaction-jump:hover {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
 }
 .item pre {
   margin: 0;
