@@ -379,6 +379,15 @@ export class TranscriptReducer {
    *  questions — "is this row still RUNNING" vs "has any walk seen this
    *  compaction yet": a row settles at `compaction_end` but stays unanchored
    *  until its durable entry lands. */
+  // Compactions opened by a `compaction_start` whose end has not landed yet.
+  // Honest status on pi 0.25.19: this never paints. The extension's envelope log
+  // shows `compaction_start` and `compaction_end` 2 ms apart (05:09:03.807 /
+  // .809) even for a 34 352-token summary, because pi's guard pass holds the
+  // summary before it asks extensions to veto — so the running row is born and
+  // settles inside one render pass. It is kept as the fold's shape, not as a
+  // feature: if pi ever emits the cue before the summarizer, this is what makes
+  // the row live. What a reader gets TODAY is the advance notice in applyEvt's
+  // "compaction_warning" branch.
   private openCompactions: string[] = []
   private leafId: string | null = null
   private streaming = false
