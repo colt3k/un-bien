@@ -1033,6 +1033,191 @@ describe("agent_end with a context that gives less than hoped", () => {
   })
 })
 
+// ── pre-compaction warning ──────────────────────────────────────────────
+
+// pi folds the transcript once `tokens > contextWindow - reserveTokens`, and the
+// notice is meant to land BEFORE that, inside a band, once per crossing. The band
+// and the once-only rule are the whole behaviour, and nothing pinned them: the
+// only thing that was tested about this listener is that a thin host context
+// cannot crash it.
+describe("pre-compaction warning", () => {
+  // Chosen for a 100k window with pi's default reserve (16_384): the threshold is
+  // 100_000 - 16_384 = 83_616 and the band is max(256, 1% of 100_000) = 1_000, so
+  // the notice is due from 82_616 up to 83_616.
+  const WINDOW = 100_000
+  const IN_BAND = 83_000 // margin 616  → inside the band
+  const FAR_AWAY = 50_000 // margin 33_616 → the fold is not coming yet
+  const PAST_FOLD = 90_000 // margin -6_384 → silence: it is not coming, it is here
+  const usageOf = (tokens: number) => ({
+    getContextUsage: () => ({ tokens, contextWindow: WINDOW }),
+  })
+  // Outbound frames on the paired owner's wire, narrowed to this notice. The
+  // listener broadcasts to every attached peer, so one owner = one frame.
+  const warnings = (from: number) =>
+    relayRef
+      .current!.send.mock.calls.slice(from)
+      .map((c) => decodeSentCt(c[0] as string).inner["evt"])
+      .filter(
+        (e) =>
+          (e as { channel?: string } | undefined)?.channel ===
+          "compaction_warning",
+      )
+      .map((e) => (e as { data: unknown }).data)
+
+  // ONE activation per test, and both events read off it. Capturing event by
+  // event would activate the extension twice, and the once-per-crossing state
+  // lives in the activation's closure — the second capture would reset a copy
+  // the first event's listener never looks at, which is exactly how a rule like
+  // this survives a test that cannot see it.
+  function started() {
+    const harness = captureEventHarness()
+    return {
+      agentEnd: (tokens: number, extra: Record<string, unknown> = {}) =>
+        harness.handler("agent_end")(
+          { type: "agent_end" },
+          { ...usageOf(tokens), ...extra },
+        ),
+      compact: () =>
+        harness.handler("session_compact")(
+          { type: "session_compact" },
+          makeMockCtx(),
+        ),
+    }
+  }
+
+  test("a session inside the band gets one notice, carrying pi's own numbers", async () => {
+    await _pairForTest("ownerA__1234567890")
+    const before = relayRef.current!.send.mock.calls.length
+    started().agentEnd(IN_BAND)
+    await new Promise<void>((r) => setImmediate(r))
+    // The frame carries the arithmetic, not just "soon": a client can show what
+    // was assumed when the settings came from pi's defaults.
+    expect(warnings(before)).toEqual([
+      {
+        tokens: IN_BAND,
+        contextWindow: WINDOW,
+        threshold: 83_616,
+        marginTokens: 616,
+        reserveTokens: 16_384,
+      },
+    ])
+  })
+
+  test("silent while the fold is far off, and silent once it has passed", async () => {
+    await _pairForTest("ownerA__1234567890")
+    const before = relayRef.current!.send.mock.calls.length
+    const run = started()
+    run.agentEnd(FAR_AWAY)
+    // Past the threshold is NOT the time to say "compaction is coming": the fold
+    // is not coming, it is happening, and `session_compact` says that itself.
+    run.agentEnd(PAST_FOLD)
+    await new Promise<void>((r) => setImmediate(r))
+    expect(warnings(before)).toEqual([])
+  })
+
+  test("one notice per crossing, and falling back out of the band re-arms it", async () => {
+    await _pairForTest("ownerA__1234567890")
+    const before = relayRef.current!.send.mock.calls.length
+    const run = started()
+    run.agentEnd(IN_BAND)
+    // A session parked at the threshold must not spam: several turns, one notice.
+    run.agentEnd(IN_BAND + 100)
+    run.agentEnd(IN_BAND + 300)
+    await new Promise<void>((r) => setImmediate(r))
+    expect(warnings(before)).toHaveLength(1)
+    // Usage drops out of the band (a hand-run compact, a branch switch, a long
+    // tool result pruned) → the next crossing is a new event and earns a notice.
+    run.agentEnd(FAR_AWAY)
+    run.agentEnd(IN_BAND)
+    await new Promise<void>((r) => setImmediate(r))
+    expect(warnings(before)).toHaveLength(2)
+  })
+
+  test("the band is 1% of the window: just outside it stays silent, just inside it speaks", async () => {
+    await _pairForTest("ownerA__1234567890")
+    const before = relayRef.current!.send.mock.calls.length
+    const run = started()
+    // "Coming up" has to mean something. 1_500 tokens from the threshold on a
+    // 100k window is 1.5% away — a long way off, so nothing is said.
+    run.agentEnd(83_616 - 1_500)
+    await new Promise<void>((r) => setImmediate(r))
+    expect(warnings(before)).toEqual([])
+    // 900 away is inside the 1_000 band: the fold is due within the turn or two
+    // the reader is living in, so the notice goes out.
+    run.agentEnd(83_616 - 900)
+    await new Promise<void>((r) => setImmediate(r))
+    expect(warnings(before)).toHaveLength(1)
+  })
+
+  test("the band never shrinks below 256 tokens", async () => {
+    await _pairForTest("ownerA__1234567890")
+    const before = relayRef.current!.send.mock.calls.length
+    const harness = captureEventHarness()
+    // A small window with a small reserve: 1% of 8_000 is 80 tokens, a band
+    // narrower than a keystroke, so the 256 floor is what makes the notice
+    // reachable at all on a small context. threshold = 8_000 - 1_000 = 7_000.
+    const fire = (tokens: number) =>
+      harness.handler("agent_end")(
+        { type: "agent_end" },
+        {
+          getContextUsage: () => ({ tokens, contextWindow: 8_000 }),
+          getSettings: () => ({ compaction: { reserveTokens: 1_000 } }),
+        },
+      )
+    // 300 short of the threshold: outside 1% (80) and outside the floor.
+    fire(7_000 - 300)
+    await new Promise<void>((r) => setImmediate(r))
+    expect(warnings(before)).toEqual([])
+    // 240 short: still outside 1%, inside the floor — the floor is the only
+    // reason this says anything.
+    fire(7_000 - 240)
+    await new Promise<void>((r) => setImmediate(r))
+    expect(warnings(before)).toHaveLength(1)
+  })
+
+  test("a compaction re-arms the notice", async () => {
+    await _pairForTest("ownerA__1234567890")
+    const before = relayRef.current!.send.mock.calls.length
+    const run = started()
+    run.agentEnd(IN_BAND)
+    await new Promise<void>((r) => setImmediate(r))
+    expect(warnings(before)).toHaveLength(1)
+    // The fold landed, so the next crossing is a different event — and without
+    // that reset the session would never be warned again.
+    run.compact()
+    run.agentEnd(IN_BAND)
+    await new Promise<void>((r) => setImmediate(r))
+    expect(warnings(before)).toHaveLength(2)
+  })
+
+  test("settings decide: compaction off is silent, a custom reserve moves the threshold", async () => {
+    await _pairForTest("ownerA__1234567890")
+    const before = relayRef.current!.send.mock.calls.length
+    const run = started()
+    // Off is off: no fold to warn about, whatever the token count says.
+    run.agentEnd(IN_BAND, {
+      getSettings: () => ({ compaction: { enabled: false } }),
+    })
+    await new Promise<void>((r) => setImmediate(r))
+    expect(warnings(before)).toEqual([])
+    // A smaller reserve moves the threshold, and the frame says which reserve was
+    // used — the numbers are pi's, not the extension's guess.
+    run.agentEnd(WINDOW - 4_096 - 500, {
+      getSettings: () => ({ compaction: { reserveTokens: 4_096 } }),
+    })
+    await new Promise<void>((r) => setImmediate(r))
+    expect(warnings(before)).toEqual([
+      {
+        tokens: WINDOW - 4_096 - 500,
+        contextWindow: WINDOW,
+        threshold: WINDOW - 4_096,
+        marginTokens: 500,
+        reserveTokens: 4_096,
+      },
+    ])
+  })
+})
+
 // ── user_input mirroring (local terminal / RPC) ───────────────────────────────
 
 type AnyEvent = { type: string; [k: string]: unknown }
