@@ -385,6 +385,20 @@ describe("the compaction row opens when the summary call starts", () => {
     expect(rowsOf(reducer)).toEqual([])
   })
 
+  it("keeps the session busy across the compaction, even a manual one", () => {
+    // pi fires NO turn for a compaction, so a manual `/compact` on an idle
+    // session looked idle: no stop button, no working affordance, a minute of
+    // silence. `flags.streaming` stays what it was — that is what the corpus
+    // compares — and the view's `busy` picks the open row up instead.
+    const reducer = new TranscriptReducer()
+    expect(reducer.snapshot().busy).toBe(false)
+    reducer.apply(start("manual"))
+    expect(reducer.snapshot().busy).toBe(true)
+    expect(reducer.snapshot().flags.streaming).toBe(false)
+    reducer.apply(failed({ aborted: true }))
+    expect(reducer.snapshot().busy).toBe(false)
+  })
+
   it("a machine that never sends compaction_start still behaves as before", () => {
     // Extension builds older than this frame, and durable hosts (which have no
     // hook to source it from): the end frame still births the marker.

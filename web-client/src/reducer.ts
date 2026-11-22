@@ -1562,7 +1562,13 @@ export class TranscriptReducer {
     return {
       items: this.items.slice(),
       flags: { streaming: this.streaming, ended: this.ended },
-      busy: this.streaming || this.peerBusy,
+      // A compaction is not a turn: pi fires no `turn_start` for it, so on a
+      // manual `/compact` of an idle session the frame stream says "idle" while
+      // the machine is inside a model call that can take a minute. An open
+      // compaction row IS that evidence, and `busy` is the view's surface — the
+      // stop button and the working affordance — so it has to say so. Kept out
+      // of `flags.streaming`, which is what the conformance corpus compares.
+      busy: this.streaming || this.peerBusy || this.openCompactions.length > 0,
       subagents: this.subagents.slice(),
       plan: this.plan,
       panels: [...this.panels.values()],
