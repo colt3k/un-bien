@@ -12,7 +12,10 @@ import { buildSignedAllowList } from "../pairing/signed_allow_list.js"
 import { roomIdForControl } from "../rooms.js"
 import { _findKnownPeer } from "../pairing/peer_trust.js"
 import { _expandTilde, configuredBackend } from "../launch.js"
-import { handleSessionLaunch, handleSessionLaunchDirs } from "../launch_request.js"
+import {
+  handleSessionLaunch,
+  handleSessionLaunchDirs,
+} from "../launch_request.js"
 import {
   helloEnvelope,
   isEnvelopeFrame,
@@ -91,7 +94,6 @@ export async function startLauncher(
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
   const channels = new Map<string, PlainPeerChannel>()
 
-
   /** Liveness: answer a stock `ping` with `pong`, mirroring the extension's
    *  transport-control handler (index.ts) so a health check works against an
    *  idle machine too. Distinct from the `presence_status` caps PULL — this is
@@ -124,26 +126,25 @@ export async function startLauncher(
     // whole daemon with no trace. Log EVERYTHING, answer with the daemon's
     // error frame, and stay alive.
     try {
+      if (frame.type === "presence_status") {
+        sender.sendEnvelope({
+          ub: {
+            type: "presence_status",
+            caps: [...DAEMON_CAPS],
+            hostname: hostname(),
+            backend: configuredBackend(),
+            ...(typeof frame.id === "string" ? { in_reply_to: frame.id } : {}),
+          },
+        })
+        return
+      }
 
-    if (frame.type === "presence_status") {
-      sender.sendEnvelope({
-        ub: {
-          type: "presence_status",
-          caps: [...DAEMON_CAPS],
-          hostname: hostname(),
-          backend: configuredBackend(),
-          ...(typeof frame.id === "string" ? { in_reply_to: frame.id } : {}),
-        },
-      })
-      return
-    }
-
-    // Prototype (cli resume-session): list stored sessions via pi's public
-    // SessionManager — the daemon is pi-INDEPENDENT at runtime, but the
-    // package (and therefore the dep) ships with it, so this import is free.
-    // Lister is injectable so tests don't scan the real session dir.
-    if (frame.type === "sessions_list") {
-      const defaultLister = async (): Promise<
+      // Prototype (cli resume-session): list stored sessions via pi's public
+      // SessionManager — the daemon is pi-INDEPENDENT at runtime, but the
+      // package (and therefore the dep) ships with it, so this import is free.
+      // Lister is injectable so tests don't scan the real session dir.
+      if (frame.type === "sessions_list") {
+        const defaultLister = async (): Promise<
           Array<{
             path: string
             id: string
@@ -154,7 +155,8 @@ export async function startLauncher(
             messageCount: number
           }>
         > => {
-          const { SessionManager } = await import("@earendil-works/pi-coding-agent")
+          const { SessionManager } =
+            await import("@earendil-works/pi-coding-agent")
           const scope = frame.scope === "all" ? "all" : "cwd"
           const cwd =
             typeof frame.cwd === "string" && frame.cwd.length > 0
@@ -182,78 +184,86 @@ export async function startLauncher(
             messageCount: s.messageCount,
           }))
         }
-      // A lister throw must NOT kill the daemon (this handler runs async-void
-      // — an unhandled rejection exits node): reply with the daemon's standard
-      // error frame (same inner shape as unknown_peer / permission_denied).
-      let all
-      try {
-        all = await (sessionsLister ?? defaultLister)()
-      } catch (err) {
-        const detail = String(err instanceof Error ? err.message : err).slice(0, 200)
-        launcherLog(`sessions_list: lister failed: ${detail}`)
-        sender.send({
-          type: "error",
-          code: "list_failed",
-          message: detail,
-          in_reply_to: typeof frame.id === "string" ? frame.id : "",
+        // A lister throw must NOT kill the daemon (this handler runs async-void
+        // — an unhandled rejection exits node): reply with the daemon's standard
+        // error frame (same inner shape as unknown_peer / permission_denied).
+        let all
+        try {
+          all = await (sessionsLister ?? defaultLister)()
+        } catch (err) {
+          const detail = String(err instanceof Error ? err.message : err).slice(
+            0,
+            200,
+          )
+          launcherLog(`sessions_list: lister failed: ${detail}`)
+          sender.send({
+            type: "error",
+            code: "list_failed",
+            message: detail,
+            in_reply_to: typeof frame.id === "string" ? frame.id : "",
+          })
+          return
+        }
+        launcherLog(
+          `sessions_list: ${all.length} sessions (scope=${String(frame.scope)})`,
+        )
+        const filter =
+          typeof frame.filter === "string" && frame.filter.trim().length > 0
+            ? frame.filter.trim().toLowerCase()
+            : null
+        const sessions = all
+          .filter((s) => {
+            if (!filter) return true
+            return (
+              (s.name ?? "").toLowerCase().includes(filter) ||
+              s.firstMessage.toLowerCase().includes(filter)
+            )
+          })
+          .sort((a, b) => b.modified.getTime() - a.modified.getTime())
+          .slice(0, 50)
+          .map((s) => ({
+            path: s.path,
+            id: s.id,
+            ...(s.name ? { name: s.name } : {}),
+            summary: s.firstMessage.slice(0, 120),
+            cwd: s.cwd,
+            modified: s.modified.toISOString(),
+            messageCount: s.messageCount,
+          }))
+        sender.sendEnvelope({
+          ub: {
+            type: "sessions_list_result",
+            id: typeof frame.id === "string" ? frame.id : "",
+            in_reply_to: typeof frame.id === "string" ? frame.id : "",
+            sessions,
+          },
         })
         return
       }
-      launcherLog(`sessions_list: ${all.length} sessions (scope=${String(frame.scope)})`)
-      const filter =
-        typeof frame.filter === "string" && frame.filter.trim().length > 0
-          ? frame.filter.trim().toLowerCase()
-          : null
-      const sessions = all
-        .filter((s) => {
-          if (!filter) return true
-          return (
-            (s.name ?? "").toLowerCase().includes(filter) ||
-            s.firstMessage.toLowerCase().includes(filter)
-          )
-        })
-        .sort((a, b) => b.modified.getTime() - a.modified.getTime())
-        .slice(0, 50)
-        .map((s) => ({
-          path: s.path,
-          id: s.id,
-          ...(s.name ? { name: s.name } : {}),
-          summary: s.firstMessage.slice(0, 120),
-          cwd: s.cwd,
-          modified: s.modified.toISOString(),
-          messageCount: s.messageCount,
-        }))
-      sender.sendEnvelope({
-        ub: {
-          type: "sessions_list_result",
-          id: typeof frame.id === "string" ? frame.id : "",
-          in_reply_to: typeof frame.id === "string" ? frame.id : "",
-          sessions,
-        },
-      })
-      return
-    }
 
-    if (frame.type === "session_launch_dirs") {
-      // The app's folder picker. The allow-list is a prefix test on THIS filesystem, so
-      // the daemon answers it; pairing-gated, config read FRESH.
-      await handleSessionLaunchDirs(frame, sender, {
+      if (frame.type === "session_launch_dirs") {
+        // The app's folder picker. The allow-list is a prefix test on THIS filesystem, so
+        // the daemon answers it; pairing-gated, config read FRESH.
+        await handleSessionLaunchDirs(frame, sender, {
+          log: (line) => launcherLog(`launcher ${line}`),
+          isPaired: () => _findKnownPeer(peer).then((known) => Boolean(known)),
+        })
+        return
+      }
+
+      if (frame.type !== "session_launch") return
+      // Gates (opt-in, pairing re-checked FRESH: the launcher has no
+      // revoke-detach path, allow-list), launch, and the session_launch_result
+      // replies, shared with a live pi's handler.
+      await handleSessionLaunch(frame, sender, {
         log: (line) => launcherLog(`launcher ${line}`),
         isPaired: () => _findKnownPeer(peer).then((known) => Boolean(known)),
       })
-      return
-    }
-
-    if (frame.type !== "session_launch") return
-    // Gates (opt-in, pairing re-checked FRESH: the launcher has no
-    // revoke-detach path, allow-list), launch, and the session_launch_result
-    // replies, shared with a live pi's handler.
-    await handleSessionLaunch(frame, sender, {
-      log: (line) => launcherLog(`launcher ${line}`),
-      isPaired: () => _findKnownPeer(peer).then((known) => Boolean(known)),
-    })
     } catch (err) {
-      const detail = String(err instanceof Error ? err.message : err).slice(0, 200)
+      const detail = String(err instanceof Error ? err.message : err).slice(
+        0,
+        200,
+      )
       launcherLog(`launcher ub frame FAILED (${String(frame.type)}): ${detail}`)
       try {
         sender.send({

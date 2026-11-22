@@ -1,5 +1,11 @@
 import { loadPeers } from "./store.js"
-import { connectControlRoom, launchAndWait, waitForRoom, handoffToConnect, requireMachineOrRemote } from "./machine.js"
+import {
+  connectControlRoom,
+  launchAndWait,
+  waitForRoom,
+  handoffToConnect,
+  requireMachineOrRemote,
+} from "./machine.js"
 import { roomsOrActionable } from "./client.js"
 import { Shell } from "./tui.js"
 

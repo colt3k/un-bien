@@ -7,10 +7,19 @@ import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { handleSessionLaunch, handleSessionLaunchDirs, launchResultEnvelope } from "./launch_request.js"
+import {
+  handleSessionLaunch,
+  handleSessionLaunchDirs,
+  launchResultEnvelope,
+} from "./launch_request.js"
 import type { EnvelopeMessage } from "./session/rpc_envelope.js"
 
-const ENV_KEYS = ["PI_CODING_AGENT_DIR", "UNBIEN_STATE_DIR", "UNBIEN_DIRECT_CONFIG", "FAKE_REX_LOG"]
+const ENV_KEYS = [
+  "PI_CODING_AGENT_DIR",
+  "UNBIEN_STATE_DIR",
+  "UNBIEN_DIRECT_CONFIG",
+  "FAKE_REX_LOG",
+]
 const SAVED: Record<string, string | undefined> = {}
 let dir = ""
 
@@ -32,13 +41,23 @@ function sender() {
     legacy,
     results,
     send: (frame: Record<string, unknown>) => legacy.push(frame),
-    sendEnvelope: (env: EnvelopeMessage) => results.push(env.ub as unknown as Record<string, unknown>),
+    sendEnvelope: (env: EnvelopeMessage) =>
+      results.push(env.ub as unknown as Record<string, unknown>),
   }
 }
 
 function writeConfig(launch: Record<string, unknown>): void {
-  writeFileSync(join(dir, "agent", "extensions", "un-bien.json"),
-    JSON.stringify({ launch: { backend: "rex", rex_bin: join(dir, "rex"), rex_server: "unix:///tmp/x.sock", ...launch } }))
+  writeFileSync(
+    join(dir, "agent", "extensions", "un-bien.json"),
+    JSON.stringify({
+      launch: {
+        backend: "rex",
+        rex_bin: join(dir, "rex"),
+        rex_server: "unix:///tmp/x.sock",
+        ...launch,
+      },
+    }),
+  )
 }
 
 beforeEach(() => {
@@ -50,7 +69,9 @@ beforeEach(() => {
   chmodSync(join(dir, "rex"), 0o755)
   process.env.PI_CODING_AGENT_DIR = join(dir, "agent")
   process.env.UNBIEN_STATE_DIR = join(dir, "state")
-  process.env.UNBIEN_DIRECT_CONFIG = JSON.stringify({ allow_remote_launch: true })
+  process.env.UNBIEN_DIRECT_CONFIG = JSON.stringify({
+    allow_remote_launch: true,
+  })
   writeConfig({})
 })
 
@@ -66,45 +87,103 @@ const log = () => undefined
 describe("session_launch_result", () => {
   it("answers a started launch with ok, the backend and the request id", async () => {
     const s = sender()
-    await handleSessionLaunch({ type: "session_launch", id: "req-1", cwd: join(dir, "work"), name: "n" }, s, { log })
-    expect(s.results).toEqual([{ type: "session_launch_result", in_reply_to: "req-1", ok: true, backend: "rex" }])
+    await handleSessionLaunch(
+      {
+        type: "session_launch",
+        id: "req-1",
+        cwd: join(dir, "work"),
+        name: "n",
+      },
+      s,
+      { log },
+    )
+    expect(s.results).toEqual([
+      {
+        type: "session_launch_result",
+        in_reply_to: "req-1",
+        ok: true,
+        backend: "rex",
+      },
+    ])
     expect(s.legacy).toEqual([])
   })
 
   it("reports remote launch turned off (old apps got nothing, so no legacy frame)", async () => {
-    process.env.UNBIEN_DIRECT_CONFIG = JSON.stringify({ allow_remote_launch: false })
+    process.env.UNBIEN_DIRECT_CONFIG = JSON.stringify({
+      allow_remote_launch: false,
+    })
     const s = sender()
-    await handleSessionLaunch({ type: "session_launch", id: "r", cwd: join(dir, "work") }, s, { log })
-    expect(s.results[0]).toMatchObject({ ok: false, code: "remote_launch_disabled", in_reply_to: "r" })
+    await handleSessionLaunch(
+      { type: "session_launch", id: "r", cwd: join(dir, "work") },
+      s,
+      { log },
+    )
+    expect(s.results[0]).toMatchObject({
+      ok: false,
+      code: "remote_launch_disabled",
+      in_reply_to: "r",
+    })
     expect(s.legacy).toEqual([])
   })
 
   it("keeps the legacy unknown_peer error beside the result", async () => {
     const s = sender()
-    await handleSessionLaunch({ type: "session_launch", id: "r", cwd: join(dir, "work") }, s,
-      { log, isPaired: async () => false })
-    expect(s.legacy).toEqual([{ type: "error", code: "unknown_peer", message: "Peer not paired — re-scan QR" }])
+    await handleSessionLaunch(
+      { type: "session_launch", id: "r", cwd: join(dir, "work") },
+      s,
+      { log, isPaired: async () => false },
+    )
+    expect(s.legacy).toEqual([
+      {
+        type: "error",
+        code: "unknown_peer",
+        message: "Peer not paired — re-scan QR",
+      },
+    ])
     expect(s.results[0]).toMatchObject({ ok: false, code: "unknown_peer" })
   })
 
   it("keeps the legacy permission_denied error for a directory outside launch.dirs", async () => {
     writeConfig({ dirs: [join(dir, "elsewhere")] })
     const s = sender()
-    await handleSessionLaunch({ type: "session_launch", id: "r", cwd: join(dir, "work") }, s, { log })
-    expect(s.legacy[0]).toMatchObject({ type: "error", code: "permission_denied" })
+    await handleSessionLaunch(
+      { type: "session_launch", id: "r", cwd: join(dir, "work") },
+      s,
+      { log },
+    )
+    expect(s.legacy[0]).toMatchObject({
+      type: "error",
+      code: "permission_denied",
+    })
     expect(s.results[0]).toMatchObject({ ok: false, code: "permission_denied" })
   })
 
   it("reports a directory that doesn't exist", async () => {
     const s = sender()
-    await handleSessionLaunch({ type: "session_launch", id: "r", cwd: join(dir, "missing") }, s, { log })
+    await handleSessionLaunch(
+      { type: "session_launch", id: "r", cwd: join(dir, "missing") },
+      s,
+      { log },
+    )
     expect(s.results[0]).toMatchObject({ ok: false, code: "cwd_missing" })
     expect(String(s.results[0]?.message)).toContain("missing")
   })
 
   it("leaves out fields a result doesn't have", () => {
-    expect(launchResultEnvelope("r", { ok: false, code: "spawn_failed", message: "boom" })).toEqual({
-      ub: { type: "session_launch_result", in_reply_to: "r", ok: false, code: "spawn_failed", message: "boom" },
+    expect(
+      launchResultEnvelope("r", {
+        ok: false,
+        code: "spawn_failed",
+        message: "boom",
+      }),
+    ).toEqual({
+      ub: {
+        type: "session_launch_result",
+        in_reply_to: "r",
+        ok: false,
+        code: "spawn_failed",
+        message: "boom",
+      },
     })
   })
 })
@@ -112,7 +191,14 @@ describe("session_launch_result", () => {
 describe("session_launch_dirs", () => {
   // The allow-list roots the machine would accept, and the folders under one.
   function buildTree(): void {
-    for (const name of ["alpha", "beta", "gamma", "gamma/deep", "node_modules/junk", ".hidden"])
+    for (const name of [
+      "alpha",
+      "beta",
+      "gamma",
+      "gamma/deep",
+      "node_modules/junk",
+      ".hidden",
+    ])
       mkdirSync(join(dir, "work", name), { recursive: true })
   }
 
@@ -120,7 +206,11 @@ describe("session_launch_dirs", () => {
     buildTree()
     writeConfig({ dirs: [join(dir, "work")] })
     const s = sender()
-    await handleSessionLaunchDirs({ type: "session_launch_dirs", id: "d1" }, s, { log })
+    await handleSessionLaunchDirs(
+      { type: "session_launch_dirs", id: "d1" },
+      s,
+      { log },
+    )
     expect(s.results[0]).toMatchObject({
       type: "session_launch_dirs_result",
       in_reply_to: "d1",
@@ -136,7 +226,11 @@ describe("session_launch_dirs", () => {
     expect(roots[0].exists).toBe(true)
     // Sorted; dot-directories and node_modules excluded; paths absolute, so the device
     // never has to guess what `~` meant on a machine that is not its own.
-    expect(roots[0].children.map((c: { name: string }) => c.name)).toEqual(["alpha", "beta", "gamma"])
+    expect(roots[0].children.map((c: { name: string }) => c.name)).toEqual([
+      "alpha",
+      "beta",
+      "gamma",
+    ])
     expect(roots[0].children[0].path).toBe(join(dir, "work", "alpha"))
     expect(JSON.stringify(roots)).not.toContain("deep")
   })
@@ -148,7 +242,9 @@ describe("session_launch_dirs", () => {
     buildTree()
     writeConfig({ dirs: [join(dir, "work")] })
     const s = sender()
-    await handleSessionLaunchDirs({ type: "session_launch_dirs", id: "d" }, s, { log })
+    await handleSessionLaunchDirs({ type: "session_launch_dirs", id: "d" }, s, {
+      log,
+    })
     const root = (s.results[0]?.roots as Array<Record<string, unknown>>)[0]
     expect(root.children).toHaveLength(3)
     expect(root.truncated).toBe(false)
@@ -158,33 +254,60 @@ describe("session_launch_dirs", () => {
     mkdirSync(join(dir, "second"), { recursive: true })
     writeConfig({ dirs: [join(dir, "second"), join(dir, "work")] })
     const s = sender()
-    await handleSessionLaunchDirs({ type: "session_launch_dirs", id: "d" }, s, { log })
+    await handleSessionLaunchDirs({ type: "session_launch_dirs", id: "d" }, s, {
+      log,
+    })
     const roots = (s.results[0]?.roots ?? []) as Array<{ path: string }>
-    expect(roots.map((r) => r.path)).toEqual([join(dir, "second"), join(dir, "work")])
+    expect(roots.map((r) => r.path)).toEqual([
+      join(dir, "second"),
+      join(dir, "work"),
+    ])
   })
 
   it("names a root that is gone instead of silently dropping it", async () => {
     writeConfig({ dirs: [join(dir, "unmounted-volume")] })
     const s = sender()
-    await handleSessionLaunchDirs({ type: "session_launch_dirs", id: "d" }, s, { log })
+    await handleSessionLaunchDirs({ type: "session_launch_dirs", id: "d" }, s, {
+      log,
+    })
     const roots = (s.results[0]?.roots ?? []) as Array<Record<string, unknown>>
     expect(roots).toEqual([
-      { path: join(dir, "unmounted-volume"), name: "unmounted-volume", exists: false, truncated: false, children: [] },
+      {
+        path: join(dir, "unmounted-volume"),
+        name: "unmounted-volume",
+        exists: false,
+        truncated: false,
+        children: [],
+      },
     ])
   })
 
   it("says wildcard rather than enumerating an entire filesystem", async () => {
     writeConfig({ dirs: "*" })
     const s = sender()
-    await handleSessionLaunchDirs({ type: "session_launch_dirs", id: "d" }, s, { log })
-    expect(s.results[0]).toMatchObject({ ok: true, wildcard: true, locked: false, roots: [] })
+    await handleSessionLaunchDirs({ type: "session_launch_dirs", id: "d" }, s, {
+      log,
+    })
+    expect(s.results[0]).toMatchObject({
+      ok: true,
+      wildcard: true,
+      locked: false,
+      roots: [],
+    })
   })
 
   it("says locked when nothing may be launched", async () => {
     writeConfig({ dirs: [] })
     const s = sender()
-    await handleSessionLaunchDirs({ type: "session_launch_dirs", id: "d" }, s, { log })
-    expect(s.results[0]).toMatchObject({ ok: true, wildcard: false, locked: true, roots: [] })
+    await handleSessionLaunchDirs({ type: "session_launch_dirs", id: "d" }, s, {
+      log,
+    })
+    expect(s.results[0]).toMatchObject({
+      ok: true,
+      wildcard: false,
+      locked: true,
+      roots: [],
+    })
   })
 
   it("refuses an unpaired peer with the same freshness as a launch", async () => {
@@ -195,16 +318,24 @@ describe("session_launch_dirs", () => {
       log,
       isPaired: async () => false,
     })
-    expect(s.results[0]).toMatchObject({ ok: false, code: "unknown_peer", in_reply_to: "d" })
+    expect(s.results[0]).toMatchObject({
+      ok: false,
+      code: "unknown_peer",
+      in_reply_to: "d",
+    })
     expect(s.results[0]?.roots).toBeUndefined()
   })
 
   it("caps a runaway root and says it truncated", async () => {
     for (let i = 0; i < 80; i++)
-      mkdirSync(join(dir, "work", `d${String(i).padStart(3, "0")}`), { recursive: true })
+      mkdirSync(join(dir, "work", `d${String(i).padStart(3, "0")}`), {
+        recursive: true,
+      })
     writeConfig({ dirs: [join(dir, "work")] })
     const s = sender()
-    await handleSessionLaunchDirs({ type: "session_launch_dirs", id: "d" }, s, { log })
+    await handleSessionLaunchDirs({ type: "session_launch_dirs", id: "d" }, s, {
+      log,
+    })
     const root = (s.results[0]?.roots as Array<Record<string, unknown>>)[0]
     expect(root.children).toHaveLength(60)
     expect(root.truncated).toBe(true)

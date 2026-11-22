@@ -44,7 +44,6 @@ export interface RemotePeerEntry {
   ts: number
 }
 
-
 export interface BrokerRemoteOptions {
   broker: Broker
   pi: PiForwardClient
@@ -600,7 +599,10 @@ export class BrokerRemote implements RemoteRouter, BrokerRemoteLifecycle {
    *  addresses are already local (no pcLabel prefix to strip) — the sending
    *  relay's `_routeToFederated` stripped the relayName prefix before
    *  forwarding. Inject directly into the broker + send an ACK. */
-  private _handleFederatedIncoming(env: Envelope, canonicalFromPc: string): void {
+  private _handleFederatedIncoming(
+    env: Envelope,
+    canonicalFromPc: string,
+  ): void {
     if (typeof env.to !== "string") {
       this._dropMetadataOnly("invalid_to")
       return

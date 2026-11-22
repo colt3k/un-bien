@@ -162,7 +162,10 @@ export function relayReportedVersion(binary: RelayBinary): string | null {
       encoding: "utf8",
       timeout: 10_000,
     })
-    const tokens = out.trim().replace(/^unbien-relay\s*/, "").split(/\s+/)
+    const tokens = out
+      .trim()
+      .replace(/^unbien-relay\s*/, "")
+      .split(/\s+/)
     return tokens[tokens.length - 1] ?? null
   } catch {
     return null
@@ -192,9 +195,10 @@ export function relayNeedsUpdate(
 function parseSemver(
   v: string,
 ): { core: [number, number, number]; pre: string[] } | null {
-  const m = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(
-    v.trim(),
-  )
+  const m =
+    /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(
+      v.trim(),
+    )
   if (!m) return null
   return {
     core: [Number(m[1]), Number(m[2]), Number(m[3])],
@@ -249,16 +253,13 @@ export async function latestCratesVersion(
   devChannel: boolean,
 ): Promise<string | null> {
   try {
-    const res = await fetch(
-      "https://crates.io/api/v1/crates/un-bien-relay",
-      {
-        headers: {
-          "User-Agent":
-            "un-bien-install (https://github.com/georgeharker/un-bien)",
-        },
-        signal: AbortSignal.timeout(10_000),
+    const res = await fetch("https://crates.io/api/v1/crates/un-bien-relay", {
+      headers: {
+        "User-Agent":
+          "un-bien-install (https://github.com/georgeharker/un-bien)",
       },
-    )
+      signal: AbortSignal.timeout(10_000),
+    })
     if (!res.ok) return null
     const body = (await res.json()) as {
       versions?: { num: string; yanked: boolean }[]
@@ -369,9 +370,7 @@ export async function installRelayService(opts: {
     if (opts.autoInstall && hasCargo()) {
       const target = await latestCratesVersion(extIsDevChannel())
       const reported = relayReportedVersion(binary)
-      push(
-        `relay binary: ${binary.path} (${reported ?? "unknown version"})`,
-      )
+      push(`relay binary: ${binary.path} (${reported ?? "unknown version"})`)
       if (target && relayNeedsUpdate(reported, target)) {
         push(`updating relay: ${reported} → ${target} …`)
         binary = await cargoInstallRelay(push, { version: target })
@@ -380,7 +379,9 @@ export async function installRelayService(opts: {
         push(`relay already current: ${target}`)
         relayAction = "current"
       } else {
-        push("could not reach crates.io for a version check — leaving the installed relay as-is")
+        push(
+          "could not reach crates.io for a version check — leaving the installed relay as-is",
+        )
         relayAction = "current"
       }
       relayVersion = relayReportedVersion(binary) ?? undefined
@@ -396,16 +397,16 @@ export async function installRelayService(opts: {
     relayAction = "installed"
     relayVersion = relayReportedVersion(binary) ?? undefined
   } else {
-      throw new Error(
-        "`unbien-relay` binary not found. Either:\n" +
-          "  • cargo install un-bien-relay        (compiles from source; needs Rust)\n" +
-          (extIsDevChannel()
-            ? "    dev channel: pick the latest -dev version from crates.io\n    (un-bien-relay versions publish as relay-v* tags; see docs/relay-peering.md)\n"
-            : "") +
-          "  • download a release binary: https://github.com/georgeharker/un-bien/releases\n" +
-          "then re-run /unbien install relay",
-      )
-    }
+    throw new Error(
+      "`unbien-relay` binary not found. Either:\n" +
+        "  • cargo install un-bien-relay        (compiles from source; needs Rust)\n" +
+        (extIsDevChannel()
+          ? "    dev channel: pick the latest -dev version from crates.io\n    (un-bien-relay versions publish as relay-v* tags; see docs/relay-peering.md)\n"
+          : "") +
+        "  • download a release binary: https://github.com/georgeharker/un-bien/releases\n" +
+        "then re-run /unbien install relay",
+    )
+  }
   push(`relay binary: ${binary.path} (${binary.source})`)
 
   const port = opts.port ?? RELAY_DEFAULT_PORT

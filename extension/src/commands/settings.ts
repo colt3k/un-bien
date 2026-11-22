@@ -11,9 +11,25 @@
  * is shown but not editable, as switching the key store is where pairing can
  * break.
  */
-import { getSettingsListTheme, type ExtensionContext } from "@earendil-works/pi-coding-agent"
-import { Container, Input, SettingsList, Text, type Component, type SettingItem } from "@earendil-works/pi-tui"
-import { isValidRelayUrl, isWebSocketScheme, loadConfig, saveConfig, type UnBienConfig } from "../config.js"
+import {
+  getSettingsListTheme,
+  type ExtensionContext,
+} from "@earendil-works/pi-coding-agent"
+import {
+  Container,
+  Input,
+  SettingsList,
+  Text,
+  type Component,
+  type SettingItem,
+} from "@earendil-works/pi-tui"
+import {
+  isValidRelayUrl,
+  isWebSocketScheme,
+  loadConfig,
+  saveConfig,
+  type UnBienConfig,
+} from "../config.js"
 import {
   effectiveAllowRemoteLaunch,
   effectiveAllowRemoteTerminate,
@@ -32,10 +48,9 @@ const onOff = (v: boolean): string => (v ? ON : OFF)
 
 /** Merge `patch` into one section of the global config (saveConfig itself
  *  replaces whole top-level keys). An undefined value removes the key. */
-function setGlobal<S extends "defaults" | "launch" | "mesh" | "subagents" | "debug" | "service">(
-  section: S,
-  patch: NonNullable<UnBienConfig[S]>,
-): void {
+function setGlobal<
+  S extends "defaults" | "launch" | "mesh" | "subagents" | "debug" | "service",
+>(section: S, patch: NonNullable<UnBienConfig[S]>): void {
   const current = (loadConfig()[section] ?? {}) as object
   saveConfig({ [section]: { ...current, ...patch } } as Partial<UnBienConfig>)
 }
@@ -80,7 +95,10 @@ function textItem(theme: Theme, row: TextRow): SettingItem {
       const box = new Container()
       box.addChild(
         new Text(
-          theme.fg("dim", `${row.label}, now ${row.current() || row.fallback}. Enter saves; empty keeps it; Esc cancels:`),
+          theme.fg(
+            "dim",
+            `${row.label}, now ${row.current() || row.fallback}. Enter saves; empty keeps it; Esc cancels:`,
+          ),
           1,
           0,
         ),
@@ -96,8 +114,18 @@ function textItem(theme: Theme, row: TextRow): SettingItem {
   }
 }
 
-function list(items: SettingItem[], onChange: (id: string, value: string) => void, done: () => void): SettingsList {
-  return new SettingsList(items, Math.min(items.length + 2, 18), getSettingsListTheme(), onChange, done)
+function list(
+  items: SettingItem[],
+  onChange: (id: string, value: string) => void,
+  done: () => void,
+): SettingsList {
+  return new SettingsList(
+    items,
+    Math.min(items.length + 2, 18),
+    getSettingsListTheme(),
+    onChange,
+    done,
+  )
 }
 
 /** This machine: the global config. */
@@ -107,11 +135,13 @@ function machineSettings(theme: Theme, done: () => void): Component {
     textItem(theme, {
       id: "relay",
       label: "Relay URL",
-      description: "The relay this machine connects to (http:// or https://). Applies after /unbien relay stop and start.",
+      description:
+        "The relay this machine connects to (http:// or https://). Applies after /unbien relay stop and start.",
       current: () => loadConfig().relay ?? "",
       fallback: "unset",
       check: (v) => {
-        if (isWebSocketScheme(v)) return "Use http:// or https:// (the WebSocket form is derived)."
+        if (isWebSocketScheme(v))
+          return "Use http:// or https:// (the WebSocket form is derived)."
         if (!isValidRelayUrl(v)) return "Must start with http:// or https://"
         return null
       },
@@ -120,21 +150,24 @@ function machineSettings(theme: Theme, done: () => void): Component {
     {
       id: "defaults.auto_start_relay",
       label: "Auto-start (default)",
-      description: "Join the mesh and start the relay when pi starts, in folders that don't set it.",
+      description:
+        "Join the mesh and start the relay when pi starts, in folders that don't set it.",
       currentValue: onOff(g.defaults?.auto_start_relay !== false),
       values: [ON, OFF],
     },
     {
       id: "defaults.allow_remote_launch",
       label: "Allow remote launch (default)",
-      description: "Let a paired app start new pi sessions, in folders that don't set it. Off unless enabled.",
+      description:
+        "Let a paired app start new pi sessions, in folders that don't set it. Off unless enabled.",
       currentValue: onOff(g.defaults?.allow_remote_launch === true),
       values: [ON, OFF],
     },
     {
       id: "defaults.allow_remote_terminate",
       label: "Allow remote terminate (default)",
-      description: "Let a paired app end sessions it can see, in folders that don't set it.",
+      description:
+        "Let a paired app end sessions it can see, in folders that don't set it.",
       currentValue: onOff(g.defaults?.allow_remote_terminate !== false),
       values: [ON, OFF],
     },
@@ -148,7 +181,8 @@ function machineSettings(theme: Theme, done: () => void): Component {
     {
       id: "launch.fallback",
       label: "Launch fallback",
-      description: "Used only when the backend is unavailable, never after a launch was attempted.",
+      description:
+        "Used only when the backend is unavailable, never after a launch was attempted.",
       currentValue: g.launch?.fallback ?? "none",
       values: ["none", "tmux", "herdr", "rex"],
     },
@@ -195,35 +229,40 @@ function machineSettings(theme: Theme, done: () => void): Component {
     {
       id: "subagents.rooms",
       label: "Subagents in the app",
-      description: "Show each subagent as its own session in the app. Applies to new subagents.",
+      description:
+        "Show each subagent as its own session in the app. Applies to new subagents.",
       currentValue: onOff(g.subagents?.rooms === true),
       values: [ON, OFF],
     },
     {
       id: "mesh.tools",
       label: "Mesh tools",
-      description: "Let the model message other agents (agent_send, list_peers, …). Restart pi to apply.",
+      description:
+        "Let the model message other agents (agent_send, list_peers, …). Restart pi to apply.",
       currentValue: onOff(g.mesh?.tools !== false),
       values: [ON, OFF],
     },
     {
       id: "mesh.federation",
       label: "Federation",
-      description: "Take part in relay federation (agents on other machines). The relay's own gate still applies.",
+      description:
+        "Take part in relay federation (agents on other machines). The relay's own gate still applies.",
       currentValue: onOff(g.mesh?.federation !== false),
       values: [ON, OFF],
     },
     {
       id: "package_manager",
       label: "Package manager",
-      description: "For un-bien's global installs. Default: the one pi's npmCommand names, else npm. Reinstall to apply.",
+      description:
+        "For un-bien's global installs. Default: the one pi's npmCommand names, else npm. Reinstall to apply.",
       currentValue: g.package_manager ?? "default",
       values: ["default", "npm", "bun", "pnpm"],
     },
     {
       id: "service.runtime",
       label: "Service runtime",
-      description: "What runs the launcher service (an absolute path can be set in the file). Reinstall to apply.",
+      description:
+        "What runs the launcher service (an absolute path can be set in the file). Reinstall to apply.",
       currentValue: g.service?.runtime ?? "installer's",
       values: ["installer's", "node", "bun"],
     },
@@ -258,7 +297,8 @@ function machineSettings(theme: Theme, done: () => void): Component {
     {
       id: "identity.storage",
       label: "Identity storage",
-      description: "Where this machine's key is kept. Change it in the file (see docs/identity.md): switching can break pairing.",
+      description:
+        "Where this machine's key is kept. Change it in the file (see docs/identity.md): switching can break pairing.",
       currentValue: g.identity?.storage ?? "keychain",
     },
   ]
@@ -274,9 +314,13 @@ function machineSettings(theme: Theme, done: () => void): Component {
         case "defaults.allow_remote_terminate":
           return setGlobal("defaults", { allow_remote_terminate: on })
         case "launch.backend":
-          return setGlobal("launch", { backend: value as "tmux" | "herdr" | "rex" })
+          return setGlobal("launch", {
+            backend: value as "tmux" | "herdr" | "rex",
+          })
         case "launch.fallback":
-          return setGlobal("launch", { fallback: value as "none" | "tmux" | "herdr" | "rex" })
+          return setGlobal("launch", {
+            fallback: value as "none" | "tmux" | "herdr" | "rex",
+          })
         case "subagents.rooms":
           return setGlobal("subagents", { rooms: on })
         case "mesh.tools":
@@ -284,9 +328,16 @@ function machineSettings(theme: Theme, done: () => void): Component {
         case "mesh.federation":
           return setGlobal("mesh", { federation: on })
         case "package_manager":
-          return saveConfig({ package_manager: value === "default" ? undefined : (value as "npm" | "bun" | "pnpm") })
+          return saveConfig({
+            package_manager:
+              value === "default"
+                ? undefined
+                : (value as "npm" | "bun" | "pnpm"),
+          })
         case "service.runtime":
-          return setGlobal("service", { runtime: value === "installer's" ? undefined : value })
+          return setGlobal("service", {
+            runtime: value === "installer's" ? undefined : value,
+          })
         case "debug.envelope":
           return setGlobal("debug", { envelope: on })
         case "debug.panels":
@@ -305,13 +356,19 @@ function machineSettings(theme: Theme, done: () => void): Component {
 }
 
 /** This folder: the per-cwd config. */
-function folderSettings(theme: Theme, deps: CommandDeps, cwd: string, done: () => void): Component {
+function folderSettings(
+  theme: Theme,
+  deps: CommandDeps,
+  cwd: string,
+  done: () => void,
+): Component {
   const local = loadLocalConfig(cwd)
   const items: SettingItem[] = [
     textItem(theme, {
       id: "agent_name",
       label: "Agent name",
-      description: "This agent's name on the mesh and in the app. Renames it now, as /unbien rename does.",
+      description:
+        "This agent's name on the mesh and in the app. Renames it now, as /unbien rename does.",
       current: () => resolveAgentName(cwd),
       fallback: "",
       save: (v) => deps.renameAgent(v),
@@ -319,7 +376,8 @@ function folderSettings(theme: Theme, deps: CommandDeps, cwd: string, done: () =
     {
       id: "auto_start_relay",
       label: "Auto-start",
-      description: "Join the mesh and start the relay when pi starts in this folder.",
+      description:
+        "Join the mesh and start the relay when pi starts in this folder.",
       currentValue: onOff(effectiveAutoStartRelay(local)),
       values: [ON, OFF],
     },
@@ -333,7 +391,8 @@ function folderSettings(theme: Theme, deps: CommandDeps, cwd: string, done: () =
     {
       id: "allow_remote_terminate",
       label: "Allow remote terminate",
-      description: "Let a paired app end sessions in this folder. Applies to sessions started after the change.",
+      description:
+        "Let a paired app end sessions in this folder. Applies to sessions started after the change.",
       currentValue: onOff(effectiveAllowRemoteTerminate(local)),
       values: [ON, OFF],
     },
@@ -342,15 +401,21 @@ function folderSettings(theme: Theme, deps: CommandDeps, cwd: string, done: () =
     items,
     (id, value) => {
       const on = value === ON
-      if (id === "auto_start_relay") saveLocalConfig(cwd, { auto_start_relay: on })
-      else if (id === "allow_remote_launch") saveLocalConfig(cwd, { allow_remote_launch: on })
-      else if (id === "allow_remote_terminate") saveLocalConfig(cwd, { allow_remote_terminate: on })
+      if (id === "auto_start_relay")
+        saveLocalConfig(cwd, { auto_start_relay: on })
+      else if (id === "allow_remote_launch")
+        saveLocalConfig(cwd, { allow_remote_launch: on })
+      else if (id === "allow_remote_terminate")
+        saveLocalConfig(cwd, { allow_remote_terminate: on })
     },
     done,
   )
 }
 
-export async function _cmdSettings(deps: CommandDeps, ctx: ExtensionContext): Promise<void> {
+export async function _cmdSettings(
+  deps: CommandDeps,
+  ctx: ExtensionContext,
+): Promise<void> {
   const cwd = ctx.cwd || process.cwd()
   await ctx.ui.custom<void>((_tui, theme, _kb, done) =>
     list(
@@ -358,7 +423,8 @@ export async function _cmdSettings(deps: CommandDeps, ctx: ExtensionContext): Pr
         {
           id: "machine",
           label: "This machine",
-          description: "un-bien.json in pi's agent dir: relay, launch, mesh, installs, debug logs",
+          description:
+            "un-bien.json in pi's agent dir: relay, launch, mesh, installs, debug logs",
           currentValue: "",
           submenu: (_v, close) => machineSettings(theme, () => close()),
         },
@@ -367,7 +433,8 @@ export async function _cmdSettings(deps: CommandDeps, ctx: ExtensionContext): Pr
           label: "This folder",
           description: `.pi/un-bien/config.json in ${cwd}`,
           currentValue: "",
-          submenu: (_v, close) => folderSettings(theme, deps, cwd, () => close()),
+          submenu: (_v, close) =>
+            folderSettings(theme, deps, cwd, () => close()),
         },
       ],
       () => undefined,

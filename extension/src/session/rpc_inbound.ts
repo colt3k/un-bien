@@ -261,9 +261,25 @@ const TUI_BUILT_IN_WITH_VERB = new Set([
   "/model",
 ])
 const TUI_ONLY_SLASH = new Set([
-  "/settings", "/scoped-models", "/export", "/import", "/share", "/bug",
-  "/copy", "/session", "/changelog", "/hotkeys", "/tree", "/trust",
-  "/login", "/logout", "/reload", "/debug", "/resume", "/quit", "/fork",
+  "/settings",
+  "/scoped-models",
+  "/export",
+  "/import",
+  "/share",
+  "/bug",
+  "/copy",
+  "/session",
+  "/changelog",
+  "/hotkeys",
+  "/tree",
+  "/trust",
+  "/login",
+  "/logout",
+  "/reload",
+  "/debug",
+  "/resume",
+  "/quit",
+  "/fork",
   "/clone",
 ])
 
@@ -330,9 +346,7 @@ export async function interceptTuiBuiltInSlash(
           type Listed = { id?: string; name?: string; provider?: string }
           // get_available_models answers { models, current }.
           const listed = (await handlers.getAvailableModels()) as
-            | { models?: Listed[] }
-            | Listed[]
-            | undefined
+            { models?: Listed[] } | Listed[] | undefined
           const models = Array.isArray(listed) ? listed : listed?.models
           const hay = arg.toLowerCase()
           const matches = (models ?? []).filter((m) =>
@@ -363,7 +377,10 @@ export async function interceptTuiBuiltInSlash(
   }
 
   if (TUI_ONLY_SLASH.has(token)) {
-    notifyOwners(`${token} is a pi TUI command — not available remotely.`, "warning")
+    notifyOwners(
+      `${token} is a pi TUI command — not available remotely.`,
+      "warning",
+    )
     return true
   }
 
@@ -372,9 +389,27 @@ export async function interceptTuiBuiltInSlash(
   // pi command tokens are single words, so an inner slash or a known
   // filesystem root means "path" for our purposes.
   const PATH_ROOTS = [
-    "/users", "/home", "/tmp", "/var", "/private", "/etc", "/opt", "/usr",
-    "/bin", "/sbin", "/volumes", "/system", "/library", "/applications",
-    "/mnt", "/media", "/srv", "/root", "/workspace", "/workspaces", "/dev",
+    "/users",
+    "/home",
+    "/tmp",
+    "/var",
+    "/private",
+    "/etc",
+    "/opt",
+    "/usr",
+    "/bin",
+    "/sbin",
+    "/volumes",
+    "/system",
+    "/library",
+    "/applications",
+    "/mnt",
+    "/media",
+    "/srv",
+    "/root",
+    "/workspace",
+    "/workspaces",
+    "/dev",
   ]
   const lower = token.toLowerCase()
   const looksLikePath =
@@ -406,7 +441,10 @@ export async function dispatchRpcCommand(
     switch (command) {
       case "prompt": {
         const text = str(frame.message)
-        if (text.startsWith("/") && (await interceptTuiBuiltInSlash(text, handlers))) {
+        if (
+          text.startsWith("/") &&
+          (await interceptTuiBuiltInSlash(text, handlers))
+        ) {
           return rpcResponse("prompt", id, { success: true })
         }
         await handlers.prompt(text, {

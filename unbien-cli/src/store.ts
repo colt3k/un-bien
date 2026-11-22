@@ -210,9 +210,7 @@ const IDENTITIES_PATH = join(
   "relay-identities.json",
 )
 
-export function loadRelayIdentities(
-  path = IDENTITIES_PATH,
-): RelayIdentity[] {
+export function loadRelayIdentities(path = IDENTITIES_PATH): RelayIdentity[] {
   let stored: RelayIdentity[] = []
   try {
     const parsed = JSON.parse(readFileSync(path, "utf8")) as {
@@ -290,9 +288,8 @@ export function recordRelayIdentity(
 /** The pinned pubkey of any known identity verified over `url` (feed for
  *  `expectRelayPubkey`). Unknown endpoint → undefined → caller TOFUs. */
 export function identityForEndpoint(relayUrl: string): string | undefined {
-  return loadRelayIdentities().find((i) =>
-    i.endpoints.includes(relayUrl),
-  )?.pubkey
+  return loadRelayIdentities().find((i) => i.endpoints.includes(relayUrl))
+    ?.pubkey
 }
 
 /**
@@ -489,7 +486,8 @@ export function isFederationEnabled(configPath = RELAY_CONFIG_PATH): boolean {
     const parsed = JSON.parse(readFileSync(configPath, "utf8")) as {
       federation?: { enabled?: boolean }
     }
-    if (parsed.federation?.enabled !== undefined) return parsed.federation.enabled === true
+    if (parsed.federation?.enabled !== undefined)
+      return parsed.federation.enabled === true
   } catch {
     // no config file — fall through to legacy
   }
@@ -505,7 +503,10 @@ export function isFederationEnabled(configPath = RELAY_CONFIG_PATH): boolean {
 
 /** Flip the federation gate — writes ONLY the config file (settings live in
  *  config, state file holds just the peers list). */
-export function setFederationEnabled(enabled: boolean, configPath = RELAY_CONFIG_PATH): void {
+export function setFederationEnabled(
+  enabled: boolean,
+  configPath = RELAY_CONFIG_PATH,
+): void {
   let parsed: { federation?: { enabled?: boolean } } = {}
   try {
     parsed = JSON.parse(readFileSync(configPath, "utf8")) as {
@@ -528,10 +529,7 @@ export function setFederationEnabled(enabled: boolean, configPath = RELAY_CONFIG
   )
 }
 
-export function addRelayPeer(
-  peer: RelayPeer,
-  path = RELAY_PEERS_PATH,
-): void {
+export function addRelayPeer(peer: RelayPeer, path = RELAY_PEERS_PATH): void {
   const doc = readRelayPeersDoc(path)
   const peers = (doc.peers ?? []).filter((p) => p.name !== peer.name)
   peers.push(peer)

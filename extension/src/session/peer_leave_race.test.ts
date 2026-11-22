@@ -11,9 +11,20 @@ function tmpSock(): string {
   return ipcAddress(`lr-${basename(dir)}`, join(dir, "broker.sock"))
 }
 
-const pong = JSON.stringify({ from: "broker", to: "observer", id: "p", re: null, body: { type: "broker_pong" } }) + "\n"
+const pong =
+  JSON.stringify({
+    from: "broker",
+    to: "observer",
+    id: "p",
+    re: null,
+    body: { type: "broker_pong" },
+  }) + "\n"
 const ack = (name: string) =>
-  JSON.stringify({ type: "register_ack", name_assigned: name, address_assigned: `/w@${name}` }) + "\n"
+  JSON.stringify({
+    type: "register_ack",
+    name_assigned: name,
+    address_assigned: `/w@${name}`,
+  }) + "\n"
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 describe("leave() during a re-election", () => {
@@ -30,7 +41,10 @@ describe("leave() during a re-election", () => {
         buf += chunk
         let nl: number
         while ((nl = buf.indexOf("\n")) >= 0) {
-          const msg = JSON.parse(buf.slice(0, nl)) as { type?: string; name?: string }
+          const msg = JSON.parse(buf.slice(0, nl)) as {
+            type?: string
+            name?: string
+          }
           buf = buf.slice(nl + 1)
           if (msg.type === "broker_ping") {
             if (holdPong) releasePong = () => conn.write(pong)
@@ -42,7 +56,12 @@ describe("leave() during a re-election", () => {
     await new Promise<void>((r) => server.listen(sockPath, () => r()))
     const open = () => conns.filter((c) => !c.destroyed && !c.closed).length
 
-    const peer = new SessionPeer({ sockPath, name: "a", cwd: "/w", defaultTimeoutMs: 3000 })
+    const peer = new SessionPeer({
+      sockPath,
+      name: "a",
+      cwd: "/w",
+      defaultTimeoutMs: 3000,
+    })
     await peer.start()
     expect(open()).toBe(1)
 

@@ -38,7 +38,12 @@ function registry(): ActionModelRegistry {
   }
 }
 
-function make(opts: { pi?: Partial<Record<string, unknown>> | null; setModelOk?: boolean } = {}) {
+function make(
+  opts: {
+    pi?: Partial<Record<string, unknown>> | null
+    setModelOk?: boolean
+  } = {},
+) {
   const pi =
     opts.pi === null
       ? null
@@ -48,11 +53,20 @@ function make(opts: { pi?: Partial<Record<string, unknown>> | null; setModelOk?:
           getThinkingLevel: vi.fn(() => "high"),
           setSessionName: vi.fn(),
           clearQueue: vi.fn(() => ({ steering: ["s"], followUp: ["f"] })),
-          getCommands: vi.fn(() => [{ name: "unbien" }, { name: "review code" }]),
+          getCommands: vi.fn(() => [
+            { name: "unbien" },
+            { name: "review code" },
+          ]),
           ...opts.pi,
         } as unknown as ExtensionAPI)
-  const ctx: ActionCtx = { modelRegistry: registry(), getModel: () => gpt as never }
-  return { pi, config: new PiAgentConfig({ getPi: () => pi, getActionCtx: () => ctx }) }
+  const ctx: ActionCtx = {
+    modelRegistry: registry(),
+    getModel: () => gpt as never,
+  }
+  return {
+    pi,
+    config: new PiAgentConfig({ getPi: () => pi, getActionCtx: () => ctx }),
+  }
 }
 
 describe("PiAgentConfig", () => {
@@ -87,16 +101,25 @@ describe("PiAgentConfig", () => {
       const { pi, config } = make()
       const wire = await config.setModel("anthropic", "claude-sonnet-4")
       expect(wire.id).toBe("claude-sonnet-4")
-      expect((pi as unknown as { setModel: ReturnType<typeof vi.fn> }).setModel).toHaveBeenCalled()
-      const saved = JSON.parse(readFileSync(join(dir, ".pi", "settings.json"), "utf8"))
-      expect(saved).toMatchObject({ defaultProvider: "anthropic", defaultModel: "claude-sonnet-4" })
+      expect(
+        (pi as unknown as { setModel: ReturnType<typeof vi.fn> }).setModel,
+      ).toHaveBeenCalled()
+      const saved = JSON.parse(
+        readFileSync(join(dir, ".pi", "settings.json"), "utf8"),
+      )
+      expect(saved).toMatchObject({
+        defaultProvider: "anthropic",
+        defaultModel: "claude-sonnet-4",
+      })
     } finally {
       process.chdir(cwd)
     }
   })
 
   it("refuses an unknown model and a model without auth", async () => {
-    await expect(make().config.setModel("x", "y")).rejects.toThrow('model "x/y" not in registry')
+    await expect(make().config.setModel("x", "y")).rejects.toThrow(
+      'model "x/y" not in registry',
+    )
     await expect(
       make({ setModelOk: false }).config.setModel("openai", "gpt-5"),
     ).rejects.toThrow("no auth configured for this model")
@@ -106,7 +129,10 @@ describe("PiAgentConfig", () => {
     const { pi, config } = make()
     await config.setThinkingLevel("low")
     await config.setSessionName("renamed")
-    expect(await config.clearQueue()).toEqual({ steering: ["s"], followUp: ["f"] })
+    expect(await config.clearQueue()).toEqual({
+      steering: ["s"],
+      followUp: ["f"],
+    })
     const spy = pi as unknown as Record<string, ReturnType<typeof vi.fn>>
     expect(spy.setThinkingLevel).toHaveBeenCalledWith("low")
     expect(spy.setSessionName).toHaveBeenCalledWith("renamed")
@@ -121,7 +147,9 @@ describe("PiAgentConfig", () => {
 
   it("answers 'agent session not bound' before pi is wired, but still lists models", async () => {
     const { config } = make({ pi: null })
-    await expect(config.setThinkingLevel("low")).rejects.toThrow("agent session not bound")
+    await expect(config.setThinkingLevel("low")).rejects.toThrow(
+      "agent session not bound",
+    )
     await expect(config.clearQueue()).rejects.toThrow("agent session not bound")
     expect((await config.listModels()).models).toHaveLength(2)
   })

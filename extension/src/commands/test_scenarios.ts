@@ -20,7 +20,6 @@ const _TEST_SVG_B64 = Buffer.from(
     ' font-family="sans-serif">un-bien</text></svg>',
 ).toString("base64")
 
-
 export interface TestScenarioDeps {
   /** Broadcast an envelope to every attached owner (the relay fan-out seam). */
   broadcast: (env: EnvelopeMessage) => void
@@ -31,7 +30,9 @@ export interface TestScenarioDeps {
 /** The pi-events-bus emitter — reads the live `_pi` handle at CALL time
  *  (accessor, not snapshot: `_pi` is reassigned by session replacement and
  *  tests). */
-export function makeTestBusEmitter(piAccessor: () => ExtensionAPI | null): (channel: string, data: unknown) => void {
+export function makeTestBusEmitter(
+  piAccessor: () => ExtensionAPI | null,
+): (channel: string, data: unknown) => void {
   return (channel: string, data: unknown) => {
     try {
       ;(piAccessor() as PiEventBusInternals | null)?.events?.emit(channel, data)
@@ -40,7 +41,6 @@ export function makeTestBusEmitter(piAccessor: () => ExtensionAPI | null): (chan
     }
   }
 }
-
 
 /** Run one canned UI-test scenario. Returns a short status for the notify. */
 export function runTestScenario(

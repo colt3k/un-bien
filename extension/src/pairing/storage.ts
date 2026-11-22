@@ -499,7 +499,6 @@ function _isENOENT(err: unknown): boolean {
   )
 }
 
-
 /**
  * Headless-service provisioning (the launcher daemon runs FILE-ONLY — see
  * setLauncherDaemonIdentityMode): resolve the machine keypair in THIS
@@ -508,7 +507,10 @@ function _isENOENT(err: unknown): boolean {
  * key from disk. The key is UNCHANGED; the config's identity.storage is NOT
  * modified (it governs interactive pi sessions only).
  */
-export async function provisionFileIdentity(): Promise<{ path: string; wrote: boolean }> {
+export async function provisionFileIdentity(): Promise<{
+  path: string
+  wrote: boolean
+}> {
   const kp = await getOrCreateEd25519Keypair()
   const path = _identityFilePath()
   if (!existsSync(path)) {

@@ -118,7 +118,9 @@ try {
   // the CLI happily remembered an unpaired machine. Await the verdict.
   const verdict = await client.pairAwaited(name)
   if (!verdict.ok) {
-    console.error(`[pair] machine did not accept the pairing: ${verdict.detail}`)
+    console.error(
+      `[pair] machine did not accept the pairing: ${verdict.detail}`,
+    )
     // The peer was NOT recorded on the machine — don't remember it locally.
     client.close()
     process.exit(1)

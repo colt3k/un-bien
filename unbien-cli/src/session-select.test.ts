@@ -90,11 +90,7 @@ describe("findFlaggedSession — id polling", () => {
   })
 
   it("gives up after the bounded budget with no match", async () => {
-    const { regather, calls } = scriptedRegather([
-      [],
-      [],
-      [],
-    ])
+    const { regather, calls } = scriptedRegather([[], [], []])
     const logs: string[] = []
     const result = await findFlaggedSession({
       choices: [],

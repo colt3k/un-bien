@@ -80,7 +80,12 @@ describe("conformance harness — TS emit direction", () => {
         .split("\n")
         .filter((line) => line.trim().length > 0)
         .map((line) => JSON.parse(line) as Record<string, unknown>)
-        .filter((frame) => !["response", "extension_ui_request", "error"].includes(frame["type"] as string))
+        .filter(
+          (frame) =>
+            !["response", "extension_ui_request", "error"].includes(
+              frame["type"] as string,
+            ),
+        )
 
       expect(emitted).toEqual(input)
     })

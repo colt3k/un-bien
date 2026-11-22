@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest"
-import { chainUiNotify, notifyOwners, setOwnerNotifyHook } from "./owner_notify.js"
+import {
+  chainUiNotify,
+  notifyOwners,
+  setOwnerNotifyHook,
+} from "./owner_notify.js"
 
 describe("chainUiNotify", () => {
   it("chains: original notify AND broadcast both fire", () => {

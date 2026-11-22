@@ -551,7 +551,11 @@ describe("extension_ui_bridge", () => {
       let resolveSelect: ((v: string | undefined) => void) | undefined
       let signal: AbortSignal | undefined
       const select = vi.fn(
-        (_title: string, _options: string[], opts?: { signal?: AbortSignal }) => {
+        (
+          _title: string,
+          _options: string[],
+          opts?: { signal?: AbortSignal },
+        ) => {
           signal = opts?.signal
           return new Promise<string | undefined>((r) => {
             resolveSelect = r
@@ -604,8 +608,7 @@ describe("extension_ui_bridge", () => {
         const notify = [...sent]
           .reverse()
           .find((m) => (m as { method?: string }).method === "notify") as
-          | { id: string; message: string }
-          | undefined
+          { id: string; message: string } | undefined
         expect(notify?.id).toBe(id)
       })
       expect(bridge.pendingRequests()).toHaveLength(0)
@@ -641,8 +644,7 @@ describe("extension_ui_bridge", () => {
       const flowReq = [...sent]
         .reverse()
         .find((m) => (m as { method?: string }).method === "select") as
-        | { id: string; ask?: { flow_id: string } }
-        | undefined
+        { id: string; ask?: { flow_id: string } } | undefined
       expect(flowReq?.id).toBe("tool:tc_1")
       // a response keyed on the flowId routes to pi-ask (emitSubmit), NOT stock
       bridge.respond({
@@ -650,9 +652,7 @@ describe("extension_ui_bridge", () => {
         id: "tool:tc_1",
         value: "Alpha",
       })
-      const submit = [...bus.emitted]
-        .reverse()
-        .find((e) => e.name === SUBMIT)
+      const submit = [...bus.emitted].reverse().find((e) => e.name === SUBMIT)
       expect(submit).toBeDefined()
       bridge.dispose()
     })

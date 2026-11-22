@@ -80,7 +80,8 @@ export async function findFlaggedSession(opts: {
       if (found) return { chosen: found, ambiguous: null }
     } else if (wantedName) {
       const named = choices.filter(
-        (r) => r.name === wantedName && (!multiRelay || r.relayUrl === relayUrl),
+        (r) =>
+          r.name === wantedName && (!multiRelay || r.relayUrl === relayUrl),
       )
       if (named.length > 1) return { chosen: null, ambiguous: named }
       const only = named[0] ?? null
@@ -89,7 +90,8 @@ export async function findFlaggedSession(opts: {
       // No explicit flag — never polled; the caller routes to the picker.
       return { chosen: null, ambiguous: null }
     }
-    if (attempt >= SESSION_WAIT_RETRIES) return { chosen: null, ambiguous: null }
+    if (attempt >= SESSION_WAIT_RETRIES)
+      return { chosen: null, ambiguous: null }
     const what = wantedId ? `id "${wantedId}"` : `name "${wantedName}"`
     log(
       `[sessions] ${what} not visible yet — waiting for it to arrive ` +

@@ -41,7 +41,9 @@ describe("packageManagerName (pi's resolution)", () => {
   })
 
   it("wrapper naming two managers is ambiguous", () => {
-    expect(() => packageManagerName(["wrap", "npm", "bun"])).toThrow(/Ambiguous/)
+    expect(() => packageManagerName(["wrap", "npm", "bun"])).toThrow(
+      /Ambiguous/,
+    )
   })
 
   it("unknown wrapper → npm (pi sends it npm-style args)", () => {
@@ -60,7 +62,9 @@ describe("globalInstallCommand", () => {
       args: ["install", "-g", spec],
       display: `npm install -g ${spec}`,
     })
-    expect(globalInstallCommand(spec, undefined, "win32").command).toBe("npm.cmd")
+    expect(globalInstallCommand(spec, undefined, "win32").command).toBe(
+      "npm.cmd",
+    )
   })
 
   it("bun / pnpm → add -g", () => {
@@ -69,11 +73,17 @@ describe("globalInstallCommand", () => {
       command: "bun",
       args: ["add", "-g", spec],
     })
-    expect(globalInstallCommand(spec, ["pnpm"]).args).toEqual(["add", "-g", spec])
+    expect(globalInstallCommand(spec, ["pnpm"]).args).toEqual([
+      "add",
+      "-g",
+      spec,
+    ])
   })
 
   it("keeps a wrapper prefix and the configured command verbatim", () => {
-    expect(globalInstallCommand(spec, ["mise", "exec", "--", "bun"])).toMatchObject({
+    expect(
+      globalInstallCommand(spec, ["mise", "exec", "--", "bun"]),
+    ).toMatchObject({
       manager: "bun",
       command: "mise",
       args: ["exec", "--", "bun", "add", "-g", spec],
@@ -85,7 +95,11 @@ describe("globalInstallCommand", () => {
   })
 
   it("explicit npm keeps npm args", () => {
-    expect(globalInstallCommand(spec, ["npm"]).args).toEqual(["install", "-g", spec])
+    expect(globalInstallCommand(spec, ["npm"]).args).toEqual([
+      "install",
+      "-g",
+      spec,
+    ])
   })
 
   it("blank first entry falls back to npm", () => {
@@ -99,14 +113,24 @@ describe("globalInstallCommand", () => {
 describe("readPiNpmCommand", () => {
   it("reads the global settings.json under PI_CODING_AGENT_DIR", () => {
     const dir = mkdtempSync(join(tmpdir(), "pm-settings-"))
-    writeFileSync(join(dir, "settings.json"), JSON.stringify({ npmCommand: ["bun-as-npm", "--", "bun"] }))
+    writeFileSync(
+      join(dir, "settings.json"),
+      JSON.stringify({ npmCommand: ["bun-as-npm", "--", "bun"] }),
+    )
     expect(piAgentDir({ PI_CODING_AGENT_DIR: dir })).toBe(dir)
-    expect(readPiNpmCommand({ PI_CODING_AGENT_DIR: dir })).toEqual(["bun-as-npm", "--", "bun"])
+    expect(readPiNpmCommand({ PI_CODING_AGENT_DIR: dir })).toEqual([
+      "bun-as-npm",
+      "--",
+      "bun",
+    ])
   })
   it("unset, malformed or missing settings read as unset", () => {
     const dir = mkdtempSync(join(tmpdir(), "pm-settings-"))
     expect(readPiNpmCommand({ PI_CODING_AGENT_DIR: dir })).toBeUndefined()
-    writeFileSync(join(dir, "settings.json"), JSON.stringify({ npmCommand: "bun" }))
+    writeFileSync(
+      join(dir, "settings.json"),
+      JSON.stringify({ npmCommand: "bun" }),
+    )
     expect(readPiNpmCommand({ PI_CODING_AGENT_DIR: dir })).toBeUndefined()
     writeFileSync(join(dir, "settings.json"), "{ not json")
     expect(readPiNpmCommand({ PI_CODING_AGENT_DIR: dir })).toBeUndefined()

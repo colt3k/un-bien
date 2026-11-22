@@ -33,7 +33,10 @@ function fakePi(): ExtensionAPI {
   } as unknown as ExtensionAPI
 }
 
-function ctxStub(members: { abort?: () => void; shutdown?: () => void }): CtxStub {
+function ctxStub(members: {
+  abort?: () => void
+  shutdown?: () => void
+}): CtxStub {
   return members as unknown as CtxStub
 }
 
@@ -48,8 +51,9 @@ describe("PiSessionControl terminate (shutdown)", () => {
     const order: string[] = []
     const abort = vi.fn(() => order.push("abort"))
     const shutdown = vi.fn(() => order.push("shutdown"))
-    const control = new PiSessionControl(() => pi, () =>
-      ctxStub({ abort, shutdown }),
+    const control = new PiSessionControl(
+      () => pi,
+      () => ctxStub({ abort, shutdown }),
     )
 
     await control.shutdown()
@@ -92,15 +96,11 @@ describe("PiSessionPort streaming (receiver pin)", () => {
     } as unknown as ExtensionAPI
   }
 
-  function portCtxStub(members: {
-    isIdle?: () => boolean
-  }): PortCtxStub {
+  function portCtxStub(members: { isIdle?: () => boolean }): PortCtxStub {
     return members as unknown as PortCtxStub
   }
 
-  function streamingPort(
-    getBaseCtx: () => PortCtxStub | null,
-  ): PiSessionPort {
+  function streamingPort(getBaseCtx: () => PortCtxStub | null): PiSessionPort {
     return new PiSessionPort({
       getPi: () => fakePiWithIsStreaming(),
       getBaseCtx,
@@ -141,10 +141,7 @@ describe("PiSessionPort.subscribeEvents (dispose gate)", () => {
    * not in pi.on (pi would have to unregister, which it can't).
    */
   function fakeEventPi() {
-    const registered = new Map<
-      string,
-      Array<(payload: unknown) => void>
-    >()
+    const registered = new Map<string, Array<(payload: unknown) => void>>()
     const dispatches: Array<{ event: string; payload: unknown }> = []
     const pi = {
       on(event: string, cb: (payload: unknown) => void) {

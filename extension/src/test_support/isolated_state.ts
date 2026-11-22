@@ -14,4 +14,6 @@ import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-process.env["UNBIEN_STATE_DIR"] = mkdtempSync(join(tmpdir(), "unbien-test-state-"))
+process.env["UNBIEN_STATE_DIR"] = mkdtempSync(
+  join(tmpdir(), "unbien-test-state-"),
+)

@@ -167,7 +167,8 @@ function notReady() {
 mcp.registerTool(
   "list_peers",
   {
-    description: "List all agents currently in the mesh (local + remote PCs), grouped by working directory.",
+    description:
+      "List all agents currently in the mesh (local + remote PCs), grouped by working directory.",
     inputSchema: {},
   },
   async () => {

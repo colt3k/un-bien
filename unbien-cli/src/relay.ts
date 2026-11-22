@@ -68,10 +68,7 @@ function doPair(args: string[]): void {
     .replace(/^http:\/\//, "ws://")
     .replace(/^https:\/\//, "wss://")
   const nameArg = args[args.indexOf("--name") + 1]
-  const pairName =
-    nameArg ??
-    process.env.UNBIEN_RELAY_NAME ??
-    osHostname()
+  const pairName = nameArg ?? process.env.UNBIEN_RELAY_NAME ?? osHostname()
   if (!pairUrl) {
     console.error(
       "usage: unbien relay peer pair [url] [--name <name>]\n" +
@@ -93,7 +90,12 @@ function doPair(args: string[]): void {
     at: new Date().toISOString(),
     at_ms: Date.now(),
   })
-  const pairUrlFull = encodeRelayPairUrl({ url, name: pairName, pubkey, secret })
+  const pairUrlFull = encodeRelayPairUrl({
+    url,
+    name: pairName,
+    pubkey,
+    secret,
+  })
   console.log(pairUrlFull)
   console.error(
     "Relay pairing URL (also on stdout — pipe to pbcopy/xclip):\n" +
@@ -182,7 +184,8 @@ switch (verb) {
     if (relays.length > 0) {
       console.error(
         "Remembered relays:\n" +
-          relays.map((r) => `  ${r.name} → ${r.url}`).join("\n") + "\n",
+          relays.map((r) => `  ${r.name} → ${r.url}`).join("\n") +
+          "\n",
       )
     }
     // P6/P7: the identity registry — pins keyed by the relay's pubkey, with
@@ -202,8 +205,7 @@ switch (verb) {
     }
     if (peers.length > 0) {
       console.error(
-        "Federated peer relays:\n" +
-          peers.map((p) => peerLine(p)).join("\n"),
+        "Federated peer relays:\n" + peers.map((p) => peerLine(p)).join("\n"),
       )
     } else {
       console.error(
@@ -236,9 +238,13 @@ switch (verb) {
           })
           if (!isFederationEnabled()) setFederationEnabled(true)
           console.error(
-            "[relay] peer added: " + parsed.name + " -> " +
-              normalizeUrl(parsed.url) + " (pubkey pinned" +
-              (parsed.secret ? ", pairing secret held" : "") + ")\n" +
+            "[relay] peer added: " +
+              parsed.name +
+              " -> " +
+              normalizeUrl(parsed.url) +
+              " (pubkey pinned" +
+              (parsed.secret ? ", pairing secret held" : "") +
+              ")\n" +
               "  The relay will connect within ~5s (no restart needed)." +
               (parsed.secret
                 ? "\n  The peer relay will auto-add us back when we present the secret."
@@ -263,7 +269,8 @@ switch (verb) {
         }
         if (removeRelayPeer(name)) {
           console.error(
-            "[relay] peer removed: " + name +
+            "[relay] peer removed: " +
+              name +
               "\n  The relay will disconnect within ~5s (no restart needed).",
           )
         } else {
@@ -287,7 +294,8 @@ switch (verb) {
           if (action === "on") setFederationEnabled(true)
           else if (action === "off") setFederationEnabled(false)
           console.error(
-            "[relay] federation " + (isFederationEnabled() ? "ENABLED" : "disabled"),
+            "[relay] federation " +
+              (isFederationEnabled() ? "ENABLED" : "disabled"),
           )
           break
         }
@@ -298,7 +306,11 @@ switch (verb) {
         const peers = loadRelayPeers()
         const pending = loadPendingRelayPairs()
         console.error(
-          "[relay] federation " + (isFederationEnabled() ? "ENABLED" : "disabled (unbien relay peer federation on)") + "\n",
+          "[relay] federation " +
+            (isFederationEnabled()
+              ? "ENABLED"
+              : "disabled (unbien relay peer federation on)") +
+            "\n",
         )
         if (peers.length === 0) {
           console.error(
@@ -321,8 +333,12 @@ switch (verb) {
               pending
                 .map((p) => {
                   const live = isPendingLive(p)
-                  return `  ${p.name} → ${p.url}  (issued ${p.at})` +
-                    (live ? "" : "  [EXPIRED — re-mint with `unbien relay pair`]")
+                  return (
+                    `  ${p.name} → ${p.url}  (issued ${p.at})` +
+                    (live
+                      ? ""
+                      : "  [EXPIRED — re-mint with `unbien relay pair`]")
+                  )
                 })
                 .join("\n"),
           )
@@ -360,13 +376,13 @@ switch (verb) {
     if (relays.length > 0) {
       console.error(
         "Remembered relays:\n" +
-          relays.map((r) => `  ${r.name} → ${r.url}`).join("\n") + "\n",
+          relays.map((r) => `  ${r.name} → ${r.url}`).join("\n") +
+          "\n",
       )
     }
     if (peers.length > 0) {
       console.error(
-        "Federated peer relays:\n" +
-          peers.map((p) => peerLine(p)).join("\n"),
+        "Federated peer relays:\n" + peers.map((p) => peerLine(p)).join("\n"),
       )
     }
     break

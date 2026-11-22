@@ -180,7 +180,6 @@ export async function attachCrossPcBridge(
 
   let state: "dormant" | "active" | "detached" = "dormant"
 
-
   return {
     brokerRemote,
     piForward,

@@ -849,10 +849,13 @@ describe("getOrCreateEd25519Keypair — launcher daemon mode", () => {
 
   test("returns the file-stored identity when present (no keyring, no mint)", async () => {
     const backend = new InMemoryBackend()
-    backend.store.set(`${NEW_SERVICE}|${ACCOUNT}`, JSON.stringify({
-      pk: Buffer.from(new Uint8Array(32).fill(1)).toString("base64"),
-      sk: Buffer.from(new Uint8Array(64).fill(2)).toString("base64"),
-    }))
+    backend.store.set(
+      `${NEW_SERVICE}|${ACCOUNT}`,
+      JSON.stringify({
+        pk: Buffer.from(new Uint8Array(32).fill(1)).toString("base64"),
+        sk: Buffer.from(new Uint8Array(64).fill(2)).toString("base64"),
+      }),
+    )
     _setKeyStoreBackendForTest(backend)
     _setDaemonFileOnlyModeForTest(true)
     // Simulate the installer's provisioning: file exists with THE key.

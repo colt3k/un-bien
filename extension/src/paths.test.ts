@@ -100,12 +100,16 @@ describe("unbienConfigHome precedence", () => {
     delete process.env["UNBIEN_STATE_DIR"]
     delete process.env["UNBIEN_DIR"]
     delete process.env["UNBIEN_HOME"]
-    expect(unbienConfigHome()).toBe(join(homedir(), ".pi", "agent", "extensions"))
+    expect(unbienConfigHome()).toBe(
+      join(homedir(), ".pi", "agent", "extensions"),
+    )
   })
 
   test("a leading ~ in PI_CODING_AGENT_DIR is expanded, as pi does", () => {
     process.env["PI_CODING_AGENT_DIR"] = "~/.config/pi/agent"
-    expect(unbienConfigHome()).toBe(join(homedir(), ".config", "pi", "agent", "extensions"))
+    expect(unbienConfigHome()).toBe(
+      join(homedir(), ".config", "pi", "agent", "extensions"),
+    )
   })
 
   test("PI_CODING_AGENT_DIR set → <agentDir>/extensions", () => {
@@ -123,7 +127,9 @@ describe("unbienConfigHome precedence", () => {
   test("an empty PI_CODING_AGENT_DIR → ~/.pi/agent/extensions (no state-dir fallback)", () => {
     process.env["PI_CODING_AGENT_DIR"] = ""
     process.env["UNBIEN_STATE_DIR"] = "/state/root"
-    expect(unbienConfigHome()).toBe(join(homedir(), ".pi", "agent", "extensions"))
+    expect(unbienConfigHome()).toBe(
+      join(homedir(), ".pi", "agent", "extensions"),
+    )
   })
 
   test("resolved at call time (a later env change is picked up)", () => {

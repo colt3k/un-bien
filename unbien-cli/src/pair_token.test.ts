@@ -33,7 +33,11 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import type { KeyStoreBackend } from "@geohar/un-bien"
-import { parsePairTokenArgs, handlePairRequest, DEFAULT_WAIT_TIMEOUT_MS } from "./pair_token.js"
+import {
+  parsePairTokenArgs,
+  handlePairRequest,
+  DEFAULT_WAIT_TIMEOUT_MS,
+} from "./pair_token.js"
 import { loadOrCreateIdentity } from "./identity.js"
 import { parseInvite } from "./invite.js"
 
@@ -124,10 +128,7 @@ describe("buildQRUri — the invite URI the QR carries", () => {
 
   test("epk is base64url of the 32-byte machine public key", () => {
     const url = new URL(uri)
-    const decoded = Buffer.from(
-      url.searchParams.get("epk")!,
-      "base64url",
-    )
+    const decoded = Buffer.from(url.searchParams.get("epk")!, "base64url")
     expect(new Uint8Array(decoded)).toEqual(epk)
   })
 
@@ -193,12 +194,7 @@ describe("pair-token identity — the MACHINE key, not the CLI owner key", () =>
 
   test("the invite's epk is the machine identity from the state dir", async () => {
     const kp = await storage.getOrCreateEd25519Keypair()
-    const uri = unbien.buildQRUri(
-      "tok",
-      kp.publicKey,
-      "durable",
-      "main",
-    )
+    const uri = unbien.buildQRUri("tok", kp.publicKey, "durable", "main")
     // The epk the app routes on matches a getOrCreateEd25519Keypair call
     // against the same state dir…
     const again = await storage.getOrCreateEd25519Keypair()
@@ -216,9 +212,9 @@ describe("pair-token identity — the MACHINE key, not the CLI owner key", () =>
     const proxyPath = join(TMP_HOME, "proxy-identity.json")
     const ownerKp = loadOrCreateIdentity(proxyPath)
     expect(existsSync(proxyPath)).toBe(true)
-    expect(
-      Buffer.from(ownerKp.publicKey).toString("base64url"),
-    ).not.toBe(Buffer.from(machineKp.publicKey).toString("base64url"))
+    expect(Buffer.from(ownerKp.publicKey).toString("base64url")).not.toBe(
+      Buffer.from(machineKp.publicKey).toString("base64url"),
+    )
     // And the machine identity lives in identity.json, a separate file.
     expect(existsSync(join(STATE_DIR, "identity.json"))).toBe(true)
   })
@@ -235,9 +231,7 @@ describe("pair-token identity — the MACHINE key, not the CLI owner key", () =>
     const onDisk = JSON.parse(
       readFileSync(join(STATE_DIR, "identity.json"), "utf8"),
     ) as { pk: string }
-    expect(Buffer.from(onDisk.pk, "base64")).toEqual(
-      Buffer.from(kp1.publicKey),
-    )
+    expect(Buffer.from(onDisk.pk, "base64")).toEqual(Buffer.from(kp1.publicKey))
   })
 })
 
@@ -318,15 +312,27 @@ describe("handlePairRequest — the machine-side handshake logic", () => {
     harness: { name: "unbien-cli pair-token", version: "0.0.0" },
   }
 
-  function makeDeps(opts: { preKnown?: boolean[]; persistFails?: boolean } = {}) {
+  function makeDeps(
+    opts: { preKnown?: boolean[]; persistFails?: boolean } = {},
+  ) {
     const qr = new unbien.QRSession()
-    const added: Array<{ name: string; remote_epk: string; paired_at: string }> = []
+    const added: Array<{
+      name: string
+      remote_epk: string
+      paired_at: string
+    }> = []
     const allowListPushes: number[] = []
     const deps = {
       qrSession: qr,
       findKnownPeer: async (appPeerId: string) =>
-        appPeerId === "known-owner" ? { name: "phone", remote_epk: "known-owner" } : null,
-      addPeer: async (record: { name: string; remote_epk: string; paired_at: string }) => {
+        appPeerId === "known-owner"
+          ? { name: "phone", remote_epk: "known-owner" }
+          : null,
+      addPeer: async (record: {
+        name: string
+        remote_epk: string
+        paired_at: string
+      }) => {
         if (opts.persistFails) throw new Error("disk full")
         added.push(record)
       },
@@ -340,12 +346,11 @@ describe("handlePairRequest — the machine-side handshake logic", () => {
   test("a valid token pairs: pair_ok, peer persisted, allow-list re-pushed", async () => {
     const { qr, deps, added, allowListPushes } = makeDeps()
     const { token } = qr.issueToken()
-    const { settled, reply } = await handlePairRequest(
-      deps,
-      ctx,
-      "app-epk",
-      { id: "req-1", token, device_name: "Pixel" },
-    )
+    const { settled, reply } = await handlePairRequest(deps, ctx, "app-epk", {
+      id: "req-1",
+      token,
+      device_name: "Pixel",
+    })
     expect(settled).toBe(true)
     expect(reply).toMatchObject({
       type: "pair_ok",
@@ -364,12 +369,11 @@ describe("handlePairRequest — the machine-side handshake logic", () => {
     const { qr, deps } = makeDeps()
     qr.issueToken(1)
     await new Promise((r) => setTimeout(r, 5))
-    const { settled, reply } = await handlePairRequest(
-      deps,
-      ctx,
-      "app-epk",
-      { id: "req-2", token: "stale", device_name: "Pixel" },
-    )
+    const { settled, reply } = await handlePairRequest(deps, ctx, "app-epk", {
+      id: "req-2",
+      token: "stale",
+      device_name: "Pixel",
+    })
     expect(settled).toBe(false)
     expect(reply).toMatchObject({ type: "pair_error", code: "token_unknown" })
   })
@@ -377,12 +381,11 @@ describe("handlePairRequest — the machine-side handshake logic", () => {
   test("a wrong token refuses with token_unknown", async () => {
     const { qr, deps } = makeDeps()
     qr.issueToken()
-    const { settled, reply } = await handlePairRequest(
-      deps,
-      ctx,
-      "app-epk",
-      { id: "req-3", token: "not-minted-here", device_name: "Pixel" },
-    )
+    const { settled, reply } = await handlePairRequest(deps, ctx, "app-epk", {
+      id: "req-3",
+      token: "not-minted-here",
+      device_name: "Pixel",
+    })
     expect(settled).toBe(false)
     expect(reply).toMatchObject({ type: "pair_error", code: "token_unknown" })
   })
@@ -391,12 +394,11 @@ describe("handlePairRequest — the machine-side handshake logic", () => {
     const { qr, deps } = makeDeps()
     const { token } = qr.issueToken()
     qr.consumeToken(token)
-    const { settled, reply } = await handlePairRequest(
-      deps,
-      ctx,
-      "app-epk",
-      { id: "req-4", token, device_name: "Pixel" },
-    )
+    const { settled, reply } = await handlePairRequest(deps, ctx, "app-epk", {
+      id: "req-4",
+      token,
+      device_name: "Pixel",
+    })
     expect(settled).toBe(false)
     expect(reply).toMatchObject({ type: "pair_error", code: "token_consumed" })
   })
@@ -421,12 +423,11 @@ describe("handlePairRequest — the machine-side handshake logic", () => {
   test("a peers.json write failure refuses with internal_error", async () => {
     const { qr, deps } = makeDeps({ persistFails: true })
     const { token } = qr.issueToken()
-    const { settled, reply } = await handlePairRequest(
-      deps,
-      ctx,
-      "app-epk",
-      { id: "req-6", token, device_name: "Pixel" },
-    )
+    const { settled, reply } = await handlePairRequest(deps, ctx, "app-epk", {
+      id: "req-6",
+      token,
+      device_name: "Pixel",
+    })
     expect(settled).toBe(false)
     expect(reply).toMatchObject({ type: "pair_error", code: "internal_error" })
   })

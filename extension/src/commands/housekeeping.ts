@@ -87,9 +87,10 @@ function relayActionSuffix(action: RelayInstallResult["relayAction"]): string {
  *  replaces toasts as they arrive, so per-step messages were wiping each
  *  other out — only the last toast stayed visible (the "all" run looked like
  *  it only installed the relay). */
-function installLauncherSections(
-  opts: { linkCli?: boolean } = {},
-): { ok: boolean; sections: string[] } {
+function installLauncherSections(opts: { linkCli?: boolean } = {}): {
+  ok: boolean
+  sections: string[]
+} {
   const linkCli = opts.linkCli ?? false
   try {
     const result = installService()
@@ -142,9 +143,11 @@ export function _cmdInstall(
 }
 
 /** Launcher-daemon uninstall WITHOUT notifying — see installLauncherSections. */
-function uninstallLauncherSections(opts: {
-  linkCli?: boolean
-} = {}): { sections: string[] } {
+function uninstallLauncherSections(
+  opts: {
+    linkCli?: boolean
+  } = {},
+): { sections: string[] } {
   const linkCli = opts.linkCli ?? false
   try {
     const result = uninstallService()
@@ -235,14 +238,19 @@ async function _delegateToGlobalCopy(
   const pm = packageManager(config)
   if (verb === "install") {
     try {
-      await installExtensionGlobally((l) => ctx.ui.notify(`[un-bien] ${l}`, "info"))
+      await installExtensionGlobally((l) =>
+        ctx.ui.notify(`[un-bien] ${l}`, "info"),
+      )
     } catch (err) {
       ctx.ui.notify(`[un-bien] ${String(err)}`, "error")
       return false
     }
   }
   const admin = globalBinPath(pm, "unbien-admin")
-  ctx.ui.notify(`[un-bien] running ${admin} ${verb} ${target} (${pm}'s global copy)…`, "info")
+  ctx.ui.notify(
+    `[un-bien] running ${admin} ${verb} ${target} (${pm}'s global copy)…`,
+    "info",
+  )
   const r = spawnSync(admin, [verb, target], {
     encoding: "utf8",
     timeout: 10 * 60_000,
@@ -251,7 +259,10 @@ async function _delegateToGlobalCopy(
   const out = `${r.stdout ?? ""}${r.stderr ?? ""}`.trim()
   const ok = r.status === 0
   ctx.ui.notify(
-    (ok ? "" : `[un-bien] ${admin} ${verb} failed${r.error ? `: ${String(r.error)}` : ""}\n`) + out,
+    (ok
+      ? ""
+      : `[un-bien] ${admin} ${verb} failed${r.error ? `: ${String(r.error)}` : ""}\n`) +
+      out,
     ok ? "info" : "error",
   )
   return ok
@@ -265,7 +276,8 @@ export async function _cmdInstallTarget(
   const delegated = await _delegateToGlobalCopy(ctx, "install", target)
   if (delegated !== null) return delegated
   // A configured package manager links unbien-admin itself.
-  const linkCli = (opts.linkCli ?? false) && !packageManagerConfigured(loadConfig())
+  const linkCli =
+    (opts.linkCli ?? false) && !packageManagerConfigured(loadConfig())
   const summary: string[] = []
   let ok = true
 
@@ -356,7 +368,9 @@ export async function _cmdInstallTarget(
         const r = await installCliPackage((l) =>
           ctx.ui.notify(`[cli] ${l}`, "info"),
         )
-        const landedChannel = r.version?.includes("-dev") ? "dev channel" : "stable"
+        const landedChannel = r.version?.includes("-dev")
+          ? "dev channel"
+          : "stable"
         summary.push(
           `[un-bien] CLI installed${r.version ? ` (unbien ${r.version})` : ""} — ${landedChannel}.`,
         )
@@ -432,8 +446,7 @@ export async function _cmdUninstallTarget(
   // CLI-shim cleanup rides FULL uninstalls only: `uninstall relay` must not
   // delete the unbien-admin binary that invoked it. Component-scoped
   // uninstalls pass linkCli: false down.
-  const componentOpts =
-    target === "all" ? opts : { ...opts, linkCli: false }
+  const componentOpts = target === "all" ? opts : { ...opts, linkCli: false }
 
   const summary: string[] = []
   let ok = true
@@ -442,7 +455,8 @@ export async function _cmdUninstallTarget(
     ctx.ui.notify("[un-bien] uninstalling launcher daemon…", "info")
     const launcher = uninstallLauncherSections(componentOpts)
     summary.push(...launcher.sections)
-    if (launcher.sections.some((s) => s.includes("uninstall failed"))) ok = false
+    if (launcher.sections.some((s) => s.includes("uninstall failed")))
+      ok = false
   }
   if (want.includes("relay")) {
     ctx.ui.notify("[un-bien] uninstalling relay service…", "info")

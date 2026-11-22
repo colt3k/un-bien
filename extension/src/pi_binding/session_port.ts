@@ -43,9 +43,10 @@ export interface PiSessionPortOptions {
   /** The root session's ExtensionAPI (null before the factory wired it). */
   getPi(): ExtensionAPI | null
   /** The always-fresh session_start base ctx (compact / abort / ui / isIdle). */
-  getBaseCtx():
-    | Pick<ExtensionContext, "compact" | "abort" | "ui" | "isIdle">
-    | null
+  getBaseCtx(): Pick<
+    ExtensionContext,
+    "compact" | "abort" | "ui" | "isIdle"
+  > | null
   /** The root session's sessionManager (transcript + id + cwd reads). */
   getSessionManager(): PiSessionManagerView | null
 }
@@ -138,7 +139,11 @@ export class PiSessionPort implements AgentSessionPort {
     const ctx = this.opts.getBaseCtx()
     if (!ctx?.compact)
       throw new Error("compact unavailable (no active session ctx)")
-    ctx.compact(opts?.customInstructions ? { customInstructions: opts.customInstructions } : undefined)
+    ctx.compact(
+      opts?.customInstructions
+        ? { customInstructions: opts.customInstructions }
+        : undefined,
+    )
   }
 
   notify(message: string, level: NotifyLevel = "info"): void {
@@ -257,9 +262,7 @@ export class PiSessionControl implements SessionControlPort {
     // structural read is proxy-safe per property and the truthiness checks
     // below gate every invocation.
     const ctx = this.getBaseCtx() as unknown as
-      | { abort?: () => void; shutdown?: () => void }
-      | null
-      | undefined
+      { abort?: () => void; shutdown?: () => void } | null | undefined
     if (ctx?.shutdown) {
       ctx.abort?.()
       ctx.shutdown()

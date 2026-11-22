@@ -258,7 +258,10 @@ export class MeshInbox {
  *  (its mesh address, and the `<cwd>@<name>` forms other machines build
  *  from its room metadata): bare, or behind a relay label
  *  (`<relay>:<name>`). */
-export function _addressMatches(to: string, names: readonly (string | undefined | null)[]): boolean {
+export function _addressMatches(
+  to: string,
+  names: readonly (string | undefined | null)[],
+): boolean {
   return names.some((me) => Boolean(me) && (to === me || to.endsWith(`:${me}`)))
 }
 
@@ -266,11 +269,18 @@ export function _addressMatches(to: string, names: readonly (string | undefined 
  *  federated_peer_list: `<cwd>@<name>`, the room id when it has no name. One
  *  builder for the sender's peer list and the receiver's match, so the two
  *  agree by construction. */
-export function _roomAddress(room: { cwd?: string; name?: string; room_id?: string }): string {
+export function _roomAddress(room: {
+  cwd?: string
+  name?: string
+  room_id?: string
+}): string {
   return `${room.cwd ?? ""}@${room.name ?? room.room_id ?? "?"}`
 }
 
 /** A federated address: a room address behind its relay's label. */
-export function _federatedAddress(relayName: string, roomAddress: string): string {
+export function _federatedAddress(
+  relayName: string,
+  roomAddress: string,
+): string {
   return `${relayName}:${roomAddress}`
 }

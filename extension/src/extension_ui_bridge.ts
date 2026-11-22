@@ -210,9 +210,10 @@ export function createExtensionUiBridge(
   // Open a stock ctx.ui dialog to the app. Broadcasts the request and returns a
   // Promise that resolves when the app answers (via respond) OR when the TTL
   // fires (undefined). The wrap (wrapStockUi) races this against the local TUI.
-  function openStock(
-    input: StockRequestInput,
-  ): { promise: Promise<unknown>; id: string } {
+  function openStock(input: StockRequestInput): {
+    promise: Promise<unknown>
+    id: string
+  } {
     const id = randomUUID()
     const request = buildStockRequest(id, input)
     const promise = new Promise<unknown>((resolve) => {
@@ -239,7 +240,9 @@ export function createExtensionUiBridge(
 
   // Map an inbound response to the value the stock ctx.ui call should resolve
   // with: select/input/editor -> value; confirm -> confirmed; cancelled -> undefined.
-  function stockValueOf(msg: ExtensionUiResponseWire): string | boolean | undefined {
+  function stockValueOf(
+    msg: ExtensionUiResponseWire,
+  ): string | boolean | undefined {
     if ("cancelled" in msg && msg.cancelled) return undefined
     if ("value" in msg) return msg.value
     if ("confirmed" in msg) return msg.confirmed
@@ -435,7 +438,11 @@ export function createExtensionUiBridge(
       let n = 0
       for (const flowId of [...activeFlows.keys()]) {
         try {
-          respond({ type: "extension_ui_response", cancelled: true, id: flowId })
+          respond({
+            type: "extension_ui_response",
+            cancelled: true,
+            id: flowId,
+          })
           n++
         } catch {
           /* best-effort per flow */
@@ -725,13 +732,20 @@ export function wrapStockUi(
     })
   }
 
-  function chainSignal(opts: { signal?: AbortSignal } | undefined): AbortController {
+  function chainSignal(
+    opts: { signal?: AbortSignal } | undefined,
+  ): AbortController {
     const ac = new AbortController()
-    if (opts?.signal) opts.signal.addEventListener("abort", () => ac.abort(), { once: true })
+    if (opts?.signal)
+      opts.signal.addEventListener("abort", () => ac.abort(), { once: true })
     return ac
   }
 
-  ui.select = ((title: string, options: string[], opts?: { signal?: AbortSignal; timeout?: number }) => {
+  ui.select = ((
+    title: string,
+    options: string[],
+    opts?: { signal?: AbortSignal; timeout?: number },
+  ) => {
     if (!hasPeer()) return orig.select(title, options, opts)
     const ac = chainSignal(opts)
     return race(
@@ -741,7 +755,11 @@ export function wrapStockUi(
     ) as Promise<string | undefined>
   }) as StockUiContext["select"]
 
-  ui.confirm = ((title: string, message: string, opts?: { signal?: AbortSignal; timeout?: number }) => {
+  ui.confirm = ((
+    title: string,
+    message: string,
+    opts?: { signal?: AbortSignal; timeout?: number },
+  ) => {
     if (!hasPeer()) return orig.confirm(title, message, opts)
     const ac = chainSignal(opts)
     return race(
@@ -751,7 +769,11 @@ export function wrapStockUi(
     ) as Promise<boolean>
   }) as StockUiContext["confirm"]
 
-  ui.input = ((title: string, placeholder?: string, opts?: { signal?: AbortSignal; timeout?: number }) => {
+  ui.input = ((
+    title: string,
+    placeholder?: string,
+    opts?: { signal?: AbortSignal; timeout?: number },
+  ) => {
     if (!hasPeer()) return orig.input(title, placeholder, opts)
     const ac = chainSignal(opts)
     return race(
@@ -763,7 +785,11 @@ export function wrapStockUi(
 
   if (orig.editor) {
     const origEditor = orig.editor
-    ui.editor = ((title: string, prefill?: string, opts?: { signal?: AbortSignal; timeout?: number }) => {
+    ui.editor = ((
+      title: string,
+      prefill?: string,
+      opts?: { signal?: AbortSignal; timeout?: number },
+    ) => {
       if (!hasPeer()) return origEditor(title, prefill, opts)
       const ac = chainSignal(opts)
       return race(

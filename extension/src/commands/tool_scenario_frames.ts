@@ -7,472 +7,473 @@ export const TOOL_SCENARIO_FRAMES: readonly {
   readonly frames: readonly Record<string, unknown>[]
 }[] = [
   {
-    "id": "bash.ok",
-    "frames": [
+    id: "bash.ok",
+    frames: [
       {
-        "args": {
-          "command": "ls"
+        args: {
+          command: "ls",
         },
-        "toolCallId": "call_bash_ok",
-        "toolName": "bash",
-        "type": "tool_execution_start"
+        toolCallId: "call_bash_ok",
+        toolName: "bash",
+        type: "tool_execution_start",
       },
       {
-        "args": {
-          "command": "ls"
+        args: {
+          command: "ls",
         },
-        "partialResult": {
-          "content": [
+        partialResult: {
+          content: [
             {
-              "text": "README.md\n",
-              "type": "text"
-            }
+              text: "README.md\n",
+              type: "text",
+            },
           ],
-          "details": {}
+          details: {},
         },
-        "toolCallId": "call_bash_ok",
-        "toolName": "bash",
-        "type": "tool_execution_update"
+        toolCallId: "call_bash_ok",
+        toolName: "bash",
+        type: "tool_execution_update",
       },
       {
-        "isError": false,
-        "result": {
-          "content": [
+        isError: false,
+        result: {
+          content: [
             {
-              "text": "README.md\nsrc\n",
-              "type": "text"
-            }
-          ]
-        },
-        "toolCallId": "call_bash_ok",
-        "toolName": "bash",
-        "type": "tool_execution_end"
-      }
-    ]
-  },
-  {
-    "id": "bash.truncated",
-    "frames": [
-      {
-        "args": {
-          "command": "seq 4000"
-        },
-        "toolCallId": "call_bash_truncated",
-        "toolName": "bash",
-        "type": "tool_execution_start"
-      },
-      {
-        "isError": false,
-        "result": {
-          "content": [
-            {
-              "text": "2001\n2002\n\n\n[Showing lines 2001-4000 of 4000. Full output: /var/folders/zz/T/pi-bash-1.log]",
-              "type": "text"
-            }
+              text: "README.md\nsrc\n",
+              type: "text",
+            },
           ],
-          "details": {
-            "fullOutputPath": "/var/folders/zz/T/pi-bash-1.log",
-            "truncation": {
-              "content": "2001\n2002\n",
-              "firstLineExceedsLimit": false,
-              "lastLinePartial": false,
-              "maxBytes": 51200,
-              "maxLines": 2000,
-              "outputBytes": 60000,
-              "outputLines": 2000,
-              "totalBytes": 120000,
-              "totalLines": 4000,
-              "truncated": true,
-              "truncatedBy": "lines"
-            }
-          }
         },
-        "toolCallId": "call_bash_truncated",
-        "toolName": "bash",
-        "type": "tool_execution_end"
-      }
-    ]
+        toolCallId: "call_bash_ok",
+        toolName: "bash",
+        type: "tool_execution_end",
+      },
+    ],
   },
   {
-    "id": "bash.git-diff",
-    "frames": [
+    id: "bash.truncated",
+    frames: [
       {
-        "args": {
-          "command": "git diff"
+        args: {
+          command: "seq 4000",
         },
-        "toolCallId": "call_bash_git_diff",
-        "toolName": "bash",
-        "type": "tool_execution_start"
+        toolCallId: "call_bash_truncated",
+        toolName: "bash",
+        type: "tool_execution_start",
       },
       {
-        "isError": false,
-        "result": {
-          "content": [
+        isError: false,
+        result: {
+          content: [
             {
-              "text": "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n a\n-b\n+c\n",
-              "type": "text"
-            }
-          ]
-        },
-        "toolCallId": "call_bash_git_diff",
-        "toolName": "bash",
-        "type": "tool_execution_end"
-      }
-    ]
-  },
-  {
-    "id": "bash.exit-code",
-    "frames": [
-      {
-        "args": {
-          "command": "make"
-        },
-        "toolCallId": "call_bash_exit_code",
-        "toolName": "bash",
-        "type": "tool_execution_start"
-      },
-      {
-        "isError": true,
-        "result": {
-          "content": [
-            {
-              "text": "make: *** No rule to make target.\n\nCommand exited with code 2",
-              "type": "text"
-            }
+              text: "2001\n2002\n\n\n[Showing lines 2001-4000 of 4000. Full output: /var/folders/zz/T/pi-bash-1.log]",
+              type: "text",
+            },
           ],
-          "isError": true
+          details: {
+            fullOutputPath: "/var/folders/zz/T/pi-bash-1.log",
+            truncation: {
+              content: "2001\n2002\n",
+              firstLineExceedsLimit: false,
+              lastLinePartial: false,
+              maxBytes: 51200,
+              maxLines: 2000,
+              outputBytes: 60000,
+              outputLines: 2000,
+              totalBytes: 120000,
+              totalLines: 4000,
+              truncated: true,
+              truncatedBy: "lines",
+            },
+          },
         },
-        "toolCallId": "call_bash_exit_code",
-        "toolName": "bash",
-        "type": "tool_execution_end"
-      }
-    ]
+        toolCallId: "call_bash_truncated",
+        toolName: "bash",
+        type: "tool_execution_end",
+      },
+    ],
   },
   {
-    "id": "read.ranged",
-    "frames": [
+    id: "bash.git-diff",
+    frames: [
       {
-        "args": {
-          "limit": 2,
-          "offset": 1,
-          "path": "src/a.ts"
+        args: {
+          command: "git diff",
         },
-        "toolCallId": "call_read_ranged",
-        "toolName": "read",
-        "type": "tool_execution_start"
+        toolCallId: "call_bash_git_diff",
+        toolName: "bash",
+        type: "tool_execution_start",
       },
       {
-        "isError": false,
-        "result": {
-          "content": [
+        isError: false,
+        result: {
+          content: [
             {
-              "text": "line1\nline2\n\n[120 more lines in file. Use offset=3 to continue.]",
-              "type": "text"
-            }
-          ]
-        },
-        "toolCallId": "call_read_ranged",
-        "toolName": "read",
-        "type": "tool_execution_end"
-      }
-    ]
-  },
-  {
-    "id": "read.error",
-    "frames": [
-      {
-        "args": {
-          "path": "missing.txt"
-        },
-        "toolCallId": "call_read_error",
-        "toolName": "read",
-        "type": "tool_execution_start"
-      },
-      {
-        "isError": true,
-        "result": {
-          "content": [
-            {
-              "text": "ENOENT: no such file or directory, access '/w/missing.txt'",
-              "type": "text"
-            }
+              text: "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n a\n-b\n+c\n",
+              type: "text",
+            },
           ],
-          "details": {},
-          "isError": true
         },
-        "toolCallId": "call_read_error",
-        "toolName": "read",
-        "type": "tool_execution_end"
-      }
-    ]
+        toolCallId: "call_bash_git_diff",
+        toolName: "bash",
+        type: "tool_execution_end",
+      },
+    ],
   },
   {
-    "id": "edit.ok",
-    "frames": [
+    id: "bash.exit-code",
+    frames: [
       {
-        "args": {
-          "edits": [
+        args: {
+          command: "make",
+        },
+        toolCallId: "call_bash_exit_code",
+        toolName: "bash",
+        type: "tool_execution_start",
+      },
+      {
+        isError: true,
+        result: {
+          content: [
             {
-              "newText": "source \"$HOME/.env.sh\"\nCONTEXT=\"colima\"",
-              "oldText": "CONTEXT=\"colima\""
-            }
+              text: "make: *** No rule to make target.\n\nCommand exited with code 2",
+              type: "text",
+            },
           ],
-          "path": "/w/colima.sh"
+          isError: true,
         },
-        "toolCallId": "call_edit_ok",
-        "toolName": "edit",
-        "type": "tool_execution_start"
+        toolCallId: "call_bash_exit_code",
+        toolName: "bash",
+        type: "tool_execution_end",
+      },
+    ],
+  },
+  {
+    id: "read.ranged",
+    frames: [
+      {
+        args: {
+          limit: 2,
+          offset: 1,
+          path: "src/a.ts",
+        },
+        toolCallId: "call_read_ranged",
+        toolName: "read",
+        type: "tool_execution_start",
       },
       {
-        "isError": false,
-        "result": {
-          "content": [
+        isError: false,
+        result: {
+          content: [
             {
-              "text": "Successfully replaced 1 block(s) in /w/colima.sh.",
-              "type": "text"
-            }
+              text: "line1\nline2\n\n[120 more lines in file. Use offset=3 to continue.]",
+              type: "text",
+            },
           ],
-          "details": {
-            "diff": "    ...\n  5 \n  6 export PATH=\"/opt/homebrew/bin:$PATH\"\n+ 7 source \"$HOME/.env.sh\"\n  7 CONTEXT=\"colima\"\n    ...",
-            "firstChangedLine": 7,
-            "patch": "--- /w/colima.sh\n+++ /w/colima.sh\n@@ -5,3 +5,4 @@\n \n export PATH=\"/opt/homebrew/bin:$PATH\"\n+source \"$HOME/.env.sh\"\n CONTEXT=\"colima\"\n"
-          }
         },
-        "toolCallId": "call_edit_ok",
-        "toolName": "edit",
-        "type": "tool_execution_end"
-      }
-    ]
+        toolCallId: "call_read_ranged",
+        toolName: "read",
+        type: "tool_execution_end",
+      },
+    ],
   },
   {
-    "id": "write.ok",
-    "frames": [
+    id: "read.error",
+    frames: [
       {
-        "args": {
-          "content": "#!/bin/sh\necho hi\n",
-          "path": "/w/x.sh"
+        args: {
+          path: "missing.txt",
         },
-        "toolCallId": "call_write_ok",
-        "toolName": "write",
-        "type": "tool_execution_start"
+        toolCallId: "call_read_error",
+        toolName: "read",
+        type: "tool_execution_start",
       },
       {
-        "isError": false,
-        "result": {
-          "content": [
+        isError: true,
+        result: {
+          content: [
             {
-              "text": "Successfully wrote to /w/x.sh",
-              "type": "text"
-            }
-          ]
-        },
-        "toolCallId": "call_write_ok",
-        "toolName": "write",
-        "type": "tool_execution_end"
-      }
-    ]
-  },
-  {
-    "id": "grep.limit",
-    "frames": [
-      {
-        "args": {
-          "limit": 100,
-          "pattern": "x"
-        },
-        "toolCallId": "call_grep_limit",
-        "toolName": "grep",
-        "type": "tool_execution_start"
-      },
-      {
-        "isError": false,
-        "result": {
-          "content": [
-            {
-              "text": "a.ts:1: x\n\n[100 matches limit reached. Use limit=200 for more, or refine pattern. Some lines truncated to 500 chars. Use read tool to see full lines]",
-              "type": "text"
-            }
+              text: "ENOENT: no such file or directory, access '/w/missing.txt'",
+              type: "text",
+            },
           ],
-          "details": {
-            "linesTruncated": true,
-            "matchLimitReached": 100
-          }
+          details: {},
+          isError: true,
         },
-        "toolCallId": "call_grep_limit",
-        "toolName": "grep",
-        "type": "tool_execution_end"
-      }
-    ]
+        toolCallId: "call_read_error",
+        toolName: "read",
+        type: "tool_execution_end",
+      },
+    ],
   },
   {
-    "id": "find.hits",
-    "frames": [
+    id: "edit.ok",
+    frames: [
       {
-        "args": {
-          "path": "app",
-          "pattern": "*.swift"
+        args: {
+          edits: [
+            {
+              newText: 'source "$HOME/.env.sh"\nCONTEXT="colima"',
+              oldText: 'CONTEXT="colima"',
+            },
+          ],
+          path: "/w/colima.sh",
         },
-        "toolCallId": "call_find_hits",
-        "toolName": "find",
-        "type": "tool_execution_start"
+        toolCallId: "call_edit_ok",
+        toolName: "edit",
+        type: "tool_execution_start",
       },
       {
-        "isError": false,
-        "result": {
-          "content": [
+        isError: false,
+        result: {
+          content: [
             {
-              "text": "app/A.swift\napp/B.swift",
-              "type": "text"
-            }
-          ]
+              text: "Successfully replaced 1 block(s) in /w/colima.sh.",
+              type: "text",
+            },
+          ],
+          details: {
+            diff: '    ...\n  5 \n  6 export PATH="/opt/homebrew/bin:$PATH"\n+ 7 source "$HOME/.env.sh"\n  7 CONTEXT="colima"\n    ...',
+            firstChangedLine: 7,
+            patch:
+              '--- /w/colima.sh\n+++ /w/colima.sh\n@@ -5,3 +5,4 @@\n \n export PATH="/opt/homebrew/bin:$PATH"\n+source "$HOME/.env.sh"\n CONTEXT="colima"\n',
+          },
         },
-        "toolCallId": "call_find_hits",
-        "toolName": "find",
-        "type": "tool_execution_end"
-      }
-    ]
+        toolCallId: "call_edit_ok",
+        toolName: "edit",
+        type: "tool_execution_end",
+      },
+    ],
   },
   {
-    "id": "codemode.completed",
-    "frames": [
+    id: "write.ok",
+    frames: [
       {
-        "args": {
-          "code": "return await tools.github_get_latest_release({repo: 'x'})"
+        args: {
+          content: "#!/bin/sh\necho hi\n",
+          path: "/w/x.sh",
         },
-        "toolCallId": "call_codemode_completed",
-        "toolName": "codemode",
-        "type": "tool_execution_start"
+        toolCallId: "call_write_ok",
+        toolName: "write",
+        type: "tool_execution_start",
       },
       {
-        "isError": false,
-        "result": {
-          "content": [
+        isError: false,
+        result: {
+          content: [
             {
-              "text": "Script completed\nWall time 0.9 seconds\nOutput:\n",
-              "type": "text"
+              text: "Successfully wrote to /w/x.sh",
+              type: "text",
+            },
+          ],
+        },
+        toolCallId: "call_write_ok",
+        toolName: "write",
+        type: "tool_execution_end",
+      },
+    ],
+  },
+  {
+    id: "grep.limit",
+    frames: [
+      {
+        args: {
+          limit: 100,
+          pattern: "x",
+        },
+        toolCallId: "call_grep_limit",
+        toolName: "grep",
+        type: "tool_execution_start",
+      },
+      {
+        isError: false,
+        result: {
+          content: [
+            {
+              text: "a.ts:1: x\n\n[100 matches limit reached. Use limit=200 for more, or refine pattern. Some lines truncated to 500 chars. Use read tool to see full lines]",
+              type: "text",
+            },
+          ],
+          details: {
+            linesTruncated: true,
+            matchLimitReached: 100,
+          },
+        },
+        toolCallId: "call_grep_limit",
+        toolName: "grep",
+        type: "tool_execution_end",
+      },
+    ],
+  },
+  {
+    id: "find.hits",
+    frames: [
+      {
+        args: {
+          path: "app",
+          pattern: "*.swift",
+        },
+        toolCallId: "call_find_hits",
+        toolName: "find",
+        type: "tool_execution_start",
+      },
+      {
+        isError: false,
+        result: {
+          content: [
+            {
+              text: "app/A.swift\napp/B.swift",
+              type: "text",
+            },
+          ],
+        },
+        toolCallId: "call_find_hits",
+        toolName: "find",
+        type: "tool_execution_end",
+      },
+    ],
+  },
+  {
+    id: "codemode.completed",
+    frames: [
+      {
+        args: {
+          code: "return await tools.github_get_latest_release({repo: 'x'})",
+        },
+        toolCallId: "call_codemode_completed",
+        toolName: "codemode",
+        type: "tool_execution_start",
+      },
+      {
+        isError: false,
+        result: {
+          content: [
+            {
+              text: "Script completed\nWall time 0.9 seconds\nOutput:\n",
+              type: "text",
             },
             {
-              "text": "{\"tag_name\":\"v1\"}",
-              "type": "text"
-            }
+              text: '{"tag_name":"v1"}',
+              type: "text",
+            },
           ],
-          "details": {
-            "calls": [
+          details: {
+            calls: [
               {
-                "args": "{\"repo\":\"x\"}",
-                "durationMs": 420,
-                "id": "call_cm/1",
-                "name": "github_get_latest_release",
-                "status": "ok"
-              }
-            ]
-          }
+                args: '{"repo":"x"}',
+                durationMs: 420,
+                id: "call_cm/1",
+                name: "github_get_latest_release",
+                status: "ok",
+              },
+            ],
+          },
         },
-        "toolCallId": "call_codemode_completed",
-        "toolName": "codemode",
-        "type": "tool_execution_end"
-      }
-    ]
+        toolCallId: "call_codemode_completed",
+        toolName: "codemode",
+        type: "tool_execution_end",
+      },
+    ],
   },
   {
-    "id": "mcp.call",
-    "frames": [
+    id: "mcp.call",
+    frames: [
       {
-        "args": {
-          "args": "{}",
-          "tool": "cribsheet_note_lookup"
+        args: {
+          args: "{}",
+          tool: "cribsheet_note_lookup",
         },
-        "toolCallId": "call_mcp_call",
-        "toolName": "mcp",
-        "type": "tool_execution_start"
+        toolCallId: "call_mcp_call",
+        toolName: "mcp",
+        type: "tool_execution_start",
       },
       {
-        "isError": false,
-        "result": {
-          "content": [
+        isError: false,
+        result: {
+          content: [
             {
-              "text": "[{\"relpath\":\"a.md\"}]",
-              "type": "text"
-            }
+              text: '[{"relpath":"a.md"}]',
+              type: "text",
+            },
           ],
-          "details": {
-            "mode": "call",
-            "server": "cribsheet",
-            "tool": "cribsheet_note_lookup"
-          }
+          details: {
+            mode: "call",
+            server: "cribsheet",
+            tool: "cribsheet_note_lookup",
+          },
         },
-        "toolCallId": "call_mcp_call",
-        "toolName": "mcp",
-        "type": "tool_execution_end"
-      }
-    ]
+        toolCallId: "call_mcp_call",
+        toolName: "mcp",
+        type: "tool_execution_end",
+      },
+    ],
   },
   {
-    "id": "subagent.ok",
-    "frames": [
+    id: "subagent.ok",
+    frames: [
       {
-        "args": {
-          "description": "review",
-          "prompt": "…"
+        args: {
+          description: "review",
+          prompt: "…",
         },
-        "toolCallId": "call_subagent_ok",
-        "toolName": "subagent",
-        "type": "tool_execution_start"
+        toolCallId: "call_subagent_ok",
+        toolName: "subagent",
+        type: "tool_execution_start",
       },
       {
-        "isError": false,
-        "result": {
-          "content": [
+        isError: false,
+        result: {
+          content: [
             {
-              "text": "**Verdict: ready.**\n\n- one\n- two",
-              "type": "text"
-            }
+              text: "**Verdict: ready.**\n\n- one\n- two",
+              type: "text",
+            },
           ],
-          "details": {
-            "description": "review",
-            "displayName": "Agent",
-            "durationMs": 5000,
-            "status": "completed",
-            "subagentType": "general-purpose",
-            "tokens": "10k",
-            "toolUses": 3
-          }
+          details: {
+            description: "review",
+            displayName: "Agent",
+            durationMs: 5000,
+            status: "completed",
+            subagentType: "general-purpose",
+            tokens: "10k",
+            toolUses: 3,
+          },
         },
-        "toolCallId": "call_subagent_ok",
-        "toolName": "subagent",
-        "type": "tool_execution_end"
-      }
-    ]
+        toolCallId: "call_subagent_ok",
+        toolName: "subagent",
+        type: "tool_execution_end",
+      },
+    ],
   },
   {
-    "id": "web_fetch.ok",
-    "frames": [
+    id: "web_fetch.ok",
+    frames: [
       {
-        "args": {
-          "url": "https://x.dev"
+        args: {
+          url: "https://x.dev",
         },
-        "toolCallId": "call_web_fetch_ok",
-        "toolName": "web_fetch",
-        "type": "tool_execution_start"
+        toolCallId: "call_web_fetch_ok",
+        toolName: "web_fetch",
+        type: "tool_execution_start",
       },
       {
-        "isError": false,
-        "result": {
-          "content": [
+        isError: false,
+        result: {
+          content: [
             {
-              "text": "**Fetched:** https://x.dev\n**Content-Type:** text/html\n\n# Title",
-              "type": "text"
-            }
+              text: "**Fetched:** https://x.dev\n**Content-Type:** text/html\n\n# Title",
+              type: "text",
+            },
           ],
-          "details": {
-            "contentType": "text/html",
-            "url": "https://x.dev"
-          }
+          details: {
+            contentType: "text/html",
+            url: "https://x.dev",
+          },
         },
-        "toolCallId": "call_web_fetch_ok",
-        "toolName": "web_fetch",
-        "type": "tool_execution_end"
-      }
-    ]
-  }
+        toolCallId: "call_web_fetch_ok",
+        toolName: "web_fetch",
+        type: "tool_execution_end",
+      },
+    ],
+  },
 ]

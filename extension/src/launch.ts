@@ -1,6 +1,13 @@
 import { spawn, spawnSync, execFile } from "node:child_process"
 import { basename, dirname, join, resolve } from "node:path"
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs"
 import { homedir } from "node:os"
 import { loadConfig } from "./config.js"
 import { unbienStateHome } from "./paths.js"
@@ -150,15 +157,7 @@ function _safeHerdrName(name: string | undefined, fallback: string): string {
  *  fail before this hit the pane. ARRAY (never a shell string) so
  *  cwd/label can't inject. Exported for tests. */
 export function _buildHerdrWorkspaceArgs(label: string, cwd: string): string[] {
-  return [
-    "workspace",
-    "create",
-    "--cwd",
-    cwd,
-    "--label",
-    label,
-    "--no-focus",
-  ]
+  return ["workspace", "create", "--cwd", cwd, "--label", label, "--no-focus"]
 }
 
 /** argv for exec-launching `pi` as a named herdr agent in an existing pane —
@@ -171,7 +170,16 @@ export function _buildHerdrAgentStartArgs(
   extraArgv: string[] = [],
 ): string[] {
   const passthrough = extraArgv.length > 0 ? ["--", ...extraArgv] : []
-  return ["agent", "start", agentName, "--kind", "pi", "--pane", paneId, ...passthrough]
+  return [
+    "agent",
+    "start",
+    agentName,
+    "--kind",
+    "pi",
+    "--pane",
+    paneId,
+    ...passthrough,
+  ]
 }
 
 /** Extract `.result.root_pane.pane_id` from `herdr workspace create`'s
@@ -209,10 +217,15 @@ function _execFileCapture(
   opts: { env?: NodeJS.ProcessEnv; timeout?: number } = {},
 ): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile(cmd, args, { timeout: opts.timeout ?? 15_000, env: opts.env }, (err, stdout) => {
-      if (err) reject(err)
-      else resolve(stdout)
-    })
+    execFile(
+      cmd,
+      args,
+      { timeout: opts.timeout ?? 15_000, env: opts.env },
+      (err, stdout) => {
+        if (err) reject(err)
+        else resolve(stdout)
+      },
+    )
   })
 }
 
@@ -337,7 +350,10 @@ function isLaunchableDir(path: string): boolean {
 }
 
 /** Immediate child directories of one root, in the order an app can render them. */
-function childDirs(root: string, limit: number): { list: LaunchDirOption[]; truncated: boolean } {
+function childDirs(
+  root: string,
+  limit: number,
+): { list: LaunchDirOption[]; truncated: boolean } {
   // Filter by name/type first (cheap), sort, then statSync ONLY what is shown. Counting
   // the raw readdir entries for the truncation call — which this first did — reported a
   // root holding one project plus a `.git` as "truncated, first 60".
@@ -374,8 +390,10 @@ export function launchDirOptions(
   dirs: "*" | string[] | undefined,
   limit: number = LAUNCH_DIRS_CHILD_LIMIT,
 ): LaunchDirOptions {
-  if (dirs === undefined || dirs === "*") return { wildcard: true, locked: false, roots: [] }
-  if (!Array.isArray(dirs) || dirs.length === 0) return { wildcard: false, locked: true, roots: [] }
+  if (dirs === undefined || dirs === "*")
+    return { wildcard: true, locked: false, roots: [] }
+  if (!Array.isArray(dirs) || dirs.length === 0)
+    return { wildcard: false, locked: true, roots: [] }
 
   const roots: LaunchDirRootOption[] = []
   for (const configured of dirs) {
@@ -466,7 +484,10 @@ export async function backendUnavailable(
   if (backend === "rex") return rexUnavailable()
   return _backendAvailable(backend)
     ? null
-    : { code: "backend_missing", message: `launch backend '${backend}' is not installed` }
+    : {
+        code: "backend_missing",
+        message: `launch backend '${backend}' is not installed`,
+      }
 }
 
 /** The tail of `text`: its last `lines` non-empty-at-end lines. */
@@ -488,7 +509,11 @@ export async function launchSession(
   onLater?: (result: LaunchResult) => void,
 ): Promise<LaunchResult> {
   if (!existsSync(req.cwd) || !statSync(req.cwd).isDirectory()) {
-    return { ok: false, code: "cwd_missing", message: `Directory does not exist: ${req.cwd}` }
+    return {
+      ok: false,
+      code: "cwd_missing",
+      message: `Directory does not exist: ${req.cwd}`,
+    }
   }
   const configured = configuredBackend()
   let backend = configured
@@ -496,7 +521,10 @@ export async function launchSession(
   const unavailable = await backendUnavailable(configured)
   if (unavailable) {
     const fallback = configuredFallback()
-    const fallbackProblem = fallback && fallback !== configured ? await backendUnavailable(fallback) : null
+    const fallbackProblem =
+      fallback && fallback !== configured
+        ? await backendUnavailable(fallback)
+        : null
     if (!fallback || fallback === configured || fallbackProblem) {
       return {
         ok: false,
@@ -509,10 +537,13 @@ export async function launchSession(
     }
     backend = fallback
     fellBack = { from: configured, reason: unavailable.message }
-    launcherLog(`launch: '${configured}' unavailable (${unavailable.message}); falling back to '${fallback}'`)
+    launcherLog(
+      `launch: '${configured}' unavailable (${unavailable.message}); falling back to '${fallback}'`,
+    )
   }
   const later = onLater
-    ? (r: LaunchResult) => onLater({ ...r, ...(fellBack ? { fell_back: fellBack } : {}) })
+    ? (r: LaunchResult) =>
+        onLater({ ...r, ...(fellBack ? { fell_back: fellBack } : {}) })
     : undefined
   let result: LaunchResult
   try {
@@ -533,14 +564,22 @@ export async function launchSession(
 // ── herdr ───────────────────────────────────────────────────────────────────
 
 async function launchHerdr(req: LaunchRequest): Promise<LaunchResult> {
-  const agentName = _safeHerdrName(req.name, `pi-${basename(req.cwd) || "session"}`)
+  const agentName = _safeHerdrName(
+    req.name,
+    `pi-${basename(req.cwd) || "session"}`,
+  )
   // Resume parity with tmux: herdr passes trailing argv after `--`
   // UNCHANGED to the kind's executable, so `pi --session <id>` reaches pi.
   const resumeArgv =
     typeof req.resume === "string" && req.resume.trim().length > 0
       ? ["--session", req.resume.trim()]
       : []
-  const failure = await _launchHerdr(req.cwd, agentName, req.launchReq, resumeArgv)
+  const failure = await _launchHerdr(
+    req.cwd,
+    agentName,
+    req.launchReq,
+    resumeArgv,
+  )
   return failure
     ? { ok: false, backend: "herdr", code: "spawn_failed", message: failure }
     : { ok: true, backend: "herdr" }
@@ -581,7 +620,18 @@ function _loginShellRun(
  *  invocation: the chained set-option applies to the new window before its
  *  command can exit. Exported for tests. */
 export function _withWindowIdAndRemain(argv: string[]): string[] {
-  return [argv[0] ?? "", "-P", "-F", "#{window_id}", ...argv.slice(1), ";", "set-option", "-w", "remain-on-exit", "on"]
+  return [
+    argv[0] ?? "",
+    "-P",
+    "-F",
+    "#{window_id}",
+    ...argv.slice(1),
+    ";",
+    "set-option",
+    "-w",
+    "remain-on-exit",
+    "on",
+  ]
 }
 
 async function launchTmux(
@@ -600,7 +650,8 @@ async function launchTmux(
   // joins trailing argv with spaces into a single shell command, so the name,
   // resume and launchReq ride inside it, POSIX-quoted (injection-safe).
   const sessionExists =
-    (await _loginShellRun(`exec tmux has-session -t ${q(session)}`, 5_000)).code === 0
+    (await _loginShellRun(`exec tmux has-session -t ${q(session)}`, 5_000))
+      .code === 0
   const piTail = [
     ...(name ? [`-n`, q(name)] : []),
     ...(resume ? [`--session`, q(resume)] : []),
@@ -613,11 +664,21 @@ async function launchTmux(
   const extraArgs = (loadConfig().launch?.shell_args ?? ["-l"]).map(q).join(" ")
   const commandArgv = [`${q(_launchShell())} ${extraArgs} -c ${q(inner)}`]
   const argv = _withWindowIdAndRemain(
-    _buildTmuxLaunchArgs(session, windowName, cwd, sessionExists, name, resume, commandArgv),
+    _buildTmuxLaunchArgs(
+      session,
+      windowName,
+      cwd,
+      sessionExists,
+      name,
+      resume,
+      commandArgv,
+    ),
   )
   const run = await _loginShellRun(`exec tmux ${argv.map(q).join(" ")}`)
   if (run.code !== 0) {
-    const detail = run.stderr.trim().slice(0, 400) || `tmux exited with code ${String(run.code)}`
+    const detail =
+      run.stderr.trim().slice(0, 400) ||
+      `tmux exited with code ${String(run.code)}`
     launcherLog(`launch tmux failed: ${detail}`)
     return { ok: false, backend: "tmux", code: "spawn_failed", message: detail }
   }
@@ -659,7 +720,10 @@ export function _paneProbe(
 /** After EARLY_EXIT_WINDOW_MS: a dead pane means pi exited early. Report it
  *  with the pane's output and close the window; a live pane stops keeping
  *  itself after exit (pi's normal exit closes the window, as before). */
-function _watchTmuxWindow(windowId: string, onLater?: (result: LaunchResult) => void): void {
+function _watchTmuxWindow(
+  windowId: string,
+  onLater?: (result: LaunchResult) => void,
+): void {
   const timer = setTimeout(() => {
     void (async () => {
       const panes = await _loginShellRun(
@@ -676,15 +740,26 @@ function _watchTmuxWindow(windowId: string, onLater?: (result: LaunchResult) => 
         return
       }
       if (!probe.dead) {
-        await _loginShellRun(`exec tmux set-option -w -t ${q(windowId)} remain-on-exit off`, 5_000)
+        await _loginShellRun(
+          `exec tmux set-option -w -t ${q(windowId)} remain-on-exit off`,
+          5_000,
+        )
         return
       }
-      const captured = await _loginShellRun(`exec tmux capture-pane -p -t ${q(windowId)}`, 5_000)
+      const captured = await _loginShellRun(
+        `exec tmux capture-pane -p -t ${q(windowId)}`,
+        5_000,
+      )
       const output = _outputTail(
-        captured.stdout.split("\n").filter((l) => !/^Pane is dead \(/.test(l)).join("\n"),
+        captured.stdout
+          .split("\n")
+          .filter((l) => !/^Pane is dead \(/.test(l))
+          .join("\n"),
       )
       await _loginShellRun(`exec tmux kill-window -t ${q(windowId)}`, 5_000)
-      launcherLog(`launch tmux: pi exited early (status ${probe.status ?? "?"}): ${output.slice(-400)}`)
+      launcherLog(
+        `launch tmux: pi exited early (status ${probe.status ?? "?"}): ${output.slice(-400)}`,
+      )
       onLater?.({
         ok: false,
         backend: "tmux",
@@ -738,28 +813,50 @@ export function _rexBinary(): string | null {
  *  launch cwd, allow-list and pairing all belong to this machine. Null when
  *  the CLI's own default applies (Linux, nothing configured). */
 export function _rexEndpoint(): { endpoint: string | null; error?: string } {
-  const configured = (loadConfig().launch?.rex_server ?? process.env.REX_SERVER ?? "").trim()
+  const configured = (
+    loadConfig().launch?.rex_server ??
+    process.env.REX_SERVER ??
+    ""
+  ).trim()
   if (configured) {
     return configured.startsWith("unix://")
       ? { endpoint: configured }
-      : { endpoint: null, error: `launch.rex_server must be a local unix:// socket, not '${configured}'` }
+      : {
+          endpoint: null,
+          error: `launch.rex_server must be a local unix:// socket, not '${configured}'`,
+        }
   }
   if (process.platform === "darwin") {
-    const sock = join(homedir(), "Library", "Application Support", "rex", "server.sock")
-    return { endpoint: `unix://${sock.split("/").map(encodeURIComponent).join("/")}` }
+    const sock = join(
+      homedir(),
+      "Library",
+      "Application Support",
+      "rex",
+      "server.sock",
+    )
+    return {
+      endpoint: `unix://${sock.split("/").map(encodeURIComponent).join("/")}`,
+    }
   }
   return { endpoint: null }
 }
 
 /** Global args every rex call starts with. Exported for tests. */
 export function _rexGlobalArgs(endpoint: string | null): string[] {
-  return ["--autostart=false", ...(endpoint ? ["-S", endpoint] : []), "--timeout", "10s"]
+  return [
+    "--autostart=false",
+    ...(endpoint ? ["-S", endpoint] : []),
+    "--timeout",
+    "10s",
+  ]
 }
 
 /** A window label from the launch name (Rex allows any text up to 128
  *  characters; a leading `-` would read as a flag). Exported for tests. */
 export function _rexLabel(name: string | undefined, cwd: string): string {
-  const base = (name ?? "").replace(/[\r\n\t]+/g, " ").trim() || `pi-${basename(cwd) || "session"}`
+  const base =
+    (name ?? "").replace(/[\r\n\t]+/g, " ").trim() ||
+    `pi-${basename(cwd) || "session"}`
   return base.replace(/^-+/, "").slice(0, 128) || "pi"
 }
 
@@ -782,7 +879,8 @@ export function _rexWindowFlags(cwd: string): string[] {
   const launch = loadConfig().launch
   const shell = launch?.shell?.trim()
   return [
-    "-c", cwd,
+    "-c",
+    cwd,
     "--keep-open",
     ...(shell ? [`--shell=${shell}`] : []),
     ...((launch?.shell_args ?? []).includes("-i") ? ["--interactive"] : []),
@@ -791,17 +889,46 @@ export function _rexWindowFlags(cwd: string): string[] {
 }
 
 /** argv to create the launcher's Rex session with pi as its first window. */
-export function _buildRexNewArgs(session: string, label: string, req: LaunchRequest): string[] {
-  return ["new", session, `--window=${label}`, ..._rexWindowFlags(req.cwd), "--", ..._rexPiArgv(req)]
+export function _buildRexNewArgs(
+  session: string,
+  label: string,
+  req: LaunchRequest,
+): string[] {
+  return [
+    "new",
+    session,
+    `--window=${label}`,
+    ..._rexWindowFlags(req.cwd),
+    "--",
+    ..._rexPiArgv(req),
+  ]
 }
 
 /** argv to add pi as a window of the launcher's session, without focus. */
-export function _buildRexWindowArgs(sessionId: string, label: string, req: LaunchRequest): string[] {
-  return ["window", "new", "-s", sessionId, label, "--focus=false", ..._rexWindowFlags(req.cwd), "--", ..._rexPiArgv(req)]
+export function _buildRexWindowArgs(
+  sessionId: string,
+  label: string,
+  req: LaunchRequest,
+): string[] {
+  return [
+    "window",
+    "new",
+    "-s",
+    sessionId,
+    label,
+    "--focus=false",
+    ..._rexWindowFlags(req.cwd),
+    "--",
+    ..._rexPiArgv(req),
+  ]
 }
 
 /** The ids `rex new --json` / `rex window new --json` print. */
-export function _rexIdsFromJson(stdout: string): { sessionId?: string; windowId?: string; blockId?: string } {
+export function _rexIdsFromJson(stdout: string): {
+  sessionId?: string
+  windowId?: string
+  blockId?: string
+} {
   try {
     const j = JSON.parse(stdout) as {
       session_id?: unknown
@@ -810,7 +937,8 @@ export function _rexIdsFromJson(stdout: string): { sessionId?: string; windowId?
       initial_windows?: { window_id?: unknown; block_ids?: unknown }[]
     }
     const first = j.initial_windows?.[0]
-    const windowId = typeof j.window_id === "string" ? j.window_id : first?.window_id
+    const windowId =
+      typeof j.window_id === "string" ? j.window_id : first?.window_id
     const blocks = Array.isArray(j.block_ids) ? j.block_ids : first?.block_ids
     const blockId = Array.isArray(blocks) ? blocks[0] : undefined
     return {
@@ -829,21 +957,37 @@ interface RexRun {
   stderr: string
 }
 
-function _rexRun(bin: string, endpoint: string | null, args: string[], timeoutMs = 15_000): Promise<RexRun> {
+function _rexRun(
+  bin: string,
+  endpoint: string | null,
+  args: string[],
+  timeoutMs = 15_000,
+): Promise<RexRun> {
   return new Promise((resolveRun) => {
-    execFile(bin, [..._rexGlobalArgs(endpoint), ...args], { timeout: timeoutMs }, (err, stdout, stderr) => {
-      const exitCode = (err as { code?: unknown } | null)?.code
-      let code = 0
-      if (err) code = typeof exitCode === "number" ? exitCode : -1
-      resolveRun({ code, stdout: String(stdout), stderr: String(stderr) })
-    })
+    execFile(
+      bin,
+      [..._rexGlobalArgs(endpoint), ...args],
+      { timeout: timeoutMs },
+      (err, stdout, stderr) => {
+        const exitCode = (err as { code?: unknown } | null)?.code
+        let code = 0
+        if (err) code = typeof exitCode === "number" ? exitCode : -1
+        resolveRun({ code, stdout: String(stdout), stderr: String(stderr) })
+      },
+    )
   })
 }
 
-async function rexUnavailable(): Promise<{ code: LaunchErrorCode; message: string } | null> {
+async function rexUnavailable(): Promise<{
+  code: LaunchErrorCode
+  message: string
+} | null> {
   const bin = _rexBinary()
   if (!bin) {
-    return { code: "backend_missing", message: "Rex is not installed (no rex on PATH or in the Rex app)" }
+    return {
+      code: "backend_missing",
+      message: "Rex is not installed (no rex on PATH or in the Rex app)",
+    }
   }
   const { endpoint, error } = _rexEndpoint()
   if (error) return { code: "backend_unavailable", message: error }
@@ -851,7 +995,10 @@ async function rexUnavailable(): Promise<{ code: LaunchErrorCode; message: strin
   if (who.code !== 0) {
     return {
       code: "backend_unavailable",
-      message: (who.stderr.trim().replace(/^Error:\s*/, "") || "the Rex server did not answer").slice(0, 300),
+      message: (
+        who.stderr.trim().replace(/^Error:\s*/, "") ||
+        "the Rex server did not answer"
+      ).slice(0, 300),
     }
   }
   return null
@@ -871,9 +1018,15 @@ function _rexStatePath(): string {
 
 function _readRexState(): RexLaunchState | null {
   try {
-    const raw = JSON.parse(readFileSync(_rexStatePath(), "utf8")) as Partial<RexLaunchState>
+    const raw = JSON.parse(
+      readFileSync(_rexStatePath(), "utf8"),
+    ) as Partial<RexLaunchState>
     return typeof raw.session_id === "string" && typeof raw.host_id === "string"
-      ? { endpoint: raw.endpoint ?? null, host_id: raw.host_id, session_id: raw.session_id }
+      ? {
+          endpoint: raw.endpoint ?? null,
+          host_id: raw.host_id,
+          session_id: raw.session_id,
+        }
       : null
   } catch {
     return null
@@ -883,7 +1036,9 @@ function _readRexState(): RexLaunchState | null {
 function _writeRexState(state: RexLaunchState): void {
   try {
     mkdirSync(dirname(_rexStatePath()), { recursive: true })
-    writeFileSync(_rexStatePath(), JSON.stringify(state, null, 2), { mode: 0o600 })
+    writeFileSync(_rexStatePath(), JSON.stringify(state, null, 2), {
+      mode: 0o600,
+    })
   } catch (err) {
     launcherLog(`rex: could not save the session id: ${String(err)}`)
   }
@@ -893,7 +1048,9 @@ function _writeRexState(state: RexLaunchState): void {
  *  stored session is not trusted). */
 function _rexHostId(whoamiJson: string): string {
   try {
-    return String((JSON.parse(whoamiJson) as { host_id?: unknown }).host_id ?? "")
+    return String(
+      (JSON.parse(whoamiJson) as { host_id?: unknown }).host_id ?? "",
+    )
   } catch {
     return ""
   }
@@ -903,7 +1060,12 @@ function _rexHostId(whoamiJson: string): string {
  *  list order. Exported for tests. */
 export function _rexSessionsLabelled(lsJson: string, label: string): string[] {
   try {
-    const sessions = (JSON.parse(lsJson) as { sessions?: { session_id?: unknown; label?: unknown }[] }).sessions ?? []
+    const sessions =
+      (
+        JSON.parse(lsJson) as {
+          sessions?: { session_id?: unknown; label?: unknown }[]
+        }
+      ).sessions ?? []
     return sessions
       .filter((x) => x.label === label && typeof x.session_id === "string")
       .map((x) => x.session_id as string)
@@ -915,14 +1077,22 @@ export function _rexSessionsLabelled(lsJson: string, label: string): string[] {
 /** The session labelled `label` on this server: the one last used when
  *  several share it, else the first listed; null when none does. */
 async function _rexSessionByLabel(
-  bin: string, endpoint: string | null, hostId: string, label: string,
+  bin: string,
+  endpoint: string | null,
+  hostId: string,
+  label: string,
 ): Promise<string | null> {
   const ls = await _rexRun(bin, endpoint, ["ls", "--json"])
   if (ls.code !== 0) return null
   const matches = _rexSessionsLabelled(ls.stdout, label)
   const stored = _readRexState()
-  if (stored && hostId && stored.host_id === hostId && stored.endpoint === endpoint &&
-      matches.includes(stored.session_id)) {
+  if (
+    stored &&
+    hostId &&
+    stored.host_id === hostId &&
+    stored.endpoint === endpoint &&
+    matches.includes(stored.session_id)
+  ) {
     return stored.session_id
   }
   return matches[0] ?? null
@@ -931,18 +1101,33 @@ async function _rexSessionByLabel(
 /** One Rex launch at a time, so two first launches create one session. */
 let rexLaunchQueue: Promise<unknown> = Promise.resolve()
 
-async function launchRex(req: LaunchRequest, onLater?: (result: LaunchResult) => void): Promise<LaunchResult> {
+async function launchRex(
+  req: LaunchRequest,
+  onLater?: (result: LaunchResult) => void,
+): Promise<LaunchResult> {
   const run = rexLaunchQueue.then(() => _launchRexNow(req, onLater))
   rexLaunchQueue = run.catch(() => undefined)
   return run
 }
 
-async function _launchRexNow(req: LaunchRequest, onLater?: (result: LaunchResult) => void): Promise<LaunchResult> {
+async function _launchRexNow(
+  req: LaunchRequest,
+  onLater?: (result: LaunchResult) => void,
+): Promise<LaunchResult> {
   const bin = _rexBinary()
-  if (!bin) return { ok: false, backend: "rex", code: "backend_missing", message: "Rex is not installed" }
+  if (!bin)
+    return {
+      ok: false,
+      backend: "rex",
+      code: "backend_missing",
+      message: "Rex is not installed",
+    }
   const { endpoint } = _rexEndpoint()
   const fail = (r: RexRun, what: string): LaunchResult => {
-    const detail = (r.stderr.trim().replace(/^Error:\s*/, "") || `${what} exited with code ${r.code}`).slice(0, 400)
+    const detail = (
+      r.stderr.trim().replace(/^Error:\s*/, "") ||
+      `${what} exited with code ${r.code}`
+    ).slice(0, 400)
     launcherLog(`launch rex ${what} failed: ${detail}`)
     return { ok: false, backend: "rex", code: "spawn_failed", message: detail }
   }
@@ -950,22 +1135,46 @@ async function _launchRexNow(req: LaunchRequest, onLater?: (result: LaunchResult
   if (who.code !== 0) return fail(who, "whoami")
   const hostId = _rexHostId(who.stdout)
   const label = _rexLabel(req.name, req.cwd)
-  const sessionLabel = (loadConfig().launch?.rex_session ?? "").trim() || "un-bien"
-  const sessionId = await _rexSessionByLabel(bin, endpoint, hostId, sessionLabel)
+  const sessionLabel =
+    (loadConfig().launch?.rex_session ?? "").trim() || "un-bien"
+  const sessionId = await _rexSessionByLabel(
+    bin,
+    endpoint,
+    hostId,
+    sessionLabel,
+  )
   let ids: ReturnType<typeof _rexIdsFromJson>
   if (sessionId) {
-    const made = await _rexRun(bin, endpoint, _buildRexWindowArgs(sessionId, label, req))
+    const made = await _rexRun(
+      bin,
+      endpoint,
+      _buildRexWindowArgs(sessionId, label, req),
+    )
     if (made.code !== 0) return fail(made, "window new")
     ids = { sessionId, ..._rexIdsFromJson(made.stdout) }
   } else {
-    const made = await _rexRun(bin, endpoint, _buildRexNewArgs(sessionLabel, label, req))
+    const made = await _rexRun(
+      bin,
+      endpoint,
+      _buildRexNewArgs(sessionLabel, label, req),
+    )
     if (made.code !== 0) return fail(made, "new")
     ids = _rexIdsFromJson(made.stdout)
   }
-  if (ids.sessionId && hostId) _writeRexState({ endpoint, host_id: hostId, session_id: ids.sessionId })
-  launcherLog(`launch rex: '${label}' in ${ids.sessionId ?? "?"} (window ${ids.windowId ?? "?"})`)
+  if (ids.sessionId && hostId)
+    _writeRexState({ endpoint, host_id: hostId, session_id: ids.sessionId })
+  launcherLog(
+    `launch rex: '${label}' in ${ids.sessionId ?? "?"} (window ${ids.windowId ?? "?"})`,
+  )
   if (ids.sessionId && ids.windowId && ids.blockId) {
-    _watchRexBlock(bin, endpoint, ids.sessionId, ids.windowId, ids.blockId, onLater)
+    _watchRexBlock(
+      bin,
+      endpoint,
+      ids.sessionId,
+      ids.windowId,
+      ids.blockId,
+      onLater,
+    )
   }
   return { ok: true, backend: "rex" }
 }
@@ -998,15 +1207,33 @@ function _watchRexBlock(
 ): void {
   void (async () => {
     const early = await _rexRun(
-      bin, endpoint,
-      ["wait", blockId, "-s", sessionId, "--for", `${Math.round(EARLY_EXIT_WINDOW_MS / 1000)}s`, "--json"],
+      bin,
+      endpoint,
+      [
+        "wait",
+        blockId,
+        "-s",
+        sessionId,
+        "--for",
+        `${Math.round(EARLY_EXIT_WINDOW_MS / 1000)}s`,
+        "--json",
+      ],
       EARLY_EXIT_WINDOW_MS + 10_000,
     )
     const status = _rexExitCode(early.stdout)
     if (status !== null) {
-      const captured = await _rexRun(bin, endpoint, ["capture", "-s", sessionId, "-b", blockId, "--trim"])
+      const captured = await _rexRun(bin, endpoint, [
+        "capture",
+        "-s",
+        sessionId,
+        "-b",
+        blockId,
+        "--trim",
+      ])
       const output = _outputTail(captured.stdout)
-      launcherLog(`launch rex: pi exited early (status ${status}): ${output.slice(-400)}`)
+      launcherLog(
+        `launch rex: pi exited early (status ${status}): ${output.slice(-400)}`,
+      )
       onLater?.({
         ok: false,
         backend: "rex",
@@ -1016,7 +1243,7 @@ function _watchRexBlock(
       })
       return
     }
-    if (!/timed out/i.test(early.stderr)) return   // the block or server went away
+    if (!/timed out/i.test(early.stderr)) return // the block or server went away
     // Still running: close the window when pi exits, as tmux does. No --for:
     // the wait lasts as long as pi (the global timeout doesn't bound events).
     const child = execFile(
@@ -1025,7 +1252,13 @@ function _watchRexBlock(
       { timeout: 0 },
       (_err, stdout) => {
         if (_rexExitCode(String(stdout)) === null) return
-        void _rexRun(bin, endpoint, ["window", "close", "-s", sessionId, windowId])
+        void _rexRun(bin, endpoint, [
+          "window",
+          "close",
+          "-s",
+          sessionId,
+          windowId,
+        ])
       },
     )
     child.unref()

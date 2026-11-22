@@ -1,5 +1,11 @@
 import { describe, expect, test } from "vitest"
-import { lstatSync, mkdtempSync, renameSync, unlinkSync, existsSync } from "node:fs"
+import {
+  lstatSync,
+  mkdtempSync,
+  renameSync,
+  unlinkSync,
+  existsSync,
+} from "node:fs"
 import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
 import { createConnection } from "node:net"
@@ -118,21 +124,21 @@ describe("leader displacement convergence", () => {
       // role flips to "follower" early in the re-election, so the honest
       // convergence signal is the roster on the CURRENT path, not a role.
       // b's socket died with a's teardown → socket-close failover → rejoins.
+      await eventually("roster lists a, b and c on one registry", async () => {
+        try {
+          const roster = await probeRoster(sock)
+          const joined = roster.join(",")
+          return (
+            joined.includes("a") && joined.includes("b") && joined.includes("c")
+          )
+        } catch {
+          return false
+        }
+      })
       await eventually(
-        "roster lists a, b and c on one registry",
-        async () => {
-          try {
-            const roster = await probeRoster(sock)
-            const joined = roster.join(",")
-            return (
-              joined.includes("a") && joined.includes("b") && joined.includes("c")
-            )
-          } catch {
-            return false
-          }
-        },
+        "a settled as follower",
+        () => a.currentRole() === "follower",
       )
-      await eventually("a settled as follower", () => a.currentRole() === "follower")
       await eventually("b rejoined", () => b.currentRole() === "follower")
       const roster = await probeRoster(sock)
       const joined = roster.join(",")

@@ -162,7 +162,11 @@ describe("routeNotify — command-feedback frames (cmd-notify- prefix)", () => {
   it("info-level cmd-notify renders as a notice (never dropped as an ack)", () => {
     expect(
       routeNotify(
-        { id: "cmd-notify-1789", notifyType: "info", message: "Session compacted." },
+        {
+          id: "cmd-notify-1789",
+          notifyType: "info",
+          message: "Session compacted.",
+        },
         () => false,
       ),
     ).toEqual({ kind: "notice", level: "info", text: "Session compacted." })
@@ -188,7 +192,10 @@ describe("routeNotify — command-feedback frames (cmd-notify- prefix)", () => {
 
   it("non-prefix info with an unshown id still drops (resolution ack)", () => {
     expect(
-      routeNotify({ id: "flow-1", notifyType: "info", message: "done" }, () => false),
+      routeNotify(
+        { id: "flow-1", notifyType: "info", message: "done" },
+        () => false,
+      ),
     ).toEqual({ kind: "drop" })
   })
 })

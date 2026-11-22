@@ -284,7 +284,7 @@ describe("resolvePiAgentDirSnapshot", () => {
     else process.env["PI_CODING_AGENT_DIR"] = SAVED
   })
 
-  test("unset in the installing shell → \"\" (not a guessed path)", () => {
+  test('unset in the installing shell → "" (not a guessed path)', () => {
     // unbienConfigHome() (paths.ts) treats "" exactly like unset and falls
     // back to ~/.pi — the same place the installing shell itself resolves
     // against — so "" reproduces that resolution exactly.
@@ -413,7 +413,9 @@ describe.skipIf(posixOnly)("linkCliBinaries / unlinkCliBinaries", () => {
     require("node:fs").symlinkSync(global, bin)
     const result = linkCliBinaries(tmpHome, fakePaths)
     expect(readlinkSync(bin)).toBe(global)
-    expect(result.log.some((l) => l.includes("installed by a package manager"))).toBe(true)
+    expect(
+      result.log.some((l) => l.includes("installed by a package manager")),
+    ).toBe(true)
   })
 
   test("link signals onPath=false when binDir is absent from PATH (typical CI)", () => {
@@ -540,7 +542,9 @@ describe("propagatedUnbienEnv (the install-time env snapshot)", () => {
   it("copies only UNBIEN_* and the service.env names (default: XDG + bun)", () => {
     const env = propagatedUnbienEnv()
     const allowed = new Set(DEFAULT_SERVICE_ENV)
-    expect(Object.keys(env).every((k) => k.startsWith("UNBIEN_") || allowed.has(k))).toBe(true)
+    expect(
+      Object.keys(env).every((k) => k.startsWith("UNBIEN_") || allowed.has(k)),
+    ).toBe(true)
     expect(env["PATH"]).toBeUndefined()
   })
 })

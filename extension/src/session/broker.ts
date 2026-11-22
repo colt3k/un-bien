@@ -486,7 +486,11 @@ export class Broker {
     } catch {
       return false
     }
-    if (!parsed || typeof parsed !== "object" || parsed.type !== "broker_ping") {
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      parsed.type !== "broker_ping"
+    ) {
       return false
     }
     const reply: Envelope = {
@@ -638,7 +642,8 @@ export class Broker {
    *  `unknown_peer` (the old name is gone). */
   private _handleRename(conn: PeerConn, msg: RenameMsg): void {
     const oldAddress = conn.address
-    const ackOld = (): void => this._sendRenameAck(conn, conn.name, conn.address)
+    const ackOld = (): void =>
+      this._sendRenameAck(conn, conn.name, conn.address)
     if (typeof msg.name !== "string" || msg.name.length === 0) {
       ackOld()
       return
@@ -664,7 +669,11 @@ export class Broker {
       identity.address,
     )
     this._broadcastSystem(
-      { type: "peer_joined", name: identity.address, address: identity.address },
+      {
+        type: "peer_joined",
+        name: identity.address,
+        address: identity.address,
+      },
       identity.address,
     )
     this._sendRenameAck(conn, identity.name, identity.address)

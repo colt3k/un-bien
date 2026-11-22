@@ -76,7 +76,9 @@ export class AppPresenceWatch<C extends object> {
     const remaining = [...this.opts.activePeers().keys()]
     if (remaining.length === 0) return
     try {
-      this.opts.send(JSON.stringify({ type: "presence_check", peers: remaining }))
+      this.opts.send(
+        JSON.stringify({ type: "presence_check", peers: remaining }),
+      )
     } catch {
       /* relay going down: the next tick asks again */
     }
@@ -93,12 +95,16 @@ export class AppPresenceWatch<C extends object> {
     if (parsed?.type !== "presence" || !Array.isArray(parsed.states)) return
     const peers = this.opts.activePeers()
     const now = this.now()
-    for (const s of parsed.states as Array<{ peer?: unknown; online?: unknown }>) {
+    for (const s of parsed.states as Array<{
+      peer?: unknown
+      online?: unknown
+    }>) {
       if (typeof s?.peer !== "string" || typeof s.online !== "boolean") continue
       const channel = peers.get(s.peer)
       if (!channel) continue
       if (s.online) this.offlineSince.delete(channel)
-      else if (!this.offlineSince.has(channel)) this.offlineSince.set(channel, now)
+      else if (!this.offlineSince.has(channel))
+        this.offlineSince.set(channel, now)
     }
   }
 }

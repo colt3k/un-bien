@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, test } from "vitest"
-import { chmodSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs"
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
@@ -18,16 +24,31 @@ import { _foreignBinOwner, unlinkCliBinaries } from "./install.js"
 describe("service env", () => {
   test("defaults to the XDG and bun variables, plus UNBIEN_SERVICE_ENV", () => {
     expect(serviceEnvNames({}, {})).toEqual([...DEFAULT_SERVICE_ENV])
-    expect(serviceEnvNames({}, { UNBIEN_SERVICE_ENV: "FOO, BAR ,FOO" })).toEqual([...DEFAULT_SERVICE_ENV, "FOO", "BAR"])
+    expect(
+      serviceEnvNames({}, { UNBIEN_SERVICE_ENV: "FOO, BAR ,FOO" }),
+    ).toEqual([...DEFAULT_SERVICE_ENV, "FOO", "BAR"])
   })
 
   test("service.env replaces the default; invalid and template-set names are dropped", () => {
-    expect(serviceEnvNames({ service: { env: ["ONLY", "PATH", "HOME", "UNBIEN_X", "bad-name"] } }, {})).toEqual(["ONLY"])
+    expect(
+      serviceEnvNames(
+        { service: { env: ["ONLY", "PATH", "HOME", "UNBIEN_X", "bad-name"] } },
+        {},
+      ),
+    ).toEqual(["ONLY"])
   })
 
   test("copies UNBIEN_* and the configured names that are set", () => {
-    const env = { UNBIEN_RELAY_BIND: "x:3000", XDG_CONFIG_HOME: "/h/.config", BUN_INSTALL: "", OTHER: "no" }
-    expect(serviceEnv({}, env)).toEqual({ UNBIEN_RELAY_BIND: "x:3000", XDG_CONFIG_HOME: "/h/.config" })
+    const env = {
+      UNBIEN_RELAY_BIND: "x:3000",
+      XDG_CONFIG_HOME: "/h/.config",
+      BUN_INSTALL: "",
+      OTHER: "no",
+    }
+    expect(serviceEnv({}, env)).toEqual({
+      UNBIEN_RELAY_BIND: "x:3000",
+      XDG_CONFIG_HOME: "/h/.config",
+    })
   })
 })
 
@@ -38,17 +59,31 @@ describe("service runtime", () => {
   chmodSync(bun, 0o755)
 
   test("absent ⇒ the installing runtime", () => {
-    expect(resolveServiceRuntime({}, { execPath: "/usr/bin/node" })).toBe("/usr/bin/node")
+    expect(resolveServiceRuntime({}, { execPath: "/usr/bin/node" })).toBe(
+      "/usr/bin/node",
+    )
   })
 
   test("a name is resolved on PATH to an absolute path", () => {
-    expect(resolveServiceRuntime({ service: { runtime: "bun" } }, { path: `/nowhere:${dir}` })).toBe(bun)
+    expect(
+      resolveServiceRuntime(
+        { service: { runtime: "bun" } },
+        { path: `/nowhere:${dir}` },
+      ),
+    ).toBe(bun)
   })
 
   test("an absolute path is used as is; a missing runtime fails the install", () => {
     expect(resolveServiceRuntime({ service: { runtime: bun } })).toBe(bun)
-    expect(() => resolveServiceRuntime({ service: { runtime: "no-such-runtime" } }, { path: dir })).toThrow(/not found on PATH/)
-    expect(() => resolveServiceRuntime({ service: { runtime: join(dir, "gone") } })).toThrow(/does not exist/)
+    expect(() =>
+      resolveServiceRuntime(
+        { service: { runtime: "no-such-runtime" } },
+        { path: dir },
+      ),
+    ).toThrow(/not found on PATH/)
+    expect(() =>
+      resolveServiceRuntime({ service: { runtime: join(dir, "gone") } }),
+    ).toThrow(/does not exist/)
   })
 })
 
@@ -56,18 +91,38 @@ describe("package manager", () => {
   test("defaults to npm; bun and pnpm use add -g", () => {
     expect(packageManager({}, null)).toBe("npm")
     expect(packageManager({ package_manager: "bun" }, null)).toBe("bun")
-    expect(globalInstallCommand("npm", "@geohar/x", null).display).toBe("npm install -g @geohar/x")
-    expect(globalInstallCommand("bun", "@geohar/x", null)).toMatchObject({ cmd: "bun", args: ["add", "-g", "@geohar/x"] })
-    expect(globalInstallCommand("pnpm", "@geohar/x", null).args).toEqual(["add", "-g", "@geohar/x"])
+    expect(globalInstallCommand("npm", "@geohar/x", null).display).toBe(
+      "npm install -g @geohar/x",
+    )
+    expect(globalInstallCommand("bun", "@geohar/x", null)).toMatchObject({
+      cmd: "bun",
+      args: ["add", "-g", "@geohar/x"],
+    })
+    expect(globalInstallCommand("pnpm", "@geohar/x", null).args).toEqual([
+      "add",
+      "-g",
+      "@geohar/x",
+    ])
   })
 
   test("un-bien.json wins; else pi's npmCommand; else npm", () => {
     const wrapped = ["bun-as-npm", "--", "bun"]
-    expect(resolvePackageManager({ package_manager: "pnpm" }, wrapped)).toEqual({ pm: "pnpm", source: "config" })
-    expect(resolvePackageManager({}, wrapped)).toEqual({ pm: "bun", source: "pi" })
-    expect(resolvePackageManager({}, null)).toEqual({ pm: "npm", source: "default" })
+    expect(resolvePackageManager({ package_manager: "pnpm" }, wrapped)).toEqual(
+      { pm: "pnpm", source: "config" },
+    )
+    expect(resolvePackageManager({}, wrapped)).toEqual({
+      pm: "bun",
+      source: "pi",
+    })
+    expect(resolvePackageManager({}, null)).toEqual({
+      pm: "npm",
+      source: "default",
+    })
     // an ambiguous wrapper is not a choice
-    expect(resolvePackageManager({}, ["wrap", "npm", "bun"])).toEqual({ pm: "npm", source: "default" })
+    expect(resolvePackageManager({}, ["wrap", "npm", "bun"])).toEqual({
+      pm: "npm",
+      source: "default",
+    })
     expect(packageManagerConfigured({}, wrapped)).toBe(true)
     expect(packageManagerConfigured({}, null)).toBe(false)
   })
@@ -78,7 +133,10 @@ describe("package manager", () => {
       cmd: "bun-as-npm",
       args: ["--", "bun", "add", "-g", "@geohar/x"],
     })
-    expect(globalInstallCommand("pnpm", "@geohar/x", wrapped)).toMatchObject({ cmd: "pnpm", args: ["add", "-g", "@geohar/x"] })
+    expect(globalInstallCommand("pnpm", "@geohar/x", wrapped)).toMatchObject({
+      cmd: "pnpm",
+      args: ["add", "-g", "@geohar/x"],
+    })
   })
 })
 
@@ -125,12 +183,16 @@ describe("unbien-admin link: which existing bins are kept", () => {
 describe("package manager global tree", () => {
   test("only an explicit package_manager counts as configured", () => {
     expect(packageManagerConfigured({}, null)).toBe(false)
-    expect(packageManagerConfigured({ package_manager: "bun" }, null)).toBe(true)
+    expect(packageManagerConfigured({ package_manager: "bun" }, null)).toBe(
+      true,
+    )
   })
   test("bun's global dir comes from bun (bunfig globalDir), else BUN_INSTALL", () => {
     const told = () => "/g/custom node_modules (12 installed)"
     expect(globalPackageRoot("bun", {}, told)).toBe("/g/custom/node_modules")
-    expect(globalPackageRoot("bun", { BUN_INSTALL: "/b" }, () => null)).toBe("/b/install/global/node_modules")
+    expect(globalPackageRoot("bun", { BUN_INSTALL: "/b" }, () => null)).toBe(
+      "/b/install/global/node_modules",
+    )
   })
 })
 

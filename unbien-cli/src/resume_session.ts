@@ -1,4 +1,11 @@
-import { requireMachine, connectControlRoom, launchAndWait, waitForRoom, handoffToConnect, requireMachineOrRemote } from "./machine.js"
+import {
+  requireMachine,
+  connectControlRoom,
+  launchAndWait,
+  waitForRoom,
+  handoffToConnect,
+  requireMachineOrRemote,
+} from "./machine.js"
 import { pickRaw } from "./picker.js"
 import { Shell } from "./tui.js"
 
@@ -47,7 +54,9 @@ async function listSessions(
         handle(frame)
       } catch (err) {
         // A malformed frame must not crash the verb mid-wait.
-        console.error(`frame handling error (ignored): ${String(err).slice(0, 120)}`)
+        console.error(
+          `frame handling error (ignored): ${String(err).slice(0, 120)}`,
+        )
       }
     }
     function handle(frame: Record<string, unknown>): void {
@@ -58,14 +67,20 @@ async function listSessions(
         // must reach the user — an empty list would read as "nothing stored".
         settled = true
         client.off("ub", onUb)
-        console.error(`machine rejected the listing: ${String(frame.message ?? frame.code)}`)
+        console.error(
+          `machine rejected the listing: ${String(frame.message ?? frame.code)}`,
+        )
         resolve([])
         return
       }
       if (type === "sessions_list_result" && frame.in_reply_to === id) {
         settled = true
         client.off("ub", onUb)
-        resolve(Array.isArray(frame.sessions) ? (frame.sessions as StoredSession[]) : [])
+        resolve(
+          Array.isArray(frame.sessions)
+            ? (frame.sessions as StoredSession[])
+            : [],
+        )
       }
     }
     // The reply is a ub-FRAMED envelope — SessionClient emits those on
@@ -126,11 +141,12 @@ export async function run(argv: string[]): Promise<void> {
   // Default GLOBAL: bare `resume-session` must not depend on the daemon's
   // cwd (under launchd that's "/", and scoping to it is meaningless — and
   // was crashing the daemon's lister). --dir opts into directory scope.
-  const scope: "cwd" | "all" = flags.get("dir") && !flags.get("all") ? "cwd" : "all"
+  const scope: "cwd" | "all" =
+    flags.get("dir") && !flags.get("all") ? "cwd" : "all"
   const cwd = flags.get("dir") || undefined
   const filter = flags.get("filter") || undefined
   console.error(
-    `stored sessions on ${label} (${scope === "all" ? "all directories" : cwd ?? "machine cwd"})…`,
+    `stored sessions on ${label} (${scope === "all" ? "all directories" : (cwd ?? "machine cwd")})…`,
   )
   const sessions = await listSessions(client, { scope, cwd, filter })
   if (sessions.length === 0) {
@@ -153,7 +169,8 @@ export async function run(argv: string[]): Promise<void> {
     filter: (filter, all) =>
       all.filter((it) => {
         const s = sessions.find((sess) => sess.path === it.value)
-        const hay = `${s?.name ?? ""} ${s?.summary ?? ""} ${s?.cwd ?? ""}`.toLowerCase()
+        const hay =
+          `${s?.name ?? ""} ${s?.summary ?? ""} ${s?.cwd ?? ""}`.toLowerCase()
         return hay.includes(filter.toLowerCase())
       }),
   })

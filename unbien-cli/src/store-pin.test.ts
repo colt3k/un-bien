@@ -26,7 +26,10 @@ describe("nextProxyAllowVersion (P5)", () => {
     // And the floor survives: a fresh reader (another CLI process simulation)
     // can't mint at-or-below what was already pushed.
     const floor = Number.parseInt(
-      readFileSync(join(tmpHome, ".local/state/un-bien/proxy-allow-version"), "utf8"),
+      readFileSync(
+        join(tmpHome, ".local/state/un-bien/proxy-allow-version"),
+        "utf8",
+      ),
       10,
     )
     expect(v2).toBe(floor)
@@ -119,16 +122,11 @@ describe("endpoint ranking + selector (P6 option C)", () => {
     })
     // Stub fetch: only the loopback candidate replies 200.
     const fetched: string[] = []
-    vi.stubGlobal(
-      "fetch",
-      (async (input: string | URL) => {
-        const url = String(input).replace("/health", "")
-        fetched.push(url)
-        return url === "http://127.0.0.1:3996"
-          ? { ok: true }
-          : { ok: false }
-      }) as unknown,
-    )
+    vi.stubGlobal("fetch", (async (input: string | URL) => {
+      const url = String(input).replace("/health", "")
+      fetched.push(url)
+      return url === "http://127.0.0.1:3996" ? { ok: true } : { ok: false }
+    }) as unknown)
     const chosen = await pickRelayEndpoint(
       "http://crashtest.tail8a69.ts.net:3000",
     )
@@ -138,10 +136,7 @@ describe("endpoint ranking + selector (P6 option C)", () => {
   })
 
   test("pickRelayEndpoint falls back to the seed when nothing answers", async () => {
-    vi.stubGlobal(
-      "fetch",
-      (async () => ({ ok: false })) as unknown,
-    )
+    vi.stubGlobal("fetch", (async () => ({ ok: false })) as unknown)
     const chosen = await pickRelayEndpoint("http://seed-relay:3000", 1)
     vi.unstubAllGlobals()
     expect(chosen).toBe("http://seed-relay:3000")

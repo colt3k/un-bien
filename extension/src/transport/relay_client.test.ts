@@ -216,13 +216,9 @@ describe("RelayClient", () => {
 // Loaded from the dynamic-import surface as RelayClient (the vi.mock of
 // "ws" must be active before relay_client.js first evaluates).
 
-const {
-  verifyRelayIdentityAck,
-} = await import("./relay_client.js")
+const { verifyRelayIdentityAck } = await import("./relay_client.js")
 const { ed25519Sign, ed25519Verify } = await import("../pairing/crypto.js")
-import type {
-  RelayIdentityAckFrame,
-} from "./relay_client.js"
+import type { RelayIdentityAckFrame } from "./relay_client.js"
 
 function signedAckFrame(
   kp: { secretKey: Uint8Array; publicKey: Uint8Array },
@@ -316,16 +312,15 @@ describe("relay identity ack (P7)", () => {
       expectRelayPubkey: Buffer.from(kp.publicKey).toString("base64"),
     })
     await connectWithAuth(pinned, 0x32)
-    const errorPromise = new Promise<
-      { reason: string; gotRelayPubkey?: string }
-    >((resolve) => pinned.once("relayIdentityError", resolve))
+    const errorPromise = new Promise<{
+      reason: string
+      gotRelayPubkey?: string
+    }>((resolve) => pinned.once("relayIdentityError", resolve))
     const nonce32 = Buffer.alloc(32, 0x32).toString("base64")
     currentWs().emit(
       "message",
       Buffer.from(
-        JSON.stringify(
-          signedAckFrame(attacker, nonce32, { name: "squatter" }),
-        ),
+        JSON.stringify(signedAckFrame(attacker, nonce32, { name: "squatter" })),
       ),
     )
     const err = await errorPromise

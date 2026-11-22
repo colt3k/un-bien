@@ -65,8 +65,7 @@ export type RelayRoomList =
 /** Pairing verdict from the machine — `ok` on pair_ok (with its hello),
  *  `ok:false` with the machine's detail on pair_error / timeout. */
 export type PairVerdict =
-  | { ok: true; machine: Record<string, unknown> }
-  | { ok: false; detail: string }
+  { ok: true; machine: Record<string, unknown> } | { ok: false; detail: string }
 
 /** One honest line about a non-ok session listing. */
 export function explainRoomList(result: RelayRoomList): string {
@@ -182,7 +181,9 @@ export class SessionClient extends EventEmitter<SessionClientEvents> {
         if (frame.type !== "rooms" || frame.peer !== this.invite.epk) return
         const peerRelay =
           typeof frame.peerRelay === "string" ? frame.peerRelay : undefined
-        const rooms = Array.isArray(frame.rooms) ? (frame.rooms as RoomInfo[]) : []
+        const rooms = Array.isArray(frame.rooms)
+          ? (frame.rooms as RoomInfo[])
+          : []
         // Tag each room with the peerRelay (federated sessions).
         settle(
           peerRelay
@@ -213,7 +214,8 @@ export class SessionClient extends EventEmitter<SessionClientEvents> {
         const peers = Array.isArray(frame.peers) ? frame.peers : []
         const rooms: RoomInfo[] = []
         for (const peer of peers as Record<string, unknown>[]) {
-          const relayName = typeof peer.relay_name === "string" ? peer.relay_name : "?"
+          const relayName =
+            typeof peer.relay_name === "string" ? peer.relay_name : "?"
           const remoteEpk = typeof peer.epk === "string" ? peer.epk : ""
           const peerRooms = Array.isArray(peer.rooms) ? peer.rooms : []
           for (const room of peerRooms as RoomInfo[]) {

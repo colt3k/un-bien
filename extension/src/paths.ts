@@ -89,5 +89,7 @@ export function unbienConfigHome(): string {
  * versions then already used `<PI_CODING_AGENT_DIR>/extensions`.
  */
 export function legacyUnbienConfigHome(): string | null {
-  return process.env["PI_CODING_AGENT_DIR"] ? null : join(homedir(), ".pi", "extensions")
+  return process.env["PI_CODING_AGENT_DIR"]
+    ? null
+    : join(homedir(), ".pi", "extensions")
 }

@@ -543,142 +543,139 @@ d("cross-relay federation (real extension ↔ two real relay binaries)", () => {
     }
   })
 
-  it(
-    "app on relay-a reaches the machine on relay-b and the extension replays back",
-    async () => {
-      const { appRelay, appTap, machineEpk, machineRelay } = rig
-      expect(relayA).toBeTruthy()
-      expect(relayB).toBeTruthy()
+  it("app on relay-a reaches the machine on relay-b and the extension replays back", async () => {
+    const { appRelay, appTap, machineEpk, machineRelay } = rig
+    expect(relayA).toBeTruthy()
+    expect(relayB).toBeTruthy()
 
-      try {
-        // ── Federation learning: relay-a must learn relay-b's view of the
-        // machine's room before it can route the request leg. Poll the same
-        // control frame the extension uses (`get_federated_peer_list`).
-        await vi.waitFor(
-          () => {
-            appRelay.send(JSON.stringify({ type: "get_federated_peer_list" }))
-            const hit = appTap.lines.some((line) => {
-              try {
-                const wire = JSON.parse(line) as {
-                  type?: string
-                  peers?: Array<{ epk?: string }>
-                }
-                return (
-                  wire.type === "federated_peer_list" &&
-                  Array.isArray(wire.peers) &&
-                  wire.peers.some((p) => p.epk === machineEpk)
-                )
-              } catch {
-                return false
+    try {
+      // ── Federation learning: relay-a must learn relay-b's view of the
+      // machine's room before it can route the request leg. Poll the same
+      // control frame the extension uses (`get_federated_peer_list`).
+      await vi.waitFor(
+        () => {
+          appRelay.send(JSON.stringify({ type: "get_federated_peer_list" }))
+          const hit = appTap.lines.some((line) => {
+            try {
+              const wire = JSON.parse(line) as {
+                type?: string
+                peers?: Array<{ epk?: string }>
               }
-            })
-            if (!hit) throw new Error("relay-a has not learned relay-b's rooms yet")
-          },
-          { timeout: 30_000, interval: 400 },
-        )
-
-        // ── Request leg: app → session_sync → machine, across both relays.
-        //    Inner ub envelope, base64-encoded into the opaque outer `ct`.
-        const syncOuter = (id: string) =>
-          JSON.stringify({
-            peer: machineEpk,
-            ct: Buffer.from(
-              JSON.stringify({ type: "ub", ub: { type: "session_sync", id } }),
-              "utf8",
-            ).toString("base64"),
+              return (
+                wire.type === "federated_peer_list" &&
+                Array.isArray(wire.peers) &&
+                wire.peers.some((p) => p.epk === machineEpk)
+              )
+            } catch {
+              return false
+            }
           })
+          if (!hit)
+            throw new Error("relay-a has not learned relay-b's rooms yet")
+        },
+        { timeout: 30_000, interval: 400 },
+      )
 
-        const SYNC_1 = "sync-e2e-1"
-        appRelay.send(syncOuter(SYNC_1))
-        const reply1 = await appTap.waitFor(
-          "first session_sync_end reply",
-          (line) => {
-            const outer = decodeOuter(line)
-            if (!outer) return null
-            const ub = outer.inner.ub as {
-              type?: string
-              in_reply_to?: string
-              session_name?: string
-            }
-            if (ub?.type !== "session_sync_end") return null
-            return { outer, ub }
-          },
-          20_000,
-        )
-        // The app sees the MACHINE as sender, and the REAL session_sync
-        // handler's echo of the request id + the room's display name.
-        expect(reply1.outer.peer).toBe(rig.machineEpk)
-        expect(reply1.ub.in_reply_to).toBe(SYNC_1)
-        expect(reply1.ub.session_name).toBe(MACHINE_NAME)
-        expect(typeof reply1.outer.inner.ts).toBe("number")
-
-        // ── Learned route persists: a SECOND round trip rides the same
-        //    cross-relay path (route + allow-list still good).
-        const SYNC_2 = "sync-e2e-2"
-        appRelay.send(syncOuter(SYNC_2))
-        const reply2 = await appTap.waitFor(
-          "second session_sync_end reply",
-          (line) => {
-            const outer = decodeOuter(line)
-            if (!outer) return null
-            const ub = outer.inner.ub as {
-              type?: string
-              in_reply_to?: string
-            }
-            if (ub?.type !== "session_sync_end" || !ub.in_reply_to) return null
-            if (ub.in_reply_to === SYNC_1) return null // skip a first-reply latecomer
-            return { ub }
-          },
-          20_000,
-        )
-        expect(reply2.ub.in_reply_to).toBe(SYNC_2)
-
-        // ── A SPONTANEOUS machine-originated frame still routes: the REAL
-        //    RelayClient.sendControl emits a room_meta_update; relay-b merges
-        //    it, re-pushes the room to relay-a over the peering link, and
-        //    relay-a fans a federated_peer_list carrying the NEW name.
-        machineRelay.sendControl({
-          type: "room_meta_update",
-          room_id: "main",
-          meta: { name: RENAME },
+      // ── Request leg: app → session_sync → machine, across both relays.
+      //    Inner ub envelope, base64-encoded into the opaque outer `ct`.
+      const syncOuter = (id: string) =>
+        JSON.stringify({
+          peer: machineEpk,
+          ct: Buffer.from(
+            JSON.stringify({ type: "ub", ub: { type: "session_sync", id } }),
+            "utf8",
+          ).toString("base64"),
         })
-        await vi.waitFor(
-          () => {
-            const hit = appTap.lines.some((line) => {
-              try {
-                const wire = JSON.parse(line) as {
-                  type?: string
-                  peers?: Array<{
-                    epk?: string
-                    rooms?: Array<{ room_id?: string; name?: string }>
-                  }>
-                }
-                if (wire.type !== "federated_peer_list") return false
-                return (
-                  Array.isArray(wire.peers) &&
-                  wire.peers.some(
-                    (p) =>
-                      p.epk === rig.machineEpk &&
-                      Array.isArray(p.rooms) &&
-                      p.rooms.some(
-                        (r) => r.room_id === "main" && r.name === RENAME,
-                      ),
-                  )
-                )
-              } catch {
-                return false
+
+      const SYNC_1 = "sync-e2e-1"
+      appRelay.send(syncOuter(SYNC_1))
+      const reply1 = await appTap.waitFor(
+        "first session_sync_end reply",
+        (line) => {
+          const outer = decodeOuter(line)
+          if (!outer) return null
+          const ub = outer.inner.ub as {
+            type?: string
+            in_reply_to?: string
+            session_name?: string
+          }
+          if (ub?.type !== "session_sync_end") return null
+          return { outer, ub }
+        },
+        20_000,
+      )
+      // The app sees the MACHINE as sender, and the REAL session_sync
+      // handler's echo of the request id + the room's display name.
+      expect(reply1.outer.peer).toBe(rig.machineEpk)
+      expect(reply1.ub.in_reply_to).toBe(SYNC_1)
+      expect(reply1.ub.session_name).toBe(MACHINE_NAME)
+      expect(typeof reply1.outer.inner.ts).toBe("number")
+
+      // ── Learned route persists: a SECOND round trip rides the same
+      //    cross-relay path (route + allow-list still good).
+      const SYNC_2 = "sync-e2e-2"
+      appRelay.send(syncOuter(SYNC_2))
+      const reply2 = await appTap.waitFor(
+        "second session_sync_end reply",
+        (line) => {
+          const outer = decodeOuter(line)
+          if (!outer) return null
+          const ub = outer.inner.ub as {
+            type?: string
+            in_reply_to?: string
+          }
+          if (ub?.type !== "session_sync_end" || !ub.in_reply_to) return null
+          if (ub.in_reply_to === SYNC_1) return null // skip a first-reply latecomer
+          return { ub }
+        },
+        20_000,
+      )
+      expect(reply2.ub.in_reply_to).toBe(SYNC_2)
+
+      // ── A SPONTANEOUS machine-originated frame still routes: the REAL
+      //    RelayClient.sendControl emits a room_meta_update; relay-b merges
+      //    it, re-pushes the room to relay-a over the peering link, and
+      //    relay-a fans a federated_peer_list carrying the NEW name.
+      machineRelay.sendControl({
+        type: "room_meta_update",
+        room_id: "main",
+        meta: { name: RENAME },
+      })
+      await vi.waitFor(
+        () => {
+          const hit = appTap.lines.some((line) => {
+            try {
+              const wire = JSON.parse(line) as {
+                type?: string
+                peers?: Array<{
+                  epk?: string
+                  rooms?: Array<{ room_id?: string; name?: string }>
+                }>
               }
-            })
-            if (!hit) throw new Error("renamed room meta never crossed the chain")
-          },
-          { timeout: 20_000, interval: 300 },
-        )
-      } catch (err) {
-        console.error(`[federation.e2e] relay-a log tail:\n${logTail("relay-a")}`)
-        console.error(`[federation.e2e] relay-b log tail:\n${logTail("relay-b")}`)
-        throw err
-      }
-    },
-    120_000,
-  )
+              if (wire.type !== "federated_peer_list") return false
+              return (
+                Array.isArray(wire.peers) &&
+                wire.peers.some(
+                  (p) =>
+                    p.epk === rig.machineEpk &&
+                    Array.isArray(p.rooms) &&
+                    p.rooms.some(
+                      (r) => r.room_id === "main" && r.name === RENAME,
+                    ),
+                )
+              )
+            } catch {
+              return false
+            }
+          })
+          if (!hit) throw new Error("renamed room meta never crossed the chain")
+        },
+        { timeout: 20_000, interval: 300 },
+      )
+    } catch (err) {
+      console.error(`[federation.e2e] relay-a log tail:\n${logTail("relay-a")}`)
+      console.error(`[federation.e2e] relay-b log tail:\n${logTail("relay-b")}`)
+      throw err
+    }
+  }, 120_000)
 })

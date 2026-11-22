@@ -51,8 +51,13 @@ export function resolveFederatedTarget(
 ): FederatedTarget | null {
   if (isFederatedBroadcast(to)) {
     const label = to.slice(0, to.length - ":broadcast".length)
-    const hits = [...detail].filter(([, info]) => label === "*" || info.relayName === label)
-    if (hits.length === 0) return label === "*" ? { kind: "broadcast", epks: [], relayNames: [] } : { kind: "unknown_relay", relayName: label }
+    const hits = [...detail].filter(
+      ([, info]) => label === "*" || info.relayName === label,
+    )
+    if (hits.length === 0)
+      return label === "*"
+        ? { kind: "broadcast", epks: [], relayNames: [] }
+        : { kind: "unknown_relay", relayName: label }
     return {
       kind: "broadcast",
       epks: hits.map(([epk]) => epk),
@@ -60,7 +65,8 @@ export function resolveFederatedTarget(
     }
   }
   for (const [epk, info] of detail) {
-    if (info.addresses.includes(to)) return { kind: "unicast", epk, relayName: info.relayName }
+    if (info.addresses.includes(to))
+      return { kind: "unicast", epk, relayName: info.relayName }
   }
   return null
 }
@@ -136,14 +142,23 @@ export class FederatedAcks {
     this.pending.delete(env.re)
     if (err) {
       slot.resolve({
-        status: err.reason === "unknown_peer" ? "unknown_peer" : err.reason === "offline" ? "timeout" : "denied",
+        status:
+          err.reason === "unknown_peer"
+            ? "unknown_peer"
+            : err.reason === "offline"
+              ? "timeout"
+              : "denied",
         id: env.re,
         error: `transport_error: ${err.reason}`,
         reason: err.reason,
       })
     } else {
       const target = (env.body as { target?: unknown }).target
-      slot.resolve({ status: "received", id: env.re, ...(typeof target === "string" ? { target } : {}) })
+      slot.resolve({
+        status: "received",
+        id: env.re,
+        ...(typeof target === "string" ? { target } : {}),
+      })
     }
     return true
   }
@@ -156,7 +171,11 @@ export class FederatedAcks {
 
   /** Whether an envelope is the relay's error for an ack this agent sent. */
   isErrorForOwnAck(env: FederatedEnvelope): boolean {
-    return Boolean(env.re) && asTransportErrorBody(env.body) !== null && this.sentAcks.includes(env.re as string)
+    return (
+      Boolean(env.re) &&
+      asTransportErrorBody(env.body) !== null &&
+      this.sentAcks.includes(env.re as string)
+    )
   }
 
   /** Drop every pending wait (teardown); each settles as a timeout. */

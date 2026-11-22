@@ -1,5 +1,11 @@
 import { describe, expect, test } from "vitest"
-import { chmodSync, mkdtempSync, writeFileSync, existsSync, lstatSync } from "node:fs"
+import {
+  chmodSync,
+  mkdtempSync,
+  writeFileSync,
+  existsSync,
+  lstatSync,
+} from "node:fs"
 import { execFileSync } from "node:child_process"
 import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
@@ -21,7 +27,11 @@ describe("joinOrLead", () => {
   // `net.Server` never answers it (that is the busy-leader case below).
   async function cleanup(
     results: Array<
-      | { role: string; server?: import("node:net").Server; socket?: import("node:net").Socket }
+      | {
+          role: string
+          server?: import("node:net").Server
+          socket?: import("node:net").Socket
+        }
       | { role: "broker"; broker: Broker }
     >,
   ) {
@@ -39,12 +49,14 @@ describe("joinOrLead", () => {
   test("first caller becomes leader, second becomes follower", async () => {
     const sock = tmpSock()
     const r1 = await joinOrLead(sock)
-    if (r1.role !== "leader") throw new Error("expected the first caller to lead")
+    if (r1.role !== "leader")
+      throw new Error("expected the first caller to lead")
     // Leader must SERVE for followers to app-probe-join it.
     const broker = new Broker({ server: r1.server })
 
     const r2 = await joinOrLead(sock)
-    if (r2.role !== "follower") throw new Error("expected the second caller to follow")
+    if (r2.role !== "follower")
+      throw new Error("expected the second caller to follow")
 
     r2.socket.destroy()
     await broker.close()
@@ -142,9 +154,9 @@ describe("joinOrLead", () => {
       const inoBefore = lstatSync(sock).ino
 
       // Must NOT bind a second registry over it, and the file must survive.
-      await expect(
-        joinOrLead(sock, { busyMaxAttempts: 3 }),
-      ).rejects.toThrow(/refusing to take over/)
+      await expect(joinOrLead(sock, { busyMaxAttempts: 3 })).rejects.toThrow(
+        /refusing to take over/,
+      )
       const inoAfter = lstatSync(sock).ino
       expect(inoAfter).toBe(inoBefore) // busy leader's file untouched
 
@@ -193,7 +205,8 @@ describe("joinOrLead", () => {
       expect(existsSync(sock)).toBe(true) // stale file still on disk
 
       const r2 = await joinOrLead(sock)
-      if (r2.role !== "leader") throw new Error("expected stale reaping to lead")
+      if (r2.role !== "leader")
+        throw new Error("expected stale reaping to lead")
       await r2.server.close()
     },
   )
@@ -250,14 +263,20 @@ describe("joinOrLead", () => {
 describe("joinOrLead bind errors", () => {
   const posix = process.platform !== "win32"
 
-  test.skipIf(!posix)("creates a missing socket directory and leads", async () => {
-    const base = mkdtempSync(join(tmpdir(), "pi-le-dir-"))
-    const sock = join(base, "sessions", "local", "broker.sock")
-    const r = await joinOrLead(sock)
-    expect(r.role).toBe("leader")
-    expect((lstatSync(join(base, "sessions", "local")).mode & 0o777).toString(8)).toBe("700")
-    if (r.role === "leader") await new Promise<void>((res) => r.server.close(() => res()))
-  })
+  test.skipIf(!posix)(
+    "creates a missing socket directory and leads",
+    async () => {
+      const base = mkdtempSync(join(tmpdir(), "pi-le-dir-"))
+      const sock = join(base, "sessions", "local", "broker.sock")
+      const r = await joinOrLead(sock)
+      expect(r.role).toBe("leader")
+      expect(
+        (lstatSync(join(base, "sessions", "local")).mode & 0o777).toString(8),
+      ).toBe("700")
+      if (r.role === "leader")
+        await new Promise<void>((res) => r.server.close(() => res()))
+    },
+  )
 
   test.skipIf(!posix || process.getuid?.() === 0)(
     "an unwritable socket directory fails fast with EACCES, not 20 retries",
@@ -266,7 +285,9 @@ describe("joinOrLead bind errors", () => {
       chmodSync(dir, 0o500)
       try {
         const started = Date.now()
-        const err = await joinOrLead(join(dir, "broker.sock")).catch((e: unknown) => e)
+        const err = await joinOrLead(join(dir, "broker.sock")).catch(
+          (e: unknown) => e,
+        )
         expect(err).toBeInstanceOf(BindError)
         expect((err as BindError).code).toBe("EACCES")
         expect((err as Error).message).toContain("cannot bind")
@@ -277,11 +298,16 @@ describe("joinOrLead bind errors", () => {
     },
   )
 
-  test.skipIf(!posix)("a file where the directory should be fails with ENOTDIR", async () => {
-    const base = mkdtempSync(join(tmpdir(), "pi-le-file-"))
-    writeFileSync(join(base, "notadir"), "")
-    const err = await joinOrLead(join(base, "notadir", "broker.sock")).catch((e: unknown) => e)
-    expect(err).toBeInstanceOf(BindError)
-    expect((err as BindError).code).toBe("ENOTDIR")
-  })
+  test.skipIf(!posix)(
+    "a file where the directory should be fails with ENOTDIR",
+    async () => {
+      const base = mkdtempSync(join(tmpdir(), "pi-le-file-"))
+      writeFileSync(join(base, "notadir"), "")
+      const err = await joinOrLead(join(base, "notadir", "broker.sock")).catch(
+        (e: unknown) => e,
+      )
+      expect(err).toBeInstanceOf(BindError)
+      expect((err as BindError).code).toBe("ENOTDIR")
+    },
+  )
 })

@@ -59,10 +59,7 @@ describe("formatPeerInventoryDetailed", () => {
     expect(text).toBe("(no peers)")
 
     const rest = formatPeerInventoryDetailed(
-      [
-        info("/r@me", "/r"),
-        info("/r@other", "/r"),
-      ],
+      [info("/r@me", "/r"), info("/r@other", "/r")],
       { selfAddress: "/r@me" },
     )
     expect(rest).toContain("/r@other")

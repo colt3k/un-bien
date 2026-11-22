@@ -33,7 +33,12 @@ export const DEFAULT_SERVICE_ENV: readonly string[] = [
 
 /** Variables every unit already sets itself (templates / UNBIEN_* rendering),
  *  never copied a second time. */
-const SET_BY_TEMPLATE = new Set(["HOME", "PATH", "PI_CODING_AGENT_DIR", "PI_CODING_AGENT_SESSION_DIR"])
+const SET_BY_TEMPLATE = new Set([
+  "HOME",
+  "PATH",
+  "PI_CODING_AGENT_DIR",
+  "PI_CODING_AGENT_SESSION_DIR",
+])
 
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/
 
@@ -43,13 +48,18 @@ export function serviceEnvNames(
   config: UnBienConfig,
   env: NodeJS.ProcessEnv = process.env,
 ): string[] {
-  const configured = Array.isArray(config.service?.env) ? config.service.env : DEFAULT_SERVICE_ENV
+  const configured = Array.isArray(config.service?.env)
+    ? config.service.env
+    : DEFAULT_SERVICE_ENV
   const extra = (env["UNBIEN_SERVICE_ENV"] ?? "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean)
   return [...new Set([...configured, ...extra])].filter(
-    (name) => ENV_NAME.test(name) && !SET_BY_TEMPLATE.has(name) && !name.startsWith("UNBIEN_"),
+    (name) =>
+      ENV_NAME.test(name) &&
+      !SET_BY_TEMPLATE.has(name) &&
+      !name.startsWith("UNBIEN_"),
   )
 }
 
@@ -71,7 +81,10 @@ export function serviceEnv(
 }
 
 /** Find `name` on `path` (the first executable-looking hit). */
-export function whichOnPath(name: string, path: string = process.env["PATH"] ?? ""): string | null {
+export function whichOnPath(
+  name: string,
+  path: string = process.env["PATH"] ?? "",
+): string | null {
   const exts = process.platform === "win32" ? [".exe", ".cmd", ""] : [""]
   for (const dir of path.split(delimiter)) {
     if (!dir) continue
@@ -94,11 +107,13 @@ export function resolveServiceRuntime(
   const configured = config.service?.runtime?.trim()
   if (!configured) return opts.execPath ?? process.execPath
   if (isAbsolute(configured)) {
-    if (!existsSync(configured)) throw new Error(`service.runtime ${configured} does not exist`)
+    if (!existsSync(configured))
+      throw new Error(`service.runtime ${configured} does not exist`)
     return configured
   }
   const found = whichOnPath(configured, opts.path)
-  if (!found) throw new Error(`service.runtime "${configured}" was not found on PATH`)
+  if (!found)
+    throw new Error(`service.runtime "${configured}" was not found on PATH`)
   return found
 }
 
@@ -117,7 +132,8 @@ export function resolvePackageManager(
   npmCommand: readonly string[] | null = readPiNpmCommand() ?? null,
 ): { pm: PackageManager; source: PackageManagerSource } {
   const pm = config.package_manager
-  if (pm === "npm" || pm === "bun" || pm === "pnpm") return { pm, source: "config" }
+  if (pm === "npm" || pm === "bun" || pm === "pnpm")
+    return { pm, source: "config" }
   if (npmCommand && npmCommand.length > 0) {
     try {
       return { pm: packageManagerName(npmCommand), source: "pi" }
@@ -147,7 +163,10 @@ export function globalInstallCommand(
 ): { cmd: string; args: string[]; display: string } {
   let sameManager = false
   try {
-    sameManager = !!npmCommand && npmCommand.length > 0 && packageManagerName(npmCommand) === pm
+    sameManager =
+      !!npmCommand &&
+      npmCommand.length > 0 &&
+      packageManagerName(npmCommand) === pm
   } catch {
     sameManager = false
   }
@@ -174,8 +193,15 @@ export function packageManagerConfigured(
 
 function _ask(cmd: string, args: string[]): string | null {
   try {
-    const out = execFileSync(cmd, args, { encoding: "utf8", timeout: 15_000, stdio: ["ignore", "pipe", "ignore"] })
-    const line = out.split("\n").map((l) => l.trim()).find(Boolean)
+    const out = execFileSync(cmd, args, {
+      encoding: "utf8",
+      timeout: 15_000,
+      stdio: ["ignore", "pipe", "ignore"],
+    })
+    const line = out
+      .split("\n")
+      .map((l) => l.trim())
+      .find(Boolean)
     return line ?? null
   } catch {
     return null

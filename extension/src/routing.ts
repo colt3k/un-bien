@@ -1,7 +1,13 @@
 import { envLog } from "./session/debug_log.js"
-import { handleSessionLaunch, handleSessionLaunchDirs } from "./launch_request.js"
+import {
+  handleSessionLaunch,
+  handleSessionLaunchDirs,
+} from "./launch_request.js"
 import { dispatchRpcCommand } from "./session/rpc_inbound.js"
-import { createRpcHandlers, type RpcHandlersDeps } from "./session/rpc_handlers.js"
+import {
+  createRpcHandlers,
+  type RpcHandlersDeps,
+} from "./session/rpc_handlers.js"
 import type { EnvelopeMessage } from "./session/rpc_envelope.js"
 import type { SessionControlPort } from "./core/port.js"
 import type { PlainPeerChannel } from "./transport/peer_channel.js"
@@ -32,10 +38,12 @@ interface RootSessionView {
 }
 
 export interface PlaneRouterDeps {
-  extensionUiBridge: () => import("./extension_ui_bridge.js").ExtensionUiBridge | null
+  extensionUiBridge: () =>
+    import("./extension_ui_bridge.js").ExtensionUiBridge | null
   panelBridge: () => import("./panel_bridge.js").PanelBridge | null
   rpcDeps: RpcHandlersDeps
-  subagentRooms: () => import("./subagent_rooms.js").SubagentRoomsController | null
+  subagentRooms: () =>
+    import("./subagent_rooms.js").SubagentRoomsController | null
   sessionStartedAt: () => number
   myRoomMeta: () => import("./commands/deps.js").RoomMeta | null
   rootState: () => RootSessionView
@@ -63,7 +71,9 @@ export function routeRpcCommand(
   if ((frame as Record<string, unknown>).type === "extension_ui_response") {
     // SAFETY: the type-discriminator check directly above proves this frame is
     // an extension_ui_response envelope, which is the ExtensionUiResponseWire shape.
-    deps.extensionUiBridge()?.respond(frame as unknown as ExtensionUiResponseWire)
+    deps
+      .extensionUiBridge()
+      ?.respond(frame as unknown as ExtensionUiResponseWire)
     return
   }
   // session_sync (reconstruction) is un-bien's OWN protocol — dispatched on the
@@ -124,9 +134,9 @@ export async function routeUnBienPlane(
     for (const req of deps.extensionUiBridge()?.pendingRequests() ?? []) {
       const r = req as { method?: string; notify_type?: string; id?: string }
       envLog(
-        `session_sync ui replay: method=${r.method ?? "?"}`
-        + (r.notify_type ? ` notify_type=${r.notify_type}` : "")
-        + ` id=${r.id ?? "?"}`,
+        `session_sync ui replay: method=${r.method ?? "?"}` +
+          (r.notify_type ? ` notify_type=${r.notify_type}` : "") +
+          ` id=${r.id ?? "?"}`,
       )
     }
     envLog(

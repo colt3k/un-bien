@@ -45,11 +45,11 @@ export async function resolveRemoteMachine(
   target: string,
   relayUrl: string,
 ): Promise<RemoteMachineRef | null> {
-  const probe = new SessionClient(
-    relayUrl,
-    loadOrCreateIdentity(),
-    { token: "", epk: "0".repeat(43), roomId: "main" },
-  )
+  const probe = new SessionClient(relayUrl, loadOrCreateIdentity(), {
+    token: "",
+    epk: "0".repeat(43),
+    roomId: "main",
+  })
   let client: SessionClient | null = null
   try {
     // The probe's invite epk is a placeholder — we never route to it; we only
@@ -70,7 +70,11 @@ export async function resolveRemoteMachine(
     const matchesTarget = (name: string | undefined) => {
       const n = name?.toLowerCase()
       if (!n) return false
-      return n === t || n.startsWith(t) || (firstLabel != null && n.startsWith(firstLabel))
+      return (
+        n === t ||
+        n.startsWith(t) ||
+        (firstLabel != null && n.startsWith(firstLabel))
+      )
     }
     // Group by (peerRelay + peer_epk): one RemoteMachineRef per machine.
     const byEpk = new Map<string, RemoteMachineRef>()
@@ -98,7 +102,9 @@ export async function resolveRemoteMachine(
           roomCounts.set(r.peer_epk, (roomCounts.get(r.peer_epk) ?? 0) + 1)
         }
       }
-      matches.sort((a, b) => (roomCounts.get(b.epk) ?? 0) - (roomCounts.get(a.epk) ?? 0))
+      matches.sort(
+        (a, b) => (roomCounts.get(b.epk) ?? 0) - (roomCounts.get(a.epk) ?? 0),
+      )
       console.error(
         `(${matches.length} matches for '${target}' — using the most active: ` +
           `${matches[0].epk.slice(0, 8)})`,
@@ -118,7 +124,9 @@ export function requireMachine(target: string): PairedPeer {
   console.error(
     `no machine matching '${target}'. Known:` +
       loadPeers()
-        .map((p) => `\n  ${p.name ?? p.epk.slice(0, 12)} (${p.epk.slice(0, 10)}…)`)
+        .map(
+          (p) => `\n  ${p.name ?? p.epk.slice(0, 12)} (${p.epk.slice(0, 10)}…)`,
+        )
         .join(""),
   )
   Shell.exitAfterDrain(1)
@@ -165,7 +173,9 @@ export async function launchAndWait(
         }
       } catch (err) {
         // A malformed frame must not crash the verb mid-wait.
-        console.error(`frame handling error (ignored): ${String(err).slice(0, 120)}`)
+        console.error(
+          `frame handling error (ignored): ${String(err).slice(0, 120)}`,
+        )
       }
     }
     client.on("ub", onUb as (frame: Record<string, unknown>) => void)
@@ -192,7 +202,6 @@ export async function launchAndWait(
     }, timeoutMs)
   })
 }
-
 
 /** Poll the machine's room list until a session matching `match` goes live
  *  (pi startup + mesh join take a few seconds after a launch). Resolves the
@@ -234,7 +243,9 @@ export async function handoffToConnect(
     [mainJs, "connect", target, "--session", sessionId],
     { stdio: "inherit", env: process.env },
   )
-  return new Promise((resolve) => child.on("exit", (code) => resolve(code ?? 1)))
+  return new Promise((resolve) =>
+    child.on("exit", (code) => resolve(code ?? 1)),
+  )
 }
 
 /** Connect a SessionClient to a machine's control room. Exits on unreachable. */
@@ -269,7 +280,11 @@ export async function connectControlRoom(
   // async, right after auth) — this path launches/execs on the machine.
   client.once(
     "control",
-    (frame: { type?: string; expectedRelayPubkey?: string; gotRelayPubkey?: string }) => {
+    (frame: {
+      type?: string
+      expectedRelayPubkey?: string
+      gotRelayPubkey?: string
+    }) => {
       if (frame.type !== "relay_identity_error") return
       const expected = frame.expectedRelayPubkey?.slice(0, 12) ?? "?"
       const got = frame.gotRelayPubkey?.slice(0, 12) ?? "unverified"
@@ -311,7 +326,9 @@ export async function requireMachineOrRemote(
   }
   const remote = await resolveRemoteMachine(target, relayUrl)
   if (remote) {
-    console.error(`(federated via ${remote.name} — routing through the local relay)`)
+    console.error(
+      `(federated via ${remote.name} — routing through the local relay)`,
+    )
     return remote
   }
   console.error(`no machine matching '${target}' (local or federated)`)

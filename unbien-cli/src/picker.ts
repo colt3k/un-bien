@@ -52,10 +52,7 @@ function wireKeys(
     // NAVIGATION MUST REPAINT: handleInput moves the selection internally —
     // without paint() the highlight moves invisibly (the "arrows don't work"
     // symptom).
-    if (
-      sequence === "\x1b[A" ||
-      sequence === "\x1b[B"
-    ) {
+    if (sequence === "\x1b[A" || sequence === "\x1b[B") {
       list.handleInput(sequence)
       paint(filter)
       return
@@ -218,7 +215,13 @@ export function pickRaw(
       resolve(value)
     }
 
-    const offKeys = wireKeys(input, list, paint, () => finish(null), applyFilter)
+    const offKeys = wireKeys(
+      input,
+      list,
+      paint,
+      () => finish(null),
+      applyFilter,
+    )
 
     list.onSelect = (item) => finish(item.value)
     list.onCancel = () => finish(null)

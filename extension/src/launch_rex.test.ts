@@ -4,7 +4,13 @@
  * against rex 0.1.0-preview.19 on a private server). Pure argv builders are
  * tested directly.
  */
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
@@ -56,13 +62,29 @@ esac
 `
 
 const SAVED: Record<string, string | undefined> = {}
-const ENV_KEYS = ["PI_CODING_AGENT_DIR", "UNBIEN_STATE_DIR", "FAKE_REX_LOG", "FAKE_REX_NO_SERVER",
-  "FAKE_REX_SESSIONS", "FAKE_REX_EXISTING", "FAKE_REX_EXIT", "REX_SERVER"]
+const ENV_KEYS = [
+  "PI_CODING_AGENT_DIR",
+  "UNBIEN_STATE_DIR",
+  "FAKE_REX_LOG",
+  "FAKE_REX_NO_SERVER",
+  "FAKE_REX_SESSIONS",
+  "FAKE_REX_EXISTING",
+  "FAKE_REX_EXIT",
+  "REX_SERVER",
+]
 let dir = ""
 
 function configure(launch: Record<string, unknown>): void {
-  writeFileSync(join(dir, "agent", "extensions", "un-bien.json"),
-    JSON.stringify({ launch: { rex_bin: join(dir, "rex"), rex_server: "unix:///tmp/fake-rex.sock", ...launch } }))
+  writeFileSync(
+    join(dir, "agent", "extensions", "un-bien.json"),
+    JSON.stringify({
+      launch: {
+        rex_bin: join(dir, "rex"),
+        rex_server: "unix:///tmp/fake-rex.sock",
+        ...launch,
+      },
+    }),
+  )
 }
 
 /** Each fake-rex call as its argv, global args stripped. */
@@ -73,17 +95,23 @@ function calls(): string[][] {
   } catch {
     return []
   }
-  return text.split("\n").filter(Boolean).map((line) => {
-    const argv = line.split("\u001f").filter((a) => a !== "")
-    const out: string[] = []
-    for (let i = 0; i < argv.length; i++) {
-      const a = argv[i] ?? ""
-      if (a === "--autostart=false") continue
-      if (a === "-S" || a === "--timeout") { i++; continue }
-      out.push(a)
-    }
-    return out
-  })
+  return text
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      const argv = line.split("\u001f").filter((a) => a !== "")
+      const out: string[] = []
+      for (let i = 0; i < argv.length; i++) {
+        const a = argv[i] ?? ""
+        if (a === "--autostart=false") continue
+        if (a === "-S" || a === "--timeout") {
+          i++
+          continue
+        }
+        out.push(a)
+      }
+      return out
+    })
 }
 
 beforeEach(() => {
@@ -97,7 +125,13 @@ beforeEach(() => {
   process.env.UNBIEN_STATE_DIR = join(dir, "state")
   process.env.FAKE_REX_LOG = join(dir, "rex.log")
   process.env.FAKE_REX_SESSIONS = join(dir, "sessions")
-  for (const k of ["FAKE_REX_NO_SERVER", "FAKE_REX_EXISTING", "FAKE_REX_EXIT", "REX_SERVER"]) delete process.env[k]
+  for (const k of [
+    "FAKE_REX_NO_SERVER",
+    "FAKE_REX_EXISTING",
+    "FAKE_REX_EXIT",
+    "REX_SERVER",
+  ])
+    delete process.env[k]
   configure({ backend: "rex" })
 })
 
@@ -110,8 +144,22 @@ afterEach(() => {
 
 describe("rex argv", () => {
   it("passes pi a real argv: env, name and resume as single arguments", () => {
-    expect(_rexPiArgv({ cwd: "/w", name: "fix the 'login' $(rm -rf ~) bug", resume: "abc", launchReq: "req-1" }))
-      .toEqual(["env", "UNBIEN_LAUNCH_REQ=req-1", "pi", "-n", "fix the 'login' $(rm -rf ~) bug", "--session", "abc"])
+    expect(
+      _rexPiArgv({
+        cwd: "/w",
+        name: "fix the 'login' $(rm -rf ~) bug",
+        resume: "abc",
+        launchReq: "req-1",
+      }),
+    ).toEqual([
+      "env",
+      "UNBIEN_LAUNCH_REQ=req-1",
+      "pi",
+      "-n",
+      "fix the 'login' $(rm -rf ~) bug",
+      "--session",
+      "abc",
+    ])
     expect(_rexPiArgv({ cwd: "/w" })).toEqual(["pi"])
   })
 
@@ -124,22 +172,71 @@ describe("rex argv", () => {
 
   it("creates windows kept open, unfocused, with --window= and the command after --", () => {
     const req = { cwd: "/w", name: "n", launchReq: "r" }
-    expect(_buildRexNewArgs("un-bien", "n", req)).toEqual(
-      ["new", "un-bien", "--window=n", "-c", "/w", "--keep-open", "--json", "--", "env", "UNBIEN_LAUNCH_REQ=r", "pi", "-n", "n"])
-    expect(_buildRexWindowArgs("session:s1", "n", req)).toEqual(
-      ["window", "new", "-s", "session:s1", "n", "--focus=false", "-c", "/w", "--keep-open", "--json", "--",
-        "env", "UNBIEN_LAUNCH_REQ=r", "pi", "-n", "n"])
+    expect(_buildRexNewArgs("un-bien", "n", req)).toEqual([
+      "new",
+      "un-bien",
+      "--window=n",
+      "-c",
+      "/w",
+      "--keep-open",
+      "--json",
+      "--",
+      "env",
+      "UNBIEN_LAUNCH_REQ=r",
+      "pi",
+      "-n",
+      "n",
+    ])
+    expect(_buildRexWindowArgs("session:s1", "n", req)).toEqual([
+      "window",
+      "new",
+      "-s",
+      "session:s1",
+      "n",
+      "--focus=false",
+      "-c",
+      "/w",
+      "--keep-open",
+      "--json",
+      "--",
+      "env",
+      "UNBIEN_LAUNCH_REQ=r",
+      "pi",
+      "-n",
+      "n",
+    ])
   })
 
   it("maps launch.shell and an -i shell arg to Rex's own flags", () => {
     configure({ backend: "rex", shell: "/bin/bash", shell_args: ["-l", "-i"] })
-    expect(_buildRexNewArgs("s", "l", { cwd: "/w" })).toEqual(
-      ["new", "s", "--window=l", "-c", "/w", "--keep-open", "--shell=/bin/bash", "--interactive", "--json", "--", "pi"])
+    expect(_buildRexNewArgs("s", "l", { cwd: "/w" })).toEqual([
+      "new",
+      "s",
+      "--window=l",
+      "-c",
+      "/w",
+      "--keep-open",
+      "--shell=/bin/bash",
+      "--interactive",
+      "--json",
+      "--",
+      "pi",
+    ])
   })
 
   it("always disables autostart and names the server", () => {
-    expect(_rexGlobalArgs("unix:///s.sock")).toEqual(["--autostart=false", "-S", "unix:///s.sock", "--timeout", "10s"])
-    expect(_rexGlobalArgs(null)).toEqual(["--autostart=false", "--timeout", "10s"])
+    expect(_rexGlobalArgs("unix:///s.sock")).toEqual([
+      "--autostart=false",
+      "-S",
+      "unix:///s.sock",
+      "--timeout",
+      "10s",
+    ])
+    expect(_rexGlobalArgs(null)).toEqual([
+      "--autostart=false",
+      "--timeout",
+      "10s",
+    ])
   })
 
   it("accepts only a local unix socket as the server", () => {
@@ -150,15 +247,29 @@ describe("rex argv", () => {
   })
 
   it("defaults on macOS to the local server's socket, spaces encoded", () => {
-    writeFileSync(join(dir, "agent", "extensions", "un-bien.json"), JSON.stringify({ launch: { backend: "rex" } }))
+    writeFileSync(
+      join(dir, "agent", "extensions", "un-bien.json"),
+      JSON.stringify({ launch: { backend: "rex" } }),
+    )
     if (process.platform !== "darwin") return
-    expect(_rexEndpoint().endpoint).toMatch(/^unix:\/\/.*\/Library\/Application%20Support\/rex\/server\.sock$/)
+    expect(_rexEndpoint().endpoint).toMatch(
+      /^unix:\/\/.*\/Library\/Application%20Support\/rex\/server\.sock$/,
+    )
   })
 
   it("reads ids from both creation shapes, and nothing from junk", () => {
-    expect(_rexIdsFromJson('{"session_id":"session:s","initial_windows":[{"window_id":"window:w","block_ids":["block:b"]}]}'))
-      .toEqual({ sessionId: "session:s", windowId: "window:w", blockId: "block:b" })
-    expect(_rexIdsFromJson('{"window_id":"window:w","block_ids":["block:b"]}')).toEqual({ windowId: "window:w", blockId: "block:b" })
+    expect(
+      _rexIdsFromJson(
+        '{"session_id":"session:s","initial_windows":[{"window_id":"window:w","block_ids":["block:b"]}]}',
+      ),
+    ).toEqual({
+      sessionId: "session:s",
+      windowId: "window:w",
+      blockId: "block:b",
+    })
+    expect(
+      _rexIdsFromJson('{"window_id":"window:w","block_ids":["block:b"]}'),
+    ).toEqual({ windowId: "window:w", blockId: "block:b" })
     expect(_rexIdsFromJson("not json")).toEqual({})
   })
 
@@ -169,8 +280,23 @@ describe("rex argv", () => {
   })
 
   it("tmux: prints the window id and keeps the pane, in the same invocation", () => {
-    expect(_withWindowIdAndRemain(["new-window", "-t", "s", "--", "cmd"])).toEqual(
-      ["new-window", "-P", "-F", "#{window_id}", "-t", "s", "--", "cmd", ";", "set-option", "-w", "remain-on-exit", "on"])
+    expect(
+      _withWindowIdAndRemain(["new-window", "-t", "s", "--", "cmd"]),
+    ).toEqual([
+      "new-window",
+      "-P",
+      "-F",
+      "#{window_id}",
+      "-t",
+      "s",
+      "--",
+      "cmd",
+      ";",
+      "set-option",
+      "-w",
+      "remain-on-exit",
+      "on",
+    ])
   })
 
   it("keeps the last lines of output", () => {
@@ -183,71 +309,117 @@ describe("rex argv", () => {
 
 describe("rex launch", () => {
   it("first launch creates the session and stores its id; the next adds a window to it", async () => {
-    const first = await launchSession({ cwd: dir, name: "one", launchReq: "req-1" })
+    const first = await launchSession({
+      cwd: dir,
+      name: "one",
+      launchReq: "req-1",
+    })
     expect(first).toEqual({ ok: true, backend: "rex" })
-    const second = await launchSession({ cwd: dir, name: "two", launchReq: "req-2" })
+    const second = await launchSession({
+      cwd: dir,
+      name: "two",
+      launchReq: "req-2",
+    })
     expect(second).toEqual({ ok: true, backend: "rex" })
-    const made = calls().filter((c) => c[0] === "new" || (c[0] === "window" && c[1] === "new"))
+    const made = calls().filter(
+      (c) => c[0] === "new" || (c[0] === "window" && c[1] === "new"),
+    )
     expect(made[0]?.slice(0, 3)).toEqual(["new", "un-bien", "--window=one"])
-    expect(made[1]?.slice(0, 5)).toEqual(["window", "new", "-s", "session:s1", "two"])
-    expect(JSON.parse(readFileSync(join(dir, "state", "rex-launch.json"), "utf8"))).toMatchObject(
-      { host_id: "host-1", session_id: "session:s1" })
+    expect(made[1]?.slice(0, 5)).toEqual([
+      "window",
+      "new",
+      "-s",
+      "session:s1",
+      "two",
+    ])
+    expect(
+      JSON.parse(readFileSync(join(dir, "state", "rex-launch.json"), "utf8")),
+    ).toMatchObject({ host_id: "host-1", session_id: "session:s1" })
   })
 
   it("recreates the session when none has the label any more", async () => {
     await launchSession({ cwd: dir, name: "one" })
-    writeFileSync(join(dir, "sessions"), "")   // the session was closed (or renamed)
+    writeFileSync(join(dir, "sessions"), "") // the session was closed (or renamed)
     await launchSession({ cwd: dir, name: "two" })
     expect(calls().filter((c) => c[0] === "new")).toHaveLength(2)
   })
 
   it("puts pis into an existing session with the configured label, whoever made it", async () => {
-    process.env.FAKE_REX_EXISTING = '{"session_id":"session:mine","label":"work"}'
+    process.env.FAKE_REX_EXISTING =
+      '{"session_id":"session:mine","label":"work"}'
     configure({ backend: "rex", rex_session: "work" })
     await launchSession({ cwd: dir, name: "one" })
     expect(calls().some((c) => c[0] === "new")).toBe(false)
-    expect(calls().find((c) => c[0] === "window")?.slice(0, 4)).toEqual(["window", "new", "-s", "session:mine"])
+    expect(
+      calls()
+        .find((c) => c[0] === "window")
+        ?.slice(0, 4),
+    ).toEqual(["window", "new", "-s", "session:mine"])
   })
 
   it("creates the session with the configured label when none exists", async () => {
     configure({ backend: "rex", rex_session: "pi agents" })
     await launchSession({ cwd: dir, name: "one" })
-    expect(calls().find((c) => c[0] === "new")?.slice(0, 2)).toEqual(["new", "pi agents"])
+    expect(
+      calls()
+        .find((c) => c[0] === "new")
+        ?.slice(0, 2),
+    ).toEqual(["new", "pi agents"])
   })
 
   it("matches labels exactly and prefers the session it used last", () => {
-    const ls = JSON.stringify({ sessions: [
-      { session_id: "session:a", label: "un-bien" },
-      { session_id: "session:b", label: "un-bien 2" },
-      { session_id: "session:c", label: "un-bien" },
-    ] })
-    expect(_rexSessionsLabelled(ls, "un-bien")).toEqual(["session:a", "session:c"])
+    const ls = JSON.stringify({
+      sessions: [
+        { session_id: "session:a", label: "un-bien" },
+        { session_id: "session:b", label: "un-bien 2" },
+        { session_id: "session:c", label: "un-bien" },
+      ],
+    })
+    expect(_rexSessionsLabelled(ls, "un-bien")).toEqual([
+      "session:a",
+      "session:c",
+    ])
     expect(_rexSessionsLabelled("junk", "un-bien")).toEqual([])
   })
 
   it("reports an unreachable server without creating anything", async () => {
     process.env.FAKE_REX_NO_SERVER = "1"
     const result = await launchSession({ cwd: dir, name: "one" })
-    expect(result).toMatchObject({ ok: false, backend: "rex", code: "backend_unavailable" })
+    expect(result).toMatchObject({
+      ok: false,
+      backend: "rex",
+      code: "backend_unavailable",
+    })
     expect(result.message).toMatch(/no Rex server is running/)
     expect(calls().some((c) => c[0] === "new")).toBe(false)
   })
 
   it("reports a missing rex binary", async () => {
     configure({ backend: "rex", rex_bin: join(dir, "no-such-rex") })
-    expect(await launchSession({ cwd: dir })).toMatchObject({ ok: false, code: "backend_missing" })
+    expect(await launchSession({ cwd: dir })).toMatchObject({
+      ok: false,
+      code: "backend_missing",
+    })
   })
 
   it("reports a pi that exits right after starting, with its output", async () => {
     process.env.FAKE_REX_EXIT = "3"
     const later = new Promise<LaunchResult>((resolveLater) => {
-      void launchSession({ cwd: dir, name: "one" }, resolveLater).then((r) => expect(r.ok).toBe(true))
+      void launchSession({ cwd: dir, name: "one" }, resolveLater).then((r) =>
+        expect(r.ok).toBe(true),
+      )
     })
     const result = await later
-    expect(result).toMatchObject({ ok: false, backend: "rex", code: "exited_early" })
+    expect(result).toMatchObject({
+      ok: false,
+      backend: "rex",
+      code: "exited_early",
+    })
     expect(result.message).toMatch(/status 3/)
     expect(result.output).toContain("no API key for provider anthropic")
-    expect(calls().some((c) => c[0] === "window" && c[1] === "close")).toBe(false)
+    expect(calls().some((c) => c[0] === "window" && c[1] === "close")).toBe(
+      false,
+    )
   })
 
   it("falls back only when configured, and says so", async () => {
@@ -269,7 +441,10 @@ describe("rex launch", () => {
   })
 
   it("refuses a missing directory before touching any backend", async () => {
-    expect(await launchSession({ cwd: join(dir, "nope") })).toMatchObject({ ok: false, code: "cwd_missing" })
+    expect(await launchSession({ cwd: join(dir, "nope") })).toMatchObject({
+      ok: false,
+      code: "cwd_missing",
+    })
     expect(calls()).toEqual([])
   })
 })

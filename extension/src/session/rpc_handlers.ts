@@ -246,7 +246,8 @@ export function createRpcHandlers(
       const session = deps.session
       // Unbound → ERROR (pi always has a session here; a silent empty page on
       // the fork side reads as "no history" — make the failure visible).
-      if (!session) throw new Error("get_entries unavailable (no session bound)")
+      if (!session)
+        throw new Error("get_entries unavailable (no session bound)")
       const { entries: all, leafId } = session.getEntries()
       // pi-faithful `since` semantics (rpc-mode.js): unknown id → error, not a
       // silent restart from the beginning.

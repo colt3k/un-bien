@@ -12,9 +12,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import type { MeshToolDef, ToolRegistrar } from "../core/tools.js"
 
 export class PiToolRegistrar implements ToolRegistrar {
-  constructor(
-    private readonly pi: ExtensionAPI,
-  ) {}
+  constructor(private readonly pi: ExtensionAPI) {}
 
   registerTool(def: MeshToolDef): void {
     // SAFETY: the neutral def carries the pi-compatible subset of

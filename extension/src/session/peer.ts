@@ -60,7 +60,8 @@ const ACK_TIMEOUT_MS = 5_000
 const FAILOVER_RETRY_MS = 100
 const DEFAULT_DISPLACEMENT_WATCH_MS = 3_000
 
-export type AckStatus = "received" | "busy" | "denied" | "timeout" | "unknown_peer"
+export type AckStatus =
+  "received" | "busy" | "denied" | "timeout" | "unknown_peer"
 
 export interface AckResult {
   status: AckStatus
@@ -127,12 +128,10 @@ function asAckBody(body: unknown): AckBody | null {
     target: unknown
   }
   if (
-    (
-      status !== "received" &&
+    (status !== "received" &&
       status !== "busy" &&
       status !== "denied" &&
-      status !== "unknown_peer"
-    ) ||
+      status !== "unknown_peer") ||
     typeof target !== "string"
   ) {
     return null
@@ -358,9 +357,7 @@ export class SessionPeer {
           this.opts.name = ack.name_assigned
           resolve(ack.name_assigned)
         } else {
-          reject(
-            new Error(`expected rename_ack, got: ${JSON.stringify(raw)}`),
-          )
+          reject(new Error(`expected rename_ack, got: ${JSON.stringify(raw)}`))
         }
       }
       try {
@@ -376,7 +373,11 @@ export class SessionPeer {
   }
 
   async leave(): Promise<void> {
-    lifecycleLog("mesh_leave", { name: this.assignedAddress, role: this.role, socket: this.socket ? "open" : "none" })
+    lifecycleLog("mesh_leave", {
+      name: this.assignedAddress,
+      role: this.role,
+      socket: this.socket ? "open" : "none",
+    })
     this.leftFlag = true
     await this._teardownConn()
   }
@@ -395,7 +396,11 @@ export class SessionPeer {
     // for the life of the process, which pushes this agent's next join to
     // name#N. Give up the election's result instead.
     if (this.leftFlag) {
-      lifecycleLog("mesh_join_abandoned", { name: this.opts.name, stage: "election", role: result.role })
+      lifecycleLog("mesh_join_abandoned", {
+        name: this.opts.name,
+        stage: "election",
+        role: result.role,
+      })
       try {
         if (result.role === "leader") result.server.close()
         else result.socket.destroy()
@@ -432,7 +437,10 @@ export class SessionPeer {
    *  whatever the join just set up, so nothing outlives the leave. */
   private async _abandonIfLeft(): Promise<void> {
     if (!this.leftFlag) return
-    lifecycleLog("mesh_join_abandoned", { name: this.assignedAddress, stage: "registered" })
+    lifecycleLog("mesh_join_abandoned", {
+      name: this.assignedAddress,
+      stage: "registered",
+    })
     await this._teardownConn()
     throw new Error("peer left while joining")
   }
@@ -511,7 +519,10 @@ export class SessionPeer {
    *  thief is a real broker we become its follower; if it was a transient
    *  bind we may lead again — either way exactly one registry survives. */
   private async _reelectAfterDisplacement(): Promise<void> {
-    lifecycleLog("mesh_failover", { name: this.assignedAddress, cause: "broker socket displaced" })
+    lifecycleLog("mesh_failover", {
+      name: this.assignedAddress,
+      cause: "broker socket displaced",
+    })
     this._stopDisplacementWatch()
     try {
       await this._teardownConn()
@@ -524,7 +535,11 @@ export class SessionPeer {
     if (this.leftFlag) return
     try {
       await this._joinOrLead()
-      lifecycleLog("mesh_rejoined", { name: this.assignedAddress, role: this.role, after: "displacement" })
+      lifecycleLog("mesh_rejoined", {
+        name: this.assignedAddress,
+        role: this.role,
+        after: "displacement",
+      })
       for (const h of this.reconnectHandlers) {
         try {
           h()
@@ -535,7 +550,11 @@ export class SessionPeer {
     } catch (err) {
       /* election failed; peer stuck disconnected until the socket-close
          failover path can retry */
-      lifecycleLog("mesh_rejoin_failed", { name: this.opts.name, after: "displacement", error: String(err) })
+      lifecycleLog("mesh_rejoin_failed", {
+        name: this.opts.name,
+        after: "displacement",
+        error: String(err),
+      })
     }
   }
 
@@ -794,14 +813,21 @@ export class SessionPeer {
     // `!== closedSock`, so we skip. Genuine leader death: `this.socket` is still
     // the (now-closed) follower socket → identity matches → we re-elect.
     if (this.socket !== closedSock) return
-    lifecycleLog("mesh_failover", { name: this.assignedAddress, cause: "broker connection closed" })
+    lifecycleLog("mesh_failover", {
+      name: this.assignedAddress,
+      cause: "broker connection closed",
+    })
     // Attempt to re-elect once. New leader will bind sockPath; we either
     // become leader ourselves or rejoin as follower.
     await delay(FAILOVER_RETRY_MS)
     if (this.leftFlag || this.socket !== closedSock) return
     try {
       await this._joinOrLead()
-      lifecycleLog("mesh_rejoined", { name: this.assignedAddress, role: this.role, after: "failover" })
+      lifecycleLog("mesh_rejoined", {
+        name: this.assignedAddress,
+        role: this.role,
+        after: "failover",
+      })
       // The new broker's peers map starts fresh — consumers must re-query
       // any cached state (peer count, etc.) that depended on the old broker.
       for (const h of this.reconnectHandlers) {
@@ -813,7 +839,11 @@ export class SessionPeer {
       }
     } catch (err) {
       /* election failed; peer stuck in disconnected state */
-      lifecycleLog("mesh_rejoin_failed", { name: this.opts.name, after: "failover", error: String(err) })
+      lifecycleLog("mesh_rejoin_failed", {
+        name: this.opts.name,
+        after: "failover",
+        error: String(err),
+      })
     }
   }
 

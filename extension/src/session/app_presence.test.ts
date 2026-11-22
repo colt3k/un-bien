@@ -23,14 +23,24 @@ function setup(grace = 300_000) {
   })
   const presence = (states: Array<{ peer: string; online: boolean }>) =>
     watch.onLine(JSON.stringify({ type: "presence", states }))
-  return { watch, peers, sent, detached, presence, advance: (ms: number) => (now += ms) }
+  return {
+    watch,
+    peers,
+    sent,
+    detached,
+    presence,
+    advance: (ms: number) => (now += ms),
+  }
 }
 
 describe("AppPresenceWatch", () => {
   test("asks the relay about the attached apps", () => {
     const { watch, sent } = setup()
     watch.tick()
-    expect(JSON.parse(sent[0]!)).toEqual({ type: "presence_check", peers: ["app-a", "app-b"] })
+    expect(JSON.parse(sent[0]!)).toEqual({
+      type: "presence_check",
+      peers: ["app-a", "app-b"],
+    })
   })
 
   test("an app offline for the whole grace period is detached; one that came back is not", () => {
@@ -78,7 +88,12 @@ describe("AppPresenceWatch", () => {
     const { watch, peers, sent, detached, advance } = setup()
     watch.onLine("not json")
     watch.onLine(JSON.stringify({ type: "peer_online", peer: "app-a" }))
-    watch.onLine(JSON.stringify({ type: "presence", states: [{ peer: "stranger", online: false }] }))
+    watch.onLine(
+      JSON.stringify({
+        type: "presence",
+        states: [{ peer: "stranger", online: false }],
+      }),
+    )
     advance(1_000_000)
     peers.clear()
     watch.tick()

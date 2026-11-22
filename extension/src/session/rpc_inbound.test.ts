@@ -263,7 +263,12 @@ describe("dispatchRpcCommand", () => {
       // lone oversized entry), so the base64 envelope (≈ JSON × 4/3) stays
       // inside the app's WS frame cap and every page is deliverable.
       const budget = 300_000
-      const all = [mk("e1", 100_000), mk("e2", 100_000), mk("e3", 100_000), mk("e4", 100_000)]
+      const all = [
+        mk("e1", 100_000),
+        mk("e2", 100_000),
+        mk("e3", 100_000),
+        mk("e4", 100_000),
+      ]
       const p1 = pageEntries(all, undefined, "e4", budget)
       expect(p1.entries.map((e) => e.id)).toEqual(["e1", "e2", "e3"])
       expect(p1.leafId).toBe("e3")
@@ -330,7 +335,9 @@ describe("TUI built-in slash intercept", () => {
   })
 
   it("/new executes newSession", async () => {
-    const h = handlers({ newSession: vi.fn(async () => ({ cancelled: false })) })
+    const h = handlers({
+      newSession: vi.fn(async () => ({ cancelled: false })),
+    })
     await dispatchRpcCommand({ type: "prompt", id: "n", message: "/new" }, h)
     expect(h.newSession).toHaveBeenCalled()
     expect(h.prompt).not.toHaveBeenCalled()
@@ -346,19 +353,28 @@ describe("TUI built-in slash intercept", () => {
 
   it("/settings is TUI-only: consumed, no verb called", async () => {
     const h = handlers()
-    await dispatchRpcCommand({ type: "prompt", id: "s", message: "/settings" }, h)
+    await dispatchRpcCommand(
+      { type: "prompt", id: "s", message: "/settings" },
+      h,
+    )
     expect(h.prompt).not.toHaveBeenCalled()
   })
 
   it("unknown /foo is refused when isKnownSlash says false", async () => {
     const h = handlers({ isKnownSlash: () => false })
-    await dispatchRpcCommand({ type: "prompt", id: "u", message: "/foo bar" }, h)
+    await dispatchRpcCommand(
+      { type: "prompt", id: "u", message: "/foo bar" },
+      h,
+    )
     expect(h.prompt).not.toHaveBeenCalled()
   })
 
   it("unknown /foo passes when isKnownSlash is true (template/skill)", async () => {
     const h = handlers({ isKnownSlash: () => true })
-    await dispatchRpcCommand({ type: "prompt", id: "t", message: "/deploy prod" }, h)
+    await dispatchRpcCommand(
+      { type: "prompt", id: "t", message: "/deploy prod" },
+      h,
+    )
     expect(h.prompt).toHaveBeenCalledWith("/deploy prod", expect.anything())
   })
 
@@ -370,18 +386,28 @@ describe("TUI built-in slash intercept", () => {
 
   it("/unbien passes through to pi (extension command)", async () => {
     const h = handlers({ isKnownSlash: () => true })
-    await dispatchRpcCommand({ type: "prompt", id: "ub", message: "/unbien status" }, h)
+    await dispatchRpcCommand(
+      { type: "prompt", id: "ub", message: "/unbien status" },
+      h,
+    )
     expect(h.prompt).toHaveBeenCalledWith("/unbien status", expect.anything())
   })
 
   it("/model <term> with a unique match sets the model", async () => {
     const h = handlers({
       getAvailableModels: vi.fn(async () => [
-        { id: "claude-sonnet-4", name: "Claude Sonnet 4", provider: "anthropic" },
+        {
+          id: "claude-sonnet-4",
+          name: "Claude Sonnet 4",
+          provider: "anthropic",
+        },
         { id: "gpt-5", name: "GPT-5", provider: "openai" },
       ]),
     })
-    await dispatchRpcCommand({ type: "prompt", id: "m", message: "/model sonnet" }, h)
+    await dispatchRpcCommand(
+      { type: "prompt", id: "m", message: "/model sonnet" },
+      h,
+    )
     expect(h.setModel).toHaveBeenCalledWith("anthropic", "claude-sonnet-4")
     expect(h.prompt).not.toHaveBeenCalled()
   })
@@ -390,13 +416,20 @@ describe("TUI built-in slash intercept", () => {
     const h = handlers({
       getAvailableModels: vi.fn(async () => ({
         models: [
-          { id: "claude-sonnet-4", name: "Claude Sonnet 4", provider: "anthropic" },
+          {
+            id: "claude-sonnet-4",
+            name: "Claude Sonnet 4",
+            provider: "anthropic",
+          },
           { id: "gpt-5", name: "GPT-5", provider: "openai" },
         ],
         current: { id: "gpt-5", name: "GPT-5", provider: "openai" },
       })),
     })
-    await dispatchRpcCommand({ type: "prompt", id: "m3", message: "/model sonnet" }, h)
+    await dispatchRpcCommand(
+      { type: "prompt", id: "m3", message: "/model sonnet" },
+      h,
+    )
     expect(h.setModel).toHaveBeenCalledWith("anthropic", "claude-sonnet-4")
     expect(h.prompt).not.toHaveBeenCalled()
   })
@@ -408,7 +441,10 @@ describe("TUI built-in slash intercept", () => {
         { id: "a-two", name: "Two", provider: "p" },
       ]),
     })
-    await dispatchRpcCommand({ type: "prompt", id: "m2", message: "/model a" }, h)
+    await dispatchRpcCommand(
+      { type: "prompt", id: "m2", message: "/model a" },
+      h,
+    )
     expect(h.setModel).not.toHaveBeenCalled()
     expect(h.prompt).not.toHaveBeenCalled()
   })
@@ -418,7 +454,11 @@ describe("TUI built-in slash intercept — absolute-path pass-through", () => {
   it("path-shaped tokens pass to the model (inner slash)", async () => {
     const h = handlers({ isKnownSlash: () => false })
     await dispatchRpcCommand(
-      { type: "prompt", id: "p1", message: "/Users/george/x/refactor.ts please" },
+      {
+        type: "prompt",
+        id: "p1",
+        message: "/Users/george/x/refactor.ts please",
+      },
       h,
     )
     expect(h.prompt).toHaveBeenCalledWith(
@@ -429,7 +469,10 @@ describe("TUI built-in slash intercept — absolute-path pass-through", () => {
 
   it("bare known filesystem roots pass (/etc/hosts-style and bare)", async () => {
     const h = handlers({ isKnownSlash: () => false })
-    await dispatchRpcCommand({ type: "prompt", id: "p2", message: "/etc/hosts" }, h)
+    await dispatchRpcCommand(
+      { type: "prompt", id: "p2", message: "/etc/hosts" },
+      h,
+    )
     await dispatchRpcCommand({ type: "prompt", id: "p3", message: "/tmp" }, h)
     expect(h.prompt).toHaveBeenCalledTimes(2)
   })

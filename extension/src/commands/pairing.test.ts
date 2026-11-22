@@ -15,12 +15,9 @@ import "../test_support/isolated_state.js"
 import { describe, expect, test, vi, beforeEach } from "vitest"
 import { EventEmitter } from "node:events"
 import { createHash } from "node:crypto"
-import {
-  mkdtempSync,
-  rmSync,
-} from "node:fs"
+import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
-import {   join } from "node:path"
+import { join } from "node:path"
 
 // STATE-DIR ISOLATION: the allow-list version lockfile lives under the
 // un-bien state dir; without redirecting it, parallel vitest workers contend

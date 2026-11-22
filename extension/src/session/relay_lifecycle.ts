@@ -29,7 +29,10 @@ import { AppPresenceWatch } from "./app_presence.js"
 import { readFileSync } from "node:fs"
 import { hostname } from "node:os"
 import { fileURLToPath } from "node:url"
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+} from "@earendil-works/pi-coding-agent"
 import { qrSession } from "../pairing/qr.js"
 import {
   addPeer,
@@ -259,13 +262,20 @@ export function _broadcastEnvelope(
     const kind = env.rpc
       ? `rpc:${(env.rpc as { type?: string }).type ?? "?"}`
       : `evt:${env.evt?.channel ?? "?"}`
-    if ((env.rpc as { type?: string } | undefined)?.type === "extension_ui_request") {
-      const r = env.rpc as { method?: string; notify_type?: string; id?: string }
+    if (
+      (env.rpc as { type?: string } | undefined)?.type ===
+      "extension_ui_request"
+    ) {
+      const r = env.rpc as {
+        method?: string
+        notify_type?: string
+        id?: string
+      }
       envLog(
-        `envelope -> ${deps.activePeers.size} peer(s): rpc:extension_ui_request`
-        + ` method=${r.method ?? "?"}`
-        + (r.notify_type ? ` notify_type=${r.notify_type}` : "")
-        + ` id=${r.id ?? "?"}`,
+        `envelope -> ${deps.activePeers.size} peer(s): rpc:extension_ui_request` +
+          ` method=${r.method ?? "?"}` +
+          (r.notify_type ? ` notify_type=${r.notify_type}` : "") +
+          ` id=${r.id ?? "?"}`,
       )
     } else {
       envLog(`envelope -> ${deps.activePeers.size} peer(s): ${kind}`)
@@ -353,7 +363,10 @@ export function _detachPeerChannel(
 /**
  * Full teardown: stop listener, detach channel, close relay → idle.
  */
-export function _goIdle(deps: RelayLifecycleDeps, reason = "unspecified"): void {
+export function _goIdle(
+  deps: RelayLifecycleDeps,
+  reason = "unspecified",
+): void {
   lifecycleLog("idle", { reason, from: deps.state })
   deps.rootLifecycleGeneration += 1
   _relayLifecycleGeneration += 1
@@ -425,7 +438,9 @@ export function _onRelayClose(
 ): void {
   if (deps.relay !== closedRelay) return // delayed close from a replaced Relay
   if (deps.state === "idle") return // already torn down (e.g. /unbien stop)
-  lifecycleLog("relay_closed", { reconnect: deps.relayUrl ? "scheduled" : "no url" })
+  lifecycleLog("relay_closed", {
+    reconnect: deps.relayUrl ? "scheduled" : "no url",
+  })
 
   _relayLifecycleGeneration += 1
   deps.stopAutoListener?.()

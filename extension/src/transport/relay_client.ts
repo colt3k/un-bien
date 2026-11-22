@@ -159,7 +159,10 @@ export type RelayIdentityCheck =
       relayUrl: string
       endpoints: string[]
     }
-  | { ok: false; reason: "bad_sig" | "wrong_nonce" | "pin_mismatch" | "malformed" }
+  | {
+      ok: false
+      reason: "bad_sig" | "wrong_nonce" | "pin_mismatch" | "malformed"
+    }
 
 export interface RelayIdentityAckFrame {
   type?: unknown
@@ -181,7 +184,8 @@ export function verifyRelayIdentityAck(
   receivedNonceB64: string,
   expectedRelayPubkey?: string,
 ): RelayIdentityCheck {
-  const relayPubkey = typeof frame.relay_pubkey === "string" ? frame.relay_pubkey : null
+  const relayPubkey =
+    typeof frame.relay_pubkey === "string" ? frame.relay_pubkey : null
   const relayName = typeof frame.relay_name === "string" ? frame.relay_name : ""
   const relayUrl = typeof frame.relay_url === "string" ? frame.relay_url : ""
   const endpoints = Array.isArray(frame.endpoints)
@@ -191,20 +195,21 @@ export function verifyRelayIdentityAck(
     : []
   const nonceB64 = typeof frame.nonce === "string" ? frame.nonce : null
   const sigB64 = typeof frame.sig === "string" ? frame.sig : null
-  if (
-    !relayPubkey ||
-    !nonceB64 ||
-    !sigB64 ||
-    nonceB64 !== receivedNonceB64
-  ) {
+  if (!relayPubkey || !nonceB64 || !sigB64 || nonceB64 !== receivedNonceB64) {
     // A nonce mismatch with a VALID signature is a replay across connections:
     // indistinguishable from a malformed frame at this layer — both refuse.
-    return { ok: false, reason: nonceB64 === null ? "malformed" : "wrong_nonce" }
+    return {
+      ok: false,
+      reason: nonceB64 === null ? "malformed" : "wrong_nonce",
+    }
   }
   const msg = `${nonceB64}|${relayPubkey}|${relayName}|${relayUrl}`
   const pkBytes = Buffer.from(relayPubkey, "base64")
   const sigBytes = Buffer.from(sigB64, "base64")
-  if (pkBytes.length !== 32 || !ed25519Verify(pkBytes, Buffer.from(msg, "utf8"), sigBytes)) {
+  if (
+    pkBytes.length !== 32 ||
+    !ed25519Verify(pkBytes, Buffer.from(msg, "utf8"), sigBytes)
+  ) {
     return { ok: false, reason: "bad_sig" }
   }
   if (
@@ -283,62 +288,62 @@ export class RelayClient extends EventEmitter<RelayClientEvents> {
           // (data, plus the relay's keepalive ping/pong below) refreshes the
           // liveness clock.
           this.lastActivityAt = Date.now()
-                    ws.on("message", (raw) => {
-                        this.lastActivityAt = Date.now()
-                        const text = Buffer.isBuffer(raw) ? raw.toString() : String(raw)
-                        for (const line of text.split("\n")) {
-                            const trimmed = line.trim()
-                            if (!trimmed) continue
-                            // Relay refusal (payload_too_large / invalid_envelope / unknown_peer):
-                            // surface in the envelope debug log so an oversized send is VISIBLE
-                            // instead of the message silently vanishing (silent-drop fix).
-                            if (trimmed.startsWith('{"type":"error"')) {
-                                envLog(`relay error frame: ${trimmed}`)
-                            }
-                            // P7: the relay proves its identity right after auth. A pin
-                            // mismatch (TOFU'd at pair time) or forged ack kills the
-                            // connection BEFORE any caller traffic rides it. NB: serde
-                            // JSON keys may serialize alphabetically (no preserve_order),
-                            // so detect by substring + parse, not a "type"-first prefix.
-                            if (trimmed.includes('"identity_ack"')) {
-                                try {
-                                    const frame = JSON.parse(trimmed) as RelayIdentityAckFrame
-                                    if (frame?.type !== "identity_ack") continue // data frame that merely mentions it
-                                    const check = verifyRelayIdentityAck(
-                                        frame,
-                                        this.challengeNonceB64 ?? "",
-                                        this.options.expectRelayPubkey,
-                                    )
-                                    if (check.ok) {
-                                        this.verifiedIdentity = {
-                                            relayPubkey: check.relayPubkey,
-                                            relayName: check.relayName,
-                                            relayUrl: check.relayUrl,
-                                            endpoints: check.endpoints,
-                                        }
-                                        this.emit("relayIdentity", check)
-                                    } else {
-                                        envLog(`relay identity check failed: ${check.reason}`)
-                                        this.emit("relayIdentityError", {
-                                            reason: check.reason,
-                                            expectedRelayPubkey: this.options.expectRelayPubkey,
-                                            gotRelayPubkey:
-                                                typeof frame.relay_pubkey === "string"
-                                                    ? frame.relay_pubkey
-                                                    : undefined,
-                                        })
-                                        this._stopLiveness()
-                                        ws.terminate()
-                                        continue
-                                    }
-                                } catch {
-                                    envLog(`relay identity_ack unparseable: ${trimmed}`)
-                                    continue
-                                }
-                            }
-                            this.emit("message", trimmed)
-                        }
+          ws.on("message", (raw) => {
+            this.lastActivityAt = Date.now()
+            const text = Buffer.isBuffer(raw) ? raw.toString() : String(raw)
+            for (const line of text.split("\n")) {
+              const trimmed = line.trim()
+              if (!trimmed) continue
+              // Relay refusal (payload_too_large / invalid_envelope / unknown_peer):
+              // surface in the envelope debug log so an oversized send is VISIBLE
+              // instead of the message silently vanishing (silent-drop fix).
+              if (trimmed.startsWith('{"type":"error"')) {
+                envLog(`relay error frame: ${trimmed}`)
+              }
+              // P7: the relay proves its identity right after auth. A pin
+              // mismatch (TOFU'd at pair time) or forged ack kills the
+              // connection BEFORE any caller traffic rides it. NB: serde
+              // JSON keys may serialize alphabetically (no preserve_order),
+              // so detect by substring + parse, not a "type"-first prefix.
+              if (trimmed.includes('"identity_ack"')) {
+                try {
+                  const frame = JSON.parse(trimmed) as RelayIdentityAckFrame
+                  if (frame?.type !== "identity_ack") continue // data frame that merely mentions it
+                  const check = verifyRelayIdentityAck(
+                    frame,
+                    this.challengeNonceB64 ?? "",
+                    this.options.expectRelayPubkey,
+                  )
+                  if (check.ok) {
+                    this.verifiedIdentity = {
+                      relayPubkey: check.relayPubkey,
+                      relayName: check.relayName,
+                      relayUrl: check.relayUrl,
+                      endpoints: check.endpoints,
+                    }
+                    this.emit("relayIdentity", check)
+                  } else {
+                    envLog(`relay identity check failed: ${check.reason}`)
+                    this.emit("relayIdentityError", {
+                      reason: check.reason,
+                      expectedRelayPubkey: this.options.expectRelayPubkey,
+                      gotRelayPubkey:
+                        typeof frame.relay_pubkey === "string"
+                          ? frame.relay_pubkey
+                          : undefined,
                     })
+                    this._stopLiveness()
+                    ws.terminate()
+                    continue
+                  }
+                } catch {
+                  envLog(`relay identity_ack unparseable: ${trimmed}`)
+                  continue
+                }
+              }
+              this.emit("message", trimmed)
+            }
+          })
           // The relay pings every ~25s; `ws` auto-replies Pong (keeping the
           // relay's view of us alive). The relay ignores client pings rather
           // than ponging, so these inbound pings — not a ping/pong we initiate

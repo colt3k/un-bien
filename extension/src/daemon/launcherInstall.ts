@@ -18,7 +18,12 @@ import { fileURLToPath } from "node:url"
 import { join } from "node:path"
 import { promisify } from "node:util"
 import { loadConfig } from "../config.js"
-import { globalBinPath, globalInstallCommand, globalPackageRoot, packageManager } from "./service_env.js"
+import {
+  globalBinPath,
+  globalInstallCommand,
+  globalPackageRoot,
+  packageManager,
+} from "./service_env.js"
 
 const execFileAsync = promisify(execFile)
 
@@ -63,13 +68,14 @@ export async function installLauncherPackage(
   // The configured package manager (`package_manager`: npm, bun or pnpm).
   const pm = packageManager(loadConfig())
   const install = globalInstallCommand(pm, spec)
-  push(`${install.display}${dev ? "  (dev channel — matches this dev extension)" : ""} …`)
+  push(
+    `${install.display}${dev ? "  (dev channel — matches this dev extension)" : ""} …`,
+  )
 
-  const { stdout, stderr } = await execFileAsync(
-    install.cmd,
-    install.args,
-    { timeout: 5 * 60_000, maxBuffer: 4 * 1024 * 1024 },
-  ).catch((err) => {
+  const { stdout, stderr } = await execFileAsync(install.cmd, install.args, {
+    timeout: 5 * 60_000,
+    maxBuffer: 4 * 1024 * 1024,
+  }).catch((err) => {
     const detail =
       (err as { stderr?: string; message?: string }).stderr ??
       (err as { message?: string }).message ??
@@ -113,7 +119,8 @@ export async function installLauncherPackage(
     )
   } catch {
     push(
-      "⚠ installed, but `unbien-launcher --version` failed — the global bin dir of " + `${pm} ` +
+      "⚠ installed, but `unbien-launcher --version` failed — the global bin dir of " +
+        `${pm} ` +
         "may not be on $PATH. Open a new terminal and run `unbien-launcher --version`.",
     )
   }
@@ -178,7 +185,13 @@ export async function installExtensionGlobally(
   }
   const root = globalPackageRoot(pm)
   if (!root) throw new Error(`could not find ${pm}'s global package directory`)
-  const launcherScript = join(root, EXTENSION_PACKAGE, "dist", "bin", "launcher.js")
+  const launcherScript = join(
+    root,
+    EXTENSION_PACKAGE,
+    "dist",
+    "bin",
+    "launcher.js",
+  )
   if (!existsSync(launcherScript)) {
     throw new Error(`installed, but ${launcherScript} is missing`)
   }

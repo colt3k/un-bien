@@ -106,7 +106,8 @@ export class PiAgentConfig implements AgentConfigPort {
     const reg = actionCtx?.modelRegistry ?? ensureModelRegistry(actionCtx)
     reg.refresh()
     const model = reg.find(provider, modelId)
-    if (!model) throw new Error(`model "${provider}/${modelId}" not in registry`)
+    if (!model)
+      throw new Error(`model "${provider}/${modelId}" not in registry`)
     // Route via the minimal ActionPi view (matches handleModelSet): the
     // registry's `find` returns the minimal SdkModelLike, structurally fine
     // for setModel at runtime.
@@ -140,8 +141,11 @@ export class PiAgentConfig implements AgentConfigPort {
     // unknown tokens then keep their status-quo pass-through to pi).
     try {
       const commands =
-        (this.opts.getPi() as { getCommands?: () => Array<{ name: string }> } | null)
-          ?.getCommands?.() ?? []
+        (
+          this.opts.getPi() as {
+            getCommands?: () => Array<{ name: string }>
+          } | null
+        )?.getCommands?.() ?? []
       const bare = token.slice(1)
       return commands.some(
         (c) => c.name === bare || c.name.startsWith(bare + " "),

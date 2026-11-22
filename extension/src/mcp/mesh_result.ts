@@ -23,8 +23,8 @@ export function formatMeshAckResult(to: string, ack: AckResult): MeshAckResult {
     case "unknown_peer":
       return errorResult(
         `No peer "${to}" on this broker — it is not registered here ` +
-        `(it may be on a different broker, or offline). Check ` +
-        `list_peers / whoami before retrying.`,
+          `(it may be on a different broker, or offline). Check ` +
+          `list_peers / whoami before retrying.`,
       )
   }
 }

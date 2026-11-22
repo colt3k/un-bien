@@ -229,7 +229,10 @@ function _probeBroker(sockPath: string): Promise<LeaderProbe> {
       // `list_peers` fallback never got its answer read anyway.
       clearTimeout(connectTimer)
       sock.write(JSON.stringify({ type: "broker_ping" }) + "\n")
-      ackTimer = setTimeout(() => settle({ outcome: "busy" }), PROBE_ACK_TIMEOUT_MS)
+      ackTimer = setTimeout(
+        () => settle({ outcome: "busy" }),
+        PROBE_ACK_TIMEOUT_MS,
+      )
     })
 
     sock.once("error", () => {

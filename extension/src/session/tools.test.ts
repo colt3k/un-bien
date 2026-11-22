@@ -1127,7 +1127,11 @@ describe("which tool results count as the agent having read a message", () => {
   // A message whose body a tool returned to the agent is not pushed into a
   // later turn. A result that only names the message (an early interrupt, a
   // listing) leaves it to be pushed.
-  const stored = (id: string, re: string | null, sentAt = Date.now()): MeshMessage => ({
+  const stored = (
+    id: string,
+    re: string | null,
+    sentAt = Date.now(),
+  ): MeshMessage => ({
     id,
     from: "backend",
     to: "orq",
@@ -1136,10 +1140,20 @@ describe("which tool results count as the agent having read a message", () => {
     sentAt,
     deliveredAt: null,
   })
-  const run = (inbox: MeshInbox, name: string, args: Record<string, unknown>) => {
+  const run = (
+    inbox: MeshInbox,
+    name: string,
+    args: Record<string, unknown>,
+  ) => {
     const { pi, tools } = makeMockPi()
-    registerAgentTools(pi, () => makeMockPeer(), () => inbox)
-    return tools.get(name)!.execute(TOOL_CALL_ID, args, undefined, undefined, {} as never)
+    registerAgentTools(
+      pi,
+      () => makeMockPeer(),
+      () => inbox,
+    )
+    return tools
+      .get(name)!
+      .execute(TOOL_CALL_ID, args, undefined, undefined, {} as never)
   }
 
   test("agent_request's correlated reply is read", async () => {
@@ -1151,7 +1165,11 @@ describe("which tool results count as the agent having read a message", () => {
 
   test("agent_request's early interrupt names the message but leaves it unread", async () => {
     const inbox = new MeshInbox()
-    const p = run(inbox, "agent_request", { to: "backend", body: "?", timeout_ms: 2_000 })
+    const p = run(inbox, "agent_request", {
+      to: "backend",
+      body: "?",
+      timeout_ms: 2_000,
+    })
     setTimeout(() => inbox.add(stored("m-fresh", null)), 5)
     const result = await p
     expect(JSON.stringify(result.content)).toMatch(/Early interrupt/)
@@ -1200,8 +1218,17 @@ describe("federated sends (relay pi_envelope, receiver ack)", () => {
       ["epk-a", { relayName: "cascade", addresses: ["cascade:/repo@alpha"] }],
       ["epk-b", { relayName: "droplet", addresses: ["droplet:/home@gamma"] }],
     ])
-  type Frame = { type: string; to_pc: string; envelope: { id: string; to: string; ack?: boolean; re: string | null } }
-  function setup(opts: { acks?: boolean; reply?: (f: Frame, acks: FederatedAcks, inbox: MeshInbox) => void } = {}) {
+  type Frame = {
+    type: string
+    to_pc: string
+    envelope: { id: string; to: string; ack?: boolean; re: string | null }
+  }
+  function setup(
+    opts: {
+      acks?: boolean
+      reply?: (f: Frame, acks: FederatedAcks, inbox: MeshInbox) => void
+    } = {},
+  ) {
     const { pi, tools } = makeMockPi()
     const peer = makeMockPeer()
     const inbox = new MeshInbox()
@@ -1214,22 +1241,51 @@ describe("federated sends (relay pi_envelope, receiver ack)", () => {
         opts.reply?.(f, acks, inbox)
       },
     }
-    registerAgentTools(pi, () => peer, () => inbox, () => [], detail, () => relay, () => (opts.acks === false ? null : acks))
+    registerAgentTools(
+      pi,
+      () => peer,
+      () => inbox,
+      () => [],
+      detail,
+      () => relay,
+      () => (opts.acks === false ? null : acks),
+    )
     const call = (name: string, args: Record<string, unknown>) =>
-      tools.get(name)!.execute(TOOL_CALL_ID, args, undefined, undefined, {} as never)
+      tools
+        .get(name)!
+        .execute(TOOL_CALL_ID, args, undefined, undefined, {} as never)
     return { peer, inbox, acks, frames, call }
   }
   const ackFrom = (f: Frame, acks: FederatedAcks) =>
     queueMicrotask(() =>
-      acks.settle({ id: "ack-id", from: "/repo@alpha", to: "orq", re: f.envelope.id, body: { type: "ack", status: "received", target: f.envelope.to } }),
+      acks.settle({
+        id: "ack-id",
+        from: "/repo@alpha",
+        to: "orq",
+        re: f.envelope.id,
+        body: { type: "ack", status: "received", target: f.envelope.to },
+      }),
     )
 
   test("a unicast send asks for an ack and reports delivery when it comes", async () => {
-    const { peer, frames, call } = setup({ reply: (f, acks) => ackFrom(f, acks) })
-    const result = await call("agent_send", { to: "cascade:/repo@alpha", body: "hi" })
+    const { peer, frames, call } = setup({
+      reply: (f, acks) => ackFrom(f, acks),
+    })
+    const result = await call("agent_send", {
+      to: "cascade:/repo@alpha",
+      body: "hi",
+    })
     expect(frames).toHaveLength(1)
-    expect(frames[0]).toMatchObject({ type: "pi_envelope", to_pc: "epk-a", envelope: { to: "cascade:/repo@alpha", ack: true } })
-    expect(result.details).toMatchObject({ status: "received", ok: true, id: frames[0]!.envelope.id })
+    expect(frames[0]).toMatchObject({
+      type: "pi_envelope",
+      to_pc: "epk-a",
+      envelope: { to: "cascade:/repo@alpha", ack: true },
+    })
+    expect(result.details).toMatchObject({
+      status: "received",
+      ok: true,
+      id: frames[0]!.envelope.id,
+    })
     expect(JSON.stringify(result.content)).toMatch(/Delivered to/)
     expect(peer.sendWithAck).not.toHaveBeenCalled()
   })
@@ -1238,11 +1294,24 @@ describe("federated sends (relay pi_envelope, receiver ack)", () => {
     const { call } = setup({
       reply: (f, acks) =>
         queueMicrotask(() =>
-          acks.settle({ id: "e", from: "_relay", to: "orq", re: f.envelope.id, body: { type: "transport_error", reason: "not_authorized" } }),
+          acks.settle({
+            id: "e",
+            from: "_relay",
+            to: "orq",
+            re: f.envelope.id,
+            body: { type: "transport_error", reason: "not_authorized" },
+          }),
         ),
     })
-    const result = await call("agent_send", { to: "cascade:/repo@alpha", body: "hi" })
-    expect(result.details).toMatchObject({ status: "denied", ok: false, reason: "not_authorized" })
+    const result = await call("agent_send", {
+      to: "cascade:/repo@alpha",
+      body: "hi",
+    })
+    expect(result.details).toMatchObject({
+      status: "denied",
+      ok: false,
+      reason: "not_authorized",
+    })
   })
 
   test("no ack (an older receiver) is unconfirmed, not failed", async () => {
@@ -1261,14 +1330,20 @@ describe("federated sends (relay pi_envelope, receiver ack)", () => {
 
   test("a host that does not read acks sends without the flag and does not wait", async () => {
     const { frames, call } = setup({ acks: false })
-    const result = await call("agent_send", { to: "cascade:/repo@alpha", body: "hi" })
+    const result = await call("agent_send", {
+      to: "cascade:/repo@alpha",
+      body: "hi",
+    })
     expect(frames[0]!.envelope.ack).toBeUndefined()
     expect(result.details).toMatchObject({ status: "sent", ok: true })
   })
 
   test("<relay>:broadcast reaches that machine and *:broadcast every one, without acks", async () => {
     const { peer, frames, call } = setup()
-    const one = await call("agent_send", { to: "droplet:broadcast", body: "all" })
+    const one = await call("agent_send", {
+      to: "droplet:broadcast",
+      body: "all",
+    })
     expect(frames.map((f) => f.to_pc)).toEqual(["epk-b"])
     expect(one.details).toMatchObject({ status: "sent", ok: true })
     await call("agent_send", { to: "*:broadcast", body: "all" })
@@ -1282,7 +1357,10 @@ describe("federated sends (relay pi_envelope, receiver ack)", () => {
 
   test("a broadcast to an unknown machine label is refused", async () => {
     const { frames, call } = setup()
-    const result = await call("agent_send", { to: "nowhere:broadcast", body: "x" })
+    const result = await call("agent_send", {
+      to: "nowhere:broadcast",
+      body: "x",
+    })
     expect(result.details).toMatchObject({ status: "refused", ok: false })
     expect(frames).toHaveLength(0)
   })
@@ -1293,12 +1371,23 @@ describe("federated sends (relay pi_envelope, receiver ack)", () => {
         ackFrom(f, acks)
         setTimeout(
           () =>
-            inbox.add({ id: "reply-1", from: "/repo@alpha", to: "orq", body: "pong", re: f.envelope.id, sentAt: Date.now(), deliveredAt: null }),
+            inbox.add({
+              id: "reply-1",
+              from: "/repo@alpha",
+              to: "orq",
+              body: "pong",
+              re: f.envelope.id,
+              sentAt: Date.now(),
+              deliveredAt: null,
+            }),
           5,
         )
       },
     })
-    const result = await call("agent_request", { to: "cascade:/repo@alpha", body: "ping" })
+    const result = await call("agent_request", {
+      to: "cascade:/repo@alpha",
+      body: "ping",
+    })
     expect(result.details).toBe("pong")
   })
 
@@ -1306,10 +1395,16 @@ describe("federated sends (relay pi_envelope, receiver ack)", () => {
     vi.useFakeTimers()
     try {
       const { call } = setup()
-      const p = call("agent_request", { to: "cascade:/repo@alpha", body: "ping", timeout_ms: 60_000 })
+      const p = call("agent_request", {
+        to: "cascade:/repo@alpha",
+        body: "ping",
+        timeout_ms: 60_000,
+      })
       await vi.advanceTimersByTimeAsync(5_000)
       const result = await p
-      expect(JSON.stringify(result.content)).toMatch(/not confirmed, so not waiting/)
+      expect(JSON.stringify(result.content)).toMatch(
+        /not confirmed, so not waiting/,
+      )
     } finally {
       vi.useRealTimers()
     }
@@ -1319,10 +1414,25 @@ describe("federated sends (relay pi_envelope, receiver ack)", () => {
     const { pi, tools } = makeMockPi()
     const peer = {
       ...makeMockPeer(),
-      request: vi.fn().mockResolvedValue({ from: "broker", to: "orq", id: "x", re: "y", body: { type: "list_peers_reply", peers: ["orq"] } }),
+      request: vi.fn().mockResolvedValue({
+        from: "broker",
+        to: "orq",
+        id: "x",
+        re: "y",
+        body: { type: "list_peers_reply", peers: ["orq"] },
+      }),
     } as unknown as SessionPeer
-    registerAgentTools(pi, () => peer, () => new MeshInbox(), () => ["cascade:/repo@alpha", "droplet:/home@gamma"], detail, () => ({ send: () => undefined }))
-    const result = await tools.get("list_peers")!.execute(TOOL_CALL_ID, {}, undefined, undefined, {} as never)
+    registerAgentTools(
+      pi,
+      () => peer,
+      () => new MeshInbox(),
+      () => ["cascade:/repo@alpha", "droplet:/home@gamma"],
+      detail,
+      () => ({ send: () => undefined }),
+    )
+    const result = await tools
+      .get("list_peers")!
+      .execute(TOOL_CALL_ID, {}, undefined, undefined, {} as never)
     const text = JSON.stringify(result.content)
     expect(text).toContain("cascade:broadcast, droplet:broadcast")
     expect(text).toContain("*:broadcast")

@@ -43,7 +43,9 @@ export function migrateLegacyConfig(): void {
     fs.mkdirSync(path.dirname(target), { recursive: true })
     fs.copyFileSync(legacy, target, fs.constants.COPYFILE_EXCL)
   } catch (err) {
-    console.error(`[un-bien] could not move ${legacy} to ${target}: ${String(err)}; still reading the old file`)
+    console.error(
+      `[un-bien] could not move ${legacy} to ${target}: ${String(err)}; still reading the old file`,
+    )
     return
   }
   try {

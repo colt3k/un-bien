@@ -3,7 +3,9 @@ import { updateFooter, type FooterContext, type FooterState } from "./footer.js"
 
 // The mock still offers setTitle (pi's ui has it) to prove the footer
 // never calls it.
-function makeMockCtx(): { ui: FooterContext["ui"] & { setTitle(title: string): void } } & {
+function makeMockCtx(): {
+  ui: FooterContext["ui"] & { setTitle(title: string): void }
+} & {
   statusCalls: Array<{ key: string; value: string | undefined }>
   titleCalls: string[]
 } {

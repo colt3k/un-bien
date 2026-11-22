@@ -126,13 +126,7 @@ export function findTemplate(
 export const LAUNCHER_SYSTEMD_UNIT = "unbien-launcher.service"
 
 export function systemdUnitPath(): string {
-  return join(
-    homedir(),
-    ".config",
-    "systemd",
-    "user",
-    LAUNCHER_SYSTEMD_UNIT,
-  )
+  return join(homedir(), ".config", "systemd", "user", LAUNCHER_SYSTEMD_UNIT)
 }
 
 export function launchdPlistPath(): string {
@@ -918,7 +912,9 @@ export function unlinkCliBinaries(
     } catch {
       /* not present */
     }
-    const owner = existed ? _foreignBinOwner(path, home, paths.remotePi ?? findRemotePiScript()) : null
+    const owner = existed
+      ? _foreignBinOwner(path, home, paths.remotePi ?? findRemotePiScript())
+      : null
     if (owner) {
       log.push(`kept ${path} → ${owner} (installed by a package manager)`)
       existed = false
@@ -971,7 +967,8 @@ export function _foreignBinOwner(
   if (!existsSync(target)) return null // broken
   if (ownTarget && target === resolve(ownTarget)) return null // already ours
   const agentDir = process.env["PI_CODING_AGENT_DIR"] || join(home, ".pi")
-  const inAgentDir = target === agentDir || target.startsWith(agentDir.replace(/\/+$/, "") + "/")
+  const inAgentDir =
+    target === agentDir || target.startsWith(agentDir.replace(/\/+$/, "") + "/")
   return inAgentDir ? null : target
 }
 

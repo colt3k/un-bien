@@ -8,7 +8,10 @@ import {
   type LaunchErrorCode,
   type LaunchResult,
 } from "./launch.js"
-import { effectiveAllowRemoteLaunch, loadLocalConfig } from "./session/local_config.js"
+import {
+  effectiveAllowRemoteLaunch,
+  loadLocalConfig,
+} from "./session/local_config.js"
 import type { EnvelopeMessage } from "./session/rpc_envelope.js"
 
 /**
@@ -38,7 +41,10 @@ export interface LaunchRequestOptions {
 }
 
 /** The `session_launch_result` frame for a request. Exported for tests. */
-export function launchResultEnvelope(requestId: string, result: LaunchResult): EnvelopeMessage {
+export function launchResultEnvelope(
+  requestId: string,
+  result: LaunchResult,
+): EnvelopeMessage {
   return {
     ub: {
       type: "session_launch_result",
@@ -53,7 +59,10 @@ export function launchResultEnvelope(requestId: string, result: LaunchResult): E
   }
 }
 
-function stringField(frame: Record<string, unknown>, key: string): string | undefined {
+function stringField(
+  frame: Record<string, unknown>,
+  key: string,
+): string | undefined {
   const v = frame[key]
   return typeof v === "string" && v.trim().length > 0 ? v.trim() : undefined
 }
@@ -120,7 +129,9 @@ export async function handleSessionLaunchDirs(
     })
   }
   const options = launchDirOptions(loadConfig().launch?.dirs)
-  const remoteLaunch = effectiveAllowRemoteLaunch(loadLocalConfig(process.cwd()))
+  const remoteLaunch = effectiveAllowRemoteLaunch(
+    loadLocalConfig(process.cwd()),
+  )
   return send(launchDirsResultEnvelope(requestId, options, remoteLaunch))
 }
 
@@ -131,7 +142,10 @@ export async function handleSessionLaunch(
 ): Promise<LaunchResult> {
   const requestId = stringField(frame, "id") ?? ""
   const reply = (result: LaunchResult) => {
-    if (!result.ok) opts.log(`session_launch ${result.code ?? "failed"}: ${result.message ?? ""}`)
+    if (!result.ok)
+      opts.log(
+        `session_launch ${result.code ?? "failed"}: ${result.message ?? ""}`,
+      )
     try {
       sender.sendEnvelope(launchResultEnvelope(requestId, result))
     } catch (err) {
@@ -147,7 +161,11 @@ export async function handleSessionLaunch(
 
   const cwd = _expandTilde(stringField(frame, "cwd") ?? process.cwd())
   if (!effectiveAllowRemoteLaunch(loadLocalConfig(cwd))) {
-    return refuse("remote_launch_disabled", "Remote launch is turned off on this machine", false)
+    return refuse(
+      "remote_launch_disabled",
+      "Remote launch is turned off on this machine",
+      false,
+    )
   }
   // Pairing is re-checked FRESH per launch: a revoked owner stops launching
   // without a daemon restart.
@@ -156,7 +174,11 @@ export async function handleSessionLaunch(
   }
   // Directory allow-list, read FRESH each request.
   if (!launchDirAllowed(cwd, loadConfig().launch?.dirs)) {
-    return refuse("permission_denied", "Remote launch not permitted for this directory", true)
+    return refuse(
+      "permission_denied",
+      "Remote launch not permitted for this directory",
+      true,
+    )
   }
   const result = await launchSession(
     {

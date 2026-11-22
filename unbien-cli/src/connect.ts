@@ -35,10 +35,7 @@ import { PanelStore } from "./panels.js"
 import { pickSession } from "./picker.js"
 import { resolveRemoteMachine } from "./machine.js"
 import { entriesToEnvelopes, reduce, type EnvelopeMessage } from "./reduce.js"
-import {
-  findFlaggedSession,
-  type SessionChoice,
-} from "./session-select.js"
+import { findFlaggedSession, type SessionChoice } from "./session-select.js"
 import { Shell } from "./tui.js"
 import {
   renderAgentsPanel,
@@ -91,9 +88,10 @@ if (flags.has("list-themes")) {
  * a pairing is only valid on the relay it was made on; the fallback only
  * fires when no stored peer matches the target.
  */
-async function resolveTarget(): Promise<
-  { invite: PairingInvite; relayUrl: string } | null
-> {
+async function resolveTarget(): Promise<{
+  invite: PairingInvite
+  relayUrl: string
+} | null> {
   const explicitRelay = flags.get("relay")
   const ambientRelay = explicitRelay ?? process.env["UNBIEN_RELAY"]
   if (target?.startsWith("unbien://")) {
@@ -616,7 +614,9 @@ async function pickRoom(rooms: readonly RoomInfo[]): Promise<RoomInfo | null> {
   if (!process.stdin.isTTY) {
     // Group: local sessions first, then federated grouped by peerRelay.
     const local = rooms.filter((r) => !r.peerRelay)
-    const remoteRelays = [...new Set(rooms.map((r) => r.peerRelay).filter(Boolean))] as string[]
+    const remoteRelays = [
+      ...new Set(rooms.map((r) => r.peerRelay).filter(Boolean)),
+    ] as string[]
     let idx = 0
     const lines: string[] = []
     if (local.length > 0) {

@@ -265,7 +265,8 @@ export function registerUnbienCommands(
     },
   })
   pi.registerCommand("unbien settings", {
-    description: "Edit un-bien's settings: this machine's (un-bien.json) and this folder's",
+    description:
+      "Edit un-bien's settings: this machine's (un-bien.json) and this folder's",
     handler: async (_, ctx) => {
       await _cmdSettings(deps, ctx)
     },

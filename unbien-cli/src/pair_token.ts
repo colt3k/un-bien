@@ -38,10 +38,7 @@
  */
 import { hostname as osHostname } from "node:os"
 import type { QRSession } from "@geohar/un-bien"
-import type {
-  Ed25519Keypair,
-  ServerMessage,
-} from "@geohar/un-bien/client"
+import type { Ed25519Keypair, ServerMessage } from "@geohar/un-bien/client"
 
 // NOTE: no static import of "@geohar/un-bien" here. The pairing storage
 // module freezes the state root (identity.json / peers.json paths) at
@@ -87,9 +84,10 @@ export function parsePairTokenArgs(argv: string[]): PairTokenOptions {
       stateDir = argv[++i] ?? ""
     } else if (arg === "--timeout") {
       const seconds = Number(argv[++i])
-      timeoutMs = Number.isFinite(seconds) && seconds > 0
-        ? seconds * 1_000
-        : DEFAULT_WAIT_TIMEOUT_MS
+      timeoutMs =
+        Number.isFinite(seconds) && seconds > 0
+          ? seconds * 1_000
+          : DEFAULT_WAIT_TIMEOUT_MS
     } else if (arg === "--relay") {
       relayUrl = argv[++i] ?? ""
     } else if (arg === "--help" || arg === "-h") {
@@ -195,7 +193,11 @@ export async function handlePairRequest(
   ctx: PairHandshakeContext,
   appPeerId: string,
   inner: PairRequestFrame,
-): Promise<{ settled: boolean; reply: PairHandshakeReply; deviceName: string }> {
+): Promise<{
+  settled: boolean
+  reply: PairHandshakeReply
+  deviceName: string
+}> {
   const deviceName = inner.device_name
 
   const known = await deps.findKnownPeer(appPeerId)
@@ -297,9 +299,7 @@ async function runPairTokenCommand(argv: string[]): Promise<number> {
   // The token lives for the whole wait window (clamped to the safe
   // pairing bounds) so a scan at any point in it is valid.
   const qrSession = new unbien.QRSession()
-  const { token } = qrSession.issueToken(
-    unbien.clampPairTtlMs(opts.timeoutMs),
-  )
+  const { token } = qrSession.issueToken(unbien.clampPairTtlMs(opts.timeoutMs))
   const uri = unbien.buildQRUri(
     token,
     kp.publicKey,

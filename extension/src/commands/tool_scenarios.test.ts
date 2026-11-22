@@ -14,7 +14,10 @@ import { TOOL_SCENARIO_FRAMES } from "./tool_scenario_frames.js"
 import { runTestScenario } from "./test_scenarios.js"
 
 const HERE = dirname(fileURLToPath(import.meta.url))
-const CATALOG = join(HERE, "../../../app/Tests/Fixtures/tool-results/catalog.json")
+const CATALOG = join(
+  HERE,
+  "../../../app/Tests/Fixtures/tool-results/catalog.json",
+)
 const MODULE = join(HERE, "tool_scenario_frames.ts")
 
 /** One call per face, a streamed shell run and two failures. */
@@ -41,7 +44,9 @@ interface Fixture {
 }
 
 function expected(): { id: string; frames: Record<string, unknown>[] }[] {
-  const catalog = JSON.parse(readFileSync(CATALOG, "utf8")) as { fixtures: Fixture[] }
+  const catalog = JSON.parse(readFileSync(CATALOG, "utf8")) as {
+    fixtures: Fixture[]
+  }
   return IDS.map((id) => {
     const fixture = catalog.fixtures.find((f) => f.id === id)
     if (!fixture) throw new Error(`catalog has no fixture ${id}`)
@@ -73,24 +78,45 @@ describe("/unbien test tools", () => {
   it("sends every call's frames under its own fresh id, with a run time", () => {
     const sent: Record<string, unknown>[] = []
     const status = runTestScenario(
-      { broadcast: (env) => sent.push(env.rpc as Record<string, unknown>), emitBus: () => {} },
+      {
+        broadcast: (env) => sent.push(env.rpc as Record<string, unknown>),
+        emitBus: () => {},
+      },
       "tools",
     )
     expect(status).toContain(`${TOOL_SCENARIO_FRAMES.length} real tool calls`)
-    const tool = sent.filter((f) => String(f.type).startsWith("tool_execution_"))
-    expect(tool.length).toBe(TOOL_SCENARIO_FRAMES.reduce((n, c) => n + c.frames.length, 0))
+    const tool = sent.filter((f) =>
+      String(f.type).startsWith("tool_execution_"),
+    )
+    expect(tool.length).toBe(
+      TOOL_SCENARIO_FRAMES.reduce((n, c) => n + c.frames.length, 0),
+    )
     const ends = tool.filter((f) => f.type === "tool_execution_end")
-    expect(new Set(ends.map((f) => f.toolCallId)).size).toBe(TOOL_SCENARIO_FRAMES.length)
+    expect(new Set(ends.map((f) => f.toolCallId)).size).toBe(
+      TOOL_SCENARIO_FRAMES.length,
+    )
     for (const end of ends) expect(typeof end.durationMs).toBe("number")
     expect(sent[0]?.type).toBe("turn_start")
     expect(sent.at(-1)?.type).toBe("agent_settled")
   })
 
   it("keeps the older per-kind names as aliases", () => {
-    for (const name of ["tool", "diff", "code-shell", "code-file", "diff-output", "write"]) {
-      const status = runTestScenario({ broadcast: () => {}, emitBus: () => {} }, name)
+    for (const name of [
+      "tool",
+      "diff",
+      "code-shell",
+      "code-file",
+      "diff-output",
+      "write",
+    ]) {
+      const status = runTestScenario(
+        { broadcast: () => {}, emitBus: () => {} },
+        name,
+      )
       expect(status, name).toMatch(/^sent tools/)
     }
-    expect(runTestScenario({ broadcast: () => {}, emitBus: () => {} }, "all")).toContain("tools")
+    expect(
+      runTestScenario({ broadcast: () => {}, emitBus: () => {} }, "all"),
+    ).toContain("tools")
   })
 })

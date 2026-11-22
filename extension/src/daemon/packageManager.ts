@@ -56,9 +56,13 @@ export function packageManagerName(
     return SUPPORTED.has(name) ? (name as PackageManagerName) : "npm"
   }
   if (SUPPORTED.has(direct)) return direct as PackageManagerName
-  const wrapped = [...new Set(args.map(normalize).filter((a) => SUPPORTED.has(a)))]
+  const wrapped = [
+    ...new Set(args.map(normalize).filter((a) => SUPPORTED.has(a))),
+  ]
   if (wrapped.length > 1) {
-    throw new Error(`Ambiguous npmCommand package managers: ${wrapped.join(", ")}`)
+    throw new Error(
+      `Ambiguous npmCommand package managers: ${wrapped.join(", ")}`,
+    )
   }
   return (wrapped[0] as PackageManagerName | undefined) ?? "npm"
 }
@@ -71,7 +75,8 @@ export function globalInstallCommand(
   platform: NodeJS.Platform = process.platform,
 ): GlobalInstallCommand {
   const manager = packageManagerName(npmCommand)
-  const verbArgs = manager === "npm" ? ["install", "-g", spec] : ["add", "-g", spec]
+  const verbArgs =
+    manager === "npm" ? ["install", "-g", spec] : ["add", "-g", spec]
 
   let command: string
   let prefix: string[]
@@ -83,7 +88,12 @@ export function globalInstallCommand(
     prefix = []
   }
   const args = [...prefix, ...verbArgs]
-  return { manager, command, args, display: [normalize(command), ...args].join(" ") }
+  return {
+    manager,
+    command,
+    args,
+    display: [normalize(command), ...args].join(" "),
+  }
 }
 
 /** pi's global agent dir: `PI_CODING_AGENT_DIR`, else `~/.pi/agent`. */
@@ -93,13 +103,19 @@ export function piAgentDir(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 /** pi's global `npmCommand`, or undefined when unset or unreadable. */
-export function readPiNpmCommand(env: NodeJS.ProcessEnv = process.env): string[] | undefined {
+export function readPiNpmCommand(
+  env: NodeJS.ProcessEnv = process.env,
+): string[] | undefined {
   try {
-    const raw = JSON.parse(readFileSync(join(piAgentDir(env), "settings.json"), "utf8")) as {
+    const raw = JSON.parse(
+      readFileSync(join(piAgentDir(env), "settings.json"), "utf8"),
+    ) as {
       npmCommand?: unknown
     }
     const cmd = raw.npmCommand
-    return Array.isArray(cmd) && cmd.length > 0 && cmd.every((c) => typeof c === "string")
+    return Array.isArray(cmd) &&
+      cmd.length > 0 &&
+      cmd.every((c) => typeof c === "string")
       ? (cmd as string[])
       : undefined
   } catch {

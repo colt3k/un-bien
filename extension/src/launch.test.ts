@@ -196,7 +196,10 @@ describe("pane probe parsing — the early-exit watcher's only evidence", () => 
   })
 
   test("a dead pane with its exit status", () => {
-    expect(_paneProbe(`${probe("1", "143")}\n`)).toEqual({ dead: true, status: "143" })
+    expect(_paneProbe(`${probe("1", "143")}\n`)).toEqual({
+      dead: true,
+      status: "143",
+    })
   })
 
   test("a login-shell banner before the answer does not move the answer", () => {
@@ -212,6 +215,8 @@ describe("pane probe parsing — the early-exit watcher's only evidence", () => 
   })
 
   test("a similar line is not mistaken for the answer", () => {
-    expect(_paneProbe(`0 milliseconds\n${PANE_PROBE_MARK} not-a-digit\n`)).toBeNull()
+    expect(
+      _paneProbe(`0 milliseconds\n${PANE_PROBE_MARK} not-a-digit\n`),
+    ).toBeNull()
   })
 })

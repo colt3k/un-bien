@@ -87,11 +87,23 @@ describe("relay-peers.json pending entries", () => {
 
   it("addPendingRelayPair upserts by name — re-minting revokes the old secret", () => {
     addPendingRelayPair(
-      { secret: "tok", name: "self", url: "http://a:3000", at: "t", at_ms: Date.now() },
+      {
+        secret: "tok",
+        name: "self",
+        url: "http://a:3000",
+        at: "t",
+        at_ms: Date.now(),
+      },
       peersPath,
     )
     addPendingRelayPair(
-      { secret: "tok2", name: "self", url: "http://a:3000", at: "t2", at_ms: Date.now() },
+      {
+        secret: "tok2",
+        name: "self",
+        url: "http://a:3000",
+        at: "t2",
+        at_ms: Date.now(),
+      },
       peersPath,
     )
     // Same name: the new invitation REPLACES the old — re-issuing is
@@ -101,7 +113,13 @@ describe("relay-peers.json pending entries", () => {
     ])
     // A different name appends: one live invitation per peer name.
     addPendingRelayPair(
-      { secret: "tok3", name: "other", url: "http://b:3000", at: "t3", at_ms: Date.now() },
+      {
+        secret: "tok3",
+        name: "other",
+        url: "http://b:3000",
+        at: "t3",
+        at_ms: Date.now(),
+      },
       peersPath,
     )
     expect(loadPendingRelayPairs(peersPath).map((p) => p.secret)).toEqual([
@@ -121,12 +139,20 @@ describe("relay-peers.json pending entries", () => {
       },
       peersPath,
     )
-    const dead = loadPendingRelayPairs(peersPath).find((p) => p.secret === "tok-dead")
+    const dead = loadPendingRelayPairs(peersPath).find(
+      (p) => p.secret === "tok-dead",
+    )
     expect(dead).toBeDefined()
     expect(isPendingLive(dead!)).toBe(false)
     // A fresh mint prunes the expired entry from the file.
     addPendingRelayPair(
-      { secret: "tok-new", name: "fresh", url: "http://f:3000", at: "t", at_ms: Date.now() },
+      {
+        secret: "tok-new",
+        name: "fresh",
+        url: "http://f:3000",
+        at: "t",
+        at_ms: Date.now(),
+      },
       peersPath,
     )
     expect(
@@ -174,7 +200,12 @@ describe("relay-peers.json pending entries", () => {
 
   it("addRelayPeer PRESERVES pending entries + other fields (one shared file)", () => {
     addRelayPeer(
-      { url: "http://b:3000", name: "hostB", pubkey: "pk-b", pair_secret: "tok2" },
+      {
+        url: "http://b:3000",
+        name: "hostB",
+        pubkey: "pk-b",
+        pair_secret: "tok2",
+      },
       peersPath,
     )
     const doc = JSON.parse(readFileSync(peersPath, "utf8")) as Record<
@@ -212,7 +243,10 @@ describe("unbien relay pair / peer add (subprocess)", () => {
   const peersPath = join(home, ".local", "state", "un-bien", "relay-peers.json")
 
   test("'relay pair' mints a secret + pending entry", () => {
-    const res = runCli(["pair", "http://127.0.0.1:3999", "--name", "host-a"], home)
+    const res = runCli(
+      ["pair", "http://127.0.0.1:3999", "--name", "host-a"],
+      home,
+    )
     expect(res.status).toBe(0)
     const stdoutUrl = res.stdout.trim().split("\n").pop() as string
     expect(stdoutUrl.startsWith("relay-pair://")).toBe(true)
@@ -230,7 +264,10 @@ describe("unbien relay pair / peer add (subprocess)", () => {
   })
 
   test("'peer add relay-pair://…' stores the pin + the secret", () => {
-    const pairRes = runCli(["pair", "http://127.0.0.1:4001", "--name", "host-a2"], home)
+    const pairRes = runCli(
+      ["pair", "http://127.0.0.1:4001", "--name", "host-a2"],
+      home,
+    )
     const url = pairRes.stdout.trim().split("\n").pop() as string
     const secret = decodeRelayPairUrl(url)?.secret
 

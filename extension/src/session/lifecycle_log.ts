@@ -45,7 +45,10 @@ export function lifecycleLog(
     const parts = Object.entries(fields)
       .filter(([, v]) => v !== undefined)
       .map(([k, v]) => `${k}=${format(v as string | number | boolean | null)}`)
-    appendFileSync(path, `${new Date().toISOString()} pid=${process.pid} ${event}${parts.length ? ` ${parts.join(" ")}` : ""}\n`)
+    appendFileSync(
+      path,
+      `${new Date().toISOString()} pid=${process.pid} ${event}${parts.length ? ` ${parts.join(" ")}` : ""}\n`,
+    )
   } catch {
     /* best-effort */
   }
