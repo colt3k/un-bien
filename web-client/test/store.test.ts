@@ -92,6 +92,42 @@ describe("the page to restore", () => {
     forgetLastView()
     expect(lastRoom()?.roomId).toBe("room-a")
   })
+  it("carries the page the launcher was opened on top of, one level deep", () => {
+    rememberLastRoom({
+      epk: "M1",
+      roomId: "_29T25gf-dAop",
+      name: "Gils-MBP.localdomain",
+      control: true,
+      under: { epk: "M1", roomId: "lij44pP9h-Tw", name: "un-bien" },
+    })
+    const held = lastRoom()
+    expect(held?.control).toBe(true)
+    expect(held?.under).toEqual({
+      epk: "M1",
+      roomId: "lij44pP9h-Tw",
+      name: "un-bien",
+    })
+    // Closing the panel promotes `under` back to the whole record — and what
+    // comes back is a session page, not a launcher page with a page under it.
+    rememberLastRoom(held!.under!)
+    expect(lastRoom()).toEqual({
+      epk: "M1",
+      roomId: "lij44pP9h-Tw",
+      name: "un-bien",
+    })
+  })
+
+  it("detach drops the pair, not just the top page", () => {
+    rememberLastRoom({
+      epk: "M1",
+      roomId: "_29T25gf-dAop",
+      control: true,
+      under: { epk: "M1", roomId: "lij44pP9h-Tw", name: "un-bien" },
+    })
+    // Leaving a room forgets the whole record, so nothing waits to be restored.
+    forgetLastRoom("M1")
+    expect(lastRoom()).toBeUndefined()
+  })
 })
 
 /**

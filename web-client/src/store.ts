@@ -125,6 +125,11 @@ export interface LastRoom {
   /** The launcher's control room, not a session: the page to put back is the
    *  launch form, and there is no transcript to replay into it. */
   control?: boolean
+  /** The page this one was opened ON TOP of — recorded only for a launcher's
+   *  panel, and only one level deep (an `under` never carries its own). Closing
+   *  the panel puts it back as the page a reload reopens; DETACH is the control
+   *  that means stop, and it drops the pair. */
+  under?: LastRoom
 }
 
 export function lastRoom(): LastRoom | undefined {

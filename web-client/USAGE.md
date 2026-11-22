@@ -255,7 +255,12 @@ Three things about that room are worth knowing, because all three look like a cl
   matches what you typed — it still launches if the path exists there" when it is
   outside the allow-list, which is not an error). A resumed form does not steal
   focus; the keyboard only appears when you asked to type.
-  **close** means you left the page, so a later reload does not walk you back in.
+  **close** puts back the page the launcher was opened on top of: reading a
+  session, tapping _new conversation_, then closing the panel leaves that session
+  as the page a reload returns to — scroll position included. Going to the
+  launcher and coming back is not abandoning the session; **detach** is the
+  control that says stop, and it clears both. If nothing was underneath, closing
+  is a plain exit and the subtitle says "not attached".
 - **`refresh` twice can print "relay did not answer the session listing".** The relay keeps
   the last `rooms` response per connection and SUPPRESSES an identical repeat
   (`rooms_suppressed` metric), so the second identical listing never arrives and

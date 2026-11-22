@@ -1209,6 +1209,11 @@ export class App {
   ): void {
     const client = this.client
     if (!client) return
+    // The page this panel is being opened ON TOP OF, read BEFORE this room
+    // becomes the active one: after the assignment below there is no previous
+    // page left to find, and the one carried would always be the launcher itself
+    // (measured — the first version wrote `under: undefined` every time).
+    const previous = this.active
     client.setRoutingPeer(epk)
     client.setRoom(room.room_id)
     this.active = {
@@ -1223,11 +1228,27 @@ export class App {
     // form — not to a transcript they had left, and not to an empty one. It is
     // replaced by a session record the moment a session is attached (including
     // the one this form starts).
+    //
+    // `under` is the page the panel was opened ON TOP of. Going to the launcher
+    // and coming back is not abandoning the session you were reading, so that
+    // page is carried — one level deep — and `closeLaunchPanel` puts it back.
+    // On a resume `this.active` is null (nothing is attached yet), so the page
+    // being carried comes from the record being resumed.
+    const under = previous
+      ? previous.control
+        ? undefined
+        : {
+            epk: previous.epk,
+            roomId: previous.roomId,
+            name: previous.name,
+          }
+      : lastRoom()?.under
     rememberLastRoom({
       epk,
       roomId: room.room_id,
       name: room.name ?? room.room_id,
       control: true,
+      under,
     })
     this.reducer.reset()
     this.rowEls.clear()
@@ -1278,9 +1299,27 @@ export class App {
     if (!opts.resume) this.launchCwd.focus({ preventScroll: true })
   }
 
-  /** Back to a normal viewer: the panel goes away, the composer returns. */
+  /** Back to a normal viewer: the panel goes away, the composer returns.
+   *
+   *  The page the panel was opened on top of, if there was one, becomes the page
+   *  a reload comes back to. Closing a panel is not walking away from the session
+   *  you were reading — that is what **detach** says — and without this the
+   *  reader who glanced at the launcher, closed it, and refreshed got a blank
+   *  page instead of the transcript they had left. The saved position goes back
+   *  with it, or the reload would drop them at the tail of a transcript they had
+   *  scrolled up in. */
   private closeLaunchPanel(): void {
+    const under = lastRoom()?.under
+    const view = lastView()
     this.clearRoomView()
+    if (!under || !this.peers.has(under.epk)) return
+    rememberLastRoom(under)
+    if (view && view.epk === under.epk && view.roomId === under.roomId) {
+      rememberLastView(view)
+    }
+    // Say it, because the alternative is a page that quietly knows something
+    // the reader cannot see.
+    this.sub.textContent = `not attached — a reload goes back to ${under.name ?? under.roomId}`
   }
 
   /** Is this the room this device is pointed at right now? Matched on the live
