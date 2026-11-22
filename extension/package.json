@@ -32,8 +32,8 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc --noEmit",
+    "build": "node ./node_modules/typescript/bin/tsc -p tsconfig.build.json",
+    "typecheck": "node ./node_modules/typescript/bin/tsc --noEmit",
     "dev": "tsx src/index.ts",
     "test": "vitest run",
     "prepublishOnly": "pnpm typecheck && pnpm test && pnpm build"
@@ -88,6 +88,7 @@
   "devDependencies": {
     "@types/node": "^25.8.0",
     "@types/ws": "^8.18.1",
+    "@typescript/native": "npm:typescript@^7.0.2",
     "tsx": "^4.22.0",
     "typescript": "^6.0.3",
     "vite": "^8.0.16",
