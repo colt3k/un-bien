@@ -120,8 +120,14 @@ body {
 .dot.identity_mismatch {
   background: var(--danger);
 }
+/* Checkboxes are excluded on purpose. This rule is the text-field treatment —
+   9px/11px padding, a filled box, a 10px radius — and it was landing on
+   `input[type=checkbox]` too: a 16px control sitting in a 40px box, with
+   `.row`'s `flex: 1` then stretching that box across whatever width the label
+   left over. Which is why the drawer's two Display checkboxes floated at
+   different x positions instead of lining up. See `.check-row` below. */
 button,
-input,
+input:not([type="checkbox"]),
 textarea {
   font: inherit;
   color: inherit;
@@ -155,7 +161,7 @@ button.danger {
   border-color: var(--line);
   color: var(--muted);
 }
-input:focus,
+input:not([type="checkbox"]):focus,
 textarea:focus {
   outline: 1px solid var(--accent);
 }
@@ -268,6 +274,8 @@ h2.section-toggle > button[aria-expanded="true"]::before {
     transition: rotate 0.15s ease;
   }
 }
+/* An input and the button next to it (relay URL + connect, device name + pair).
+   NOT for checkboxes: `flex: 1` on the input is what stretches a checkbox. */
 .row {
   display: flex;
   gap: 8px;
@@ -275,6 +283,39 @@ h2.section-toggle > button[aria-expanded="true"]::before {
 .row input {
   flex: 1;
   min-width: 0;
+}
+/* The control itself: the size it draws, not the size of a text field. Fixed
+   and unflexed (`0 0 auto`), so a checkbox never grows to fill a row — that is
+   what scattered the boxes. `accent-color` carries the checked state in the
+   app's blue rather than the UA default. */
+input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+/* Keyboard focus only: clicking a checkbox focuses it, and a ring on every tap
+   is noise. Text fields keep the always-on outline above — they are the field
+   you are in. */
+input[type="checkbox"]:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+/* A checkbox and its label, one row. The box leads at a fixed inline offset and
+   the label follows it, so the boxes of consecutive rows form a column under the
+   section heading instead of landing wherever the label width pushed them. The
+   whole row is the tap target (`min-height` 40px, the same floor as the icon
+   buttons) because an 18px box is not a thumb-sized one. */
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  margin: 0;
+  font-size: 13.5px;
+  cursor: pointer;
 }
 textarea {
   width: 100%;
@@ -1046,14 +1087,20 @@ details[open] > .collapsed {
   gap: 8px;
 }
 
+/* The one checkbox that lives in a section HEAD (next to the heading rather
+   than under it). Same control rules as `.check-row`; the row is tighter and
+   the label stays muted and small so it reads as a filter on the list, not as
+   another list item. */
 .inline-check {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  min-height: 40px;
   font-size: 12px;
   color: var(--muted);
   text-transform: none;
   letter-spacing: 0;
+  cursor: pointer;
 }
 
 /* The history handle above the transcript. */

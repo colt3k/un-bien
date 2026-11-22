@@ -162,11 +162,14 @@
 
         <section>
           <h2>Display</h2>
-          <label class="row">
+          <!-- `.check-row`, not `.row`: `.row` is the input+button line (relay
+               URL + connect) and its `input { flex: 1 }` gives a checkbox the
+               whole leftover width, so each box floated at a different x. -->
+          <label class="check-row">
             <input id="hideReasoning" type="checkbox" />
             <span>Hide thinking</span>
           </label>
-          <label class="row">
+          <label class="check-row">
             <input id="monoProse" type="checkbox" />
             <span>Monospace like pi</span>
           </label>
