@@ -48,6 +48,12 @@ import {
   sliceWindow,
   type TranscriptWindow,
 } from "./transcript-window.js"
+import {
+  type HistoryRead,
+  historyDetail,
+  historyLabel,
+  historyRetryable,
+} from "./history-status.js"
 import { parseInvite, type PairingInvite } from "./invite.js"
 import { RELAY_PORT, relayUrlForPage } from "./framing.js"
 import { tokenize } from "./highlight.js"
@@ -464,6 +470,19 @@ export class App {
    *  result frame, so a request that is not followed by `room_ended` inside the
    *  quiet window was refused by its gate, however the click felt. */
   private readonly endBtn = $<HTMLButtonElement>("endSessionBtn")
+  /** Re-read the attached session's history. The reader's escape hatch when a
+   *  read came back short or empty — and the nudge a machine that has not bound
+   *  the session yet needs, since `session_sync` is the frame that triggers the
+   *  extension's attach. */
+  private readonly refreshBtn = $<HTMLButtonElement>("refreshBtn")
+  /** What the last history read produced, and the notice that says so. A blank
+   *  transcript with a "synced" header reads as a broken app; the sentence and
+   *  the retry are the difference between a slow machine and a dead one. */
+  private readonly historyNotice = $<HTMLElement>("historyNotice")
+  private readonly historyNoticeText = $<HTMLElement>("historyNoticeText")
+  private readonly historyRetryBtn = $<HTMLButtonElement>("historyRetryBtn")
+  private history: HistoryRead | null = null
+  private readingHistory = false
   private endArmed = false
   private endSentFor: string | null = null
   /** The open session is over. Its caps outlive the room in this client, so the
@@ -675,6 +694,11 @@ export class App {
     $("queueBtn").addEventListener("click", () => this.send("queue"))
     this.stopBtn.addEventListener("click", () => this.client?.abort())
     this.endBtn.addEventListener("click", () => this.onEndSessionClick())
+    this.refreshBtn.addEventListener("click", () => void this.refreshHistory())
+    this.historyRetryBtn.addEventListener(
+      "click",
+      () => void this.refreshHistory(),
+    )
     this.input.addEventListener("keydown", (event: KeyboardEvent) => {
       if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault()
@@ -997,7 +1021,7 @@ export class App {
           // viewer, even when the machine never got to send `session_shutdown`.
           this.reducer.setEnded(true)
           this.sessionEnded = true
-          this.refreshEndSession()
+          this.refreshSessionControls()
           this.render()
         }
         break
@@ -1266,6 +1290,7 @@ export class App {
     this.lastItemCount = 0
     this.transcript.replaceChildren()
     this.transcript.hidden = true
+    this.historyNotice.hidden = true
     this.composer.hidden = true
     $("loadEarlier").hidden = true
     this.launchHeading.textContent = `New conversation on ${room.name ?? "this machine"}`
@@ -1396,6 +1421,7 @@ export class App {
     this.launchPanel.hidden = true
     this.transcript.hidden = false
     this.composer.hidden = false
+    this.syncHistoryNotice()
     $("loadEarlier").hidden = true
     this.compactionJump.hidden = true
     this.chipRowId = null
@@ -1665,9 +1691,13 @@ export class App {
     return PENDING_LAUNCH_TTL_MS - (Date.now() - stored.askedAt)
   }
 
-  /** The control appears only for a session whose machine advertises the cap —
-   *  a control room and a gated session both fail that test on their own. */
-  private refreshEndSession(): void {
+  /** The header's session controls. `end` appears only for a session whose
+   *  machine advertises the cap — a control room and a gated session both fail
+   *  that test on their own. `refresh` needs no cap: re-reading the history is
+   *  read-only, and any live session (not a control room) can come back short. */
+  private refreshSessionControls(): void {
+    this.refreshBtn.hidden =
+      this.active === null || this.active.control === true
     this.endBtn.hidden = !canEndSession({
       attached: this.active !== null,
       caps: this.active?.caps ?? [],
@@ -1695,7 +1725,7 @@ export class App {
       this.endArmed = true
       clearTimeout(this.endArmTimer)
       this.endArmTimer = setTimeout(() => this.disarmEnd(), END_CONFIRM_MS)
-      this.refreshEndSession()
+      this.refreshSessionControls()
       return
     }
     this.disarmEnd()
@@ -1706,15 +1736,15 @@ export class App {
       if (!this.endSentFor) return
       this.endSentFor = null
       this.toast(refusalNotice())
-      this.refreshEndSession()
+      this.refreshSessionControls()
     }, TERMINATE_QUIET_MS)
-    this.refreshEndSession()
+    this.refreshSessionControls()
   }
 
   private disarmEnd(): void {
     this.endArmed = false
     clearTimeout(this.endArmTimer)
-    this.refreshEndSession()
+    this.refreshSessionControls()
   }
 
   /** Called when the room ends (the machine's only answer) or we leave it. */
@@ -1723,7 +1753,7 @@ export class App {
     this.endArmed = false
     clearTimeout(this.endWaitTimer)
     clearTimeout(this.endArmTimer)
-    this.refreshEndSession()
+    this.refreshSessionControls()
   }
 
   async attach(
@@ -1781,7 +1811,53 @@ export class App {
     // attach; session_sync asks for panels + pending dialogs. The transcript
     // itself comes from pi's own paged `get_entries`.
     client.requestSync()
-    const { entries, leafId, complete } = await client.getEntries()
+    const read = await this.walkHistory(client, () => {
+      // Arm the restore HERE, not at the top of attach: the replay is what puts
+      // the reader's anchor row back on the list. Arming it early lost it on any
+      // session that is streaming — a live frame renders while the transcript is
+      // still empty, does not find the row, and gives up. A row that is really
+      // gone is the right reason to fall back to the tail; "not loaded yet" is
+      // not. Only the same machine's view is trusted, and it only lands if its
+      // anchor row survived the replay — see render().
+      if (resumeView && resumeView.epk === epk) this.pendingRestore = resumeView
+    })
+    // A second sync after the walk: frames the machine sent while the pages were
+    // arriving (panels, pending dialogs) are re-asked for rather than missed.
+    client.requestSync()
+    this.render()
+    // The machine list carries the attach/detach control, so it needs to know
+    // which room is the live one now.
+    this.renderPeerList()
+    // LAST, on purpose. This is the only thing that decides what the header
+    // says about the transcript, and it has to see the rendered row count. The
+    // line that used to live here — `${name} · ${entries.length} entries` —
+    // overwrote the careful "machine not answering" message two statements
+    // after it wrote it, so a failed read ended with a number that looked
+    // deliberate and a blank column underneath.
+    this.reportHistory(read)
+  }
+
+  /** Walk pi's paged `get_entries` and fold what arrives. `afterFold` runs once
+   *  the entries are in the reducer but before anything renders — attach uses it
+   *  to arm the view restore, which must be armed against the replayed rows,
+   *  not against the empty transcript the attach just cleared. */
+  private async walkHistory(
+    client: SessionClient,
+    afterFold?: () => void,
+  ): Promise<{
+    entries: unknown[]
+    pages: number
+    complete: boolean
+    error?: string
+    timedOut?: boolean
+  }> {
+    const read = await client.getEntries(undefined, {
+      onPage: (rows) => {
+        // A climbing number is the difference between "loading" and "broken" on a
+        // slow link: a long session takes a while to walk, page by page.
+        if (this.active) this.sub.textContent = `reading history · ${rows} rows`
+      },
+    })
     // The beacon (pi's leaf entry id) is what makes the fold render: the entry
     // tree backwalks from it to derive the active path, and rows are born only
     // for entries on that path. Entries without a beacon are indexed and stay
@@ -1789,34 +1865,98 @@ export class App {
     // whether the paging walk finished: a walk that timed out mid-way holds a
     // real leaf id and a too-short entry set, and folding that as authoritative
     // would let a divergence reset the transcript to a partial path.
-    this.reducer.applyEntries(entries, leafId ?? null, complete)
-    // Arm the restore HERE, not at the top of attach: the replay is what puts
-    // the reader's anchor row back on the list. Arming it early lost it on any
-    // session that is streaming — a live frame renders while the transcript is
-    // still empty, does not find the row, and gives up. A row that is really
-    // gone is the right reason to fall back to the tail; "not loaded yet" is
-    // not. Only the same machine's view is trusted, and it only lands if its
-    // anchor row survived the replay — see render().
-    if (resumeView && resumeView.epk === epk) this.pendingRestore = resumeView
+    this.reducer.applyEntries(read.entries, read.leafId ?? null, read.complete)
+    afterFold?.()
     // Turn state comes from pi, not from guessing at the history: a completed
     // entry may still contain tool calls. `get_state.isStreaming` is the same
     // signal the iOS app gates its send/steer button on. Skipped when nothing
     // came back — the machine is away, and a second 15s timeout on top of the
     // first is a 30s dead spinner for no information.
-    if (entries.length > 0) {
+    if (read.entries.length > 0) {
       const piState = await client
         .request<Record<string, unknown>>("get_state")
         .catch(() => undefined)
       this.reducer.reconcileBusy(Boolean(piState?.isStreaming))
-    } else {
-      this.sub.textContent = `${name} · machine not answering — is it connected?`
     }
-    client.requestSync()
-    this.render()
-    // The machine list carries the attach/detach control, so it needs to know
-    // which room is the live one now.
-    this.renderPeerList()
-    this.sub.textContent = `${name} · ${entries.length} entries`
+    return {
+      entries: read.entries,
+      pages: read.pages,
+      complete: read.complete,
+      error: read.error,
+      timedOut: read.timedOut,
+    }
+  }
+
+  /** Re-read the history of the session that is open. The reader's way out of a
+   *  short or empty read, and worth having anyway: a machine that restarted, a
+   *  link that dropped mid-walk, or a transcript that simply looks stale. It
+   *  sends `session_sync` first because that frame is what makes the extension
+   *  attach this peer — asking for entries before the machine knows who is
+   *  asking is exactly the race that produced the blank transcript. */
+  private async refreshHistory(): Promise<void> {
+    const client = this.client
+    if (!client || !this.active || this.readingHistory) return
+    this.readingHistory = true
+    this.refreshBtn.disabled = true
+    this.sub.textContent = "reading history…"
+    try {
+      client.requestSync()
+      const read = await this.walkHistory(client)
+      this.render()
+      this.reportHistory(read)
+    } catch (err) {
+      // No history AND no explanation is the state this control exists to
+      // avoid, so a throw in the walk gets the same sentence as a refused page.
+      this.reportHistory({
+        pages: 0,
+        complete: false,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    } finally {
+      this.readingHistory = false
+      this.refreshBtn.disabled = false
+    }
+  }
+
+  /** Record what the last read produced and say so, in the header and in the
+   *  transcript area. Call it AFTER the render: the honest row count is the one
+   *  on screen, not the one off the wire. */
+  private reportHistory(read: {
+    pages: number
+    complete: boolean
+    error?: string
+    timedOut?: boolean
+  }): void {
+    this.history = {
+      rows: this.lastItemCount,
+      pages: read.pages,
+      complete: read.complete,
+      ...(read.error === undefined ? {} : { error: read.error }),
+      ...(read.timedOut === undefined ? {} : { timedOut: read.timedOut }),
+    }
+    this.applyHistoryNotice()
+  }
+
+  private applyHistoryNotice(): void {
+    this.syncHistoryNotice()
+    if (this.active) {
+      const label = this.history ? historyLabel(this.history) : null
+      this.sub.textContent = `${this.active.name} · ${label ?? "synced"}`
+    }
+  }
+
+  /** The notice sits beside the transcript, so a hidden transcript (the launch
+   *  panel open on top of the page) hides it too: a complaint about a history
+   *  the reader cannot currently see is noise. */
+  private syncHistoryNotice(): void {
+    const read = this.history
+    const detail = read ? historyDetail(read) : null
+    const show = detail !== null && !this.transcript.hidden
+    this.historyNotice.hidden = !show
+    if (show && read && detail !== null) {
+      this.historyNoticeText.textContent = detail
+      this.historyRetryBtn.hidden = !historyRetryable(read)
+    }
   }
 
   /** Re-ask the machine for its authoritative turn state. `reconcileBusy` uses
@@ -1981,7 +2121,7 @@ export class App {
           this.active.caps = caps
           this.active.sessionId =
             typeof ub.sessionId === "string" ? ub.sessionId : undefined
-          this.refreshEndSession()
+          this.refreshSessionControls()
         }
         break
       }
@@ -1995,7 +2135,13 @@ export class App {
           this.active.name = name
           this.title.textContent = name
         }
-        this.sub.textContent = `${this.active.name} · synced`
+        // "synced" is only the truth about the protocol half. If the transcript
+        // came back empty or short the header says so instead — that mismatch
+        // (a blank column under a confident header) is what this notice exists
+        // to end, and `session_sync_end` is the frame that used to re-create it
+        // after the read had already said otherwise.
+        const label = this.history ? historyLabel(this.history) : null
+        this.sub.textContent = `${this.active.name} · ${label ?? "synced"}`
         break
       }
       case "session_launch_dirs_result": {

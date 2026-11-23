@@ -1124,6 +1124,37 @@ details[open] > .collapsed {
   background: var(--panel);
 }
 
+/* The header's non-dangerous control sits next to `end` and must not borrow its
+   red: same size, neutral border. */
+.bar .head-side {
+  padding: 5px 10px;
+}
+
+/* What a history read came back with, when the answer is "not everything". A
+   transcript that is empty because the machine had not bound the session yet
+   looked identical to a transcript that is empty because the session is empty —
+   a blank column under a header reading "synced" — so the reason and the retry
+   live here, next to the blank thing they explain. */
+.history-notice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 9px 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line-strong);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.history-notice p {
+  margin: 0;
+  flex: 1 1 24ch;
+}
+.history-notice button {
+  padding: 5px 10px;
+  font-size: 12.5px;
+}
+
 /* Markdown tables. pi's TUI draws these aligned; in the browser they used to be
    a wall of pipes. The scroller is keyboard-focusable (tabindex + role) so a
    wide table can be scrolled without a mouse. */

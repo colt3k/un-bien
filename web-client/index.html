@@ -37,6 +37,21 @@
           type="button"
           hidden
         ></button>
+        <!-- Re-read this session's history. A slow link can bring back part of
+             the transcript, or none of it, while the protocol half of the sync
+             finished happily — this is the way out that does not involve
+             detaching, and it doubles as the nudge a machine that has not bound
+             the session yet needs (`session_sync` is what triggers the attach).
+             Read-only, so it needs no capability from the machine. -->
+        <button
+          id="refreshBtn"
+          class="icon head-side"
+          type="button"
+          hidden
+          title="read this session's history again"
+        >
+          refresh
+        </button>
         <!-- End the session on the machine. Deliberately NOT in the composer:
              the stop button there means one thing (stop this turn), and two
              controls with similar meanings invites the wrong click. Two clicks
@@ -247,6 +262,15 @@
           <p id="launchNote" class="hint" hidden></p>
         </div>
       </section>
+
+      <!-- A history read that came back short or empty says so HERE, in the
+           reader's words, quoting the machine and offering the retry. The
+           alternative is a blank column under a header that says "synced" —
+           which is exactly what a slow connection used to look like. -->
+      <div id="historyNotice" class="history-notice" role="status" hidden>
+        <p id="historyNoticeText"></p>
+        <button id="historyRetryBtn" type="button">try again</button>
+      </div>
 
       <main id="transcript" class="transcript" aria-live="polite"></main>
 

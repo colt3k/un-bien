@@ -22,10 +22,32 @@ import {
 } from "@geohar/un-bien/client"
 
 const RELAY = arg("--relay") ?? "ws://localhost:3000"
-const ROOM_ID = "aB12cD34eF56"
+const ROOM_ID = "aB12cD34eF56" // real rooms are 12-char base64url, cwd-derived
 /** Slow the scripted turn down so a human (or a test) can send a second message
  *  while it is still running — that is the steer/queue paths, not the prompt one. */
-const TURN_MS = Number(arg("--turn-ms") ?? 1) // real rooms are 12-char base64url, cwd-derived
+const TURN_MS = Number(arg("--turn-ms") ?? 1)
+/** Keep refusing `get_entries` for this long after a `session_sync`, answering
+ *  with exactly what the real machine answers when pi has no session bound to
+ *  the peer yet (`get_entries unavailable (no session bound)` —
+ *  extension/src/session/rpc_handlers.ts). The web client used to read that
+ *  refusal as "this session has no history" and show a blank transcript under a
+ *  "synced" header; on a slow link the refusal is a race, not a verdict. This
+ *  knob is how that state is reproduced on purpose:
+ *      node web-client/scripts/fake-machine.ts --entries-error-ms 3000
+ */
+const ENTRIES_ERROR_MS = Number(arg("--entries-error-ms") ?? 0)
+/** Answer `get_entries` this slowly, so a localhost run behaves like a phone on
+ *  a tailnet: the walk takes seconds, its progress is visible, and a resume has
+ *  to survive a reader who is looking at an empty transcript for a while.
+ *      node web-client/scripts/fake-machine.ts --entries-delay-ms 400 */
+const ENTRIES_DELAY_MS = Number(arg("--entries-delay-ms") ?? 0)
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms))
+/** When the FIRST `session_sync` arrived. Set once, like the real machine: it
+ *  binds a session to a peer once and never unbinds it, so a later `session_sync`
+ *  must not re-open the window — otherwise the client's retry could never
+ *  succeed, and the double would be testing a state that cannot happen. */
+let syncSeenAt = 0
 /** A valid 1x1 transparent PNG, for the inline image blocks the double sends. */
 const TINY_PNG =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
@@ -199,6 +221,21 @@ addEntry({
   role: "assistant",
   content: [{ type: "text", text: "Relay serves WS on one port." }],
 })
+
+/** `--seed-entries N`: grow the scripted transcript to N entries so the walk
+ *  spans several pages (the double answers `get_entries` 50 at a time, like a
+ *  real machine under a frame cap). A four-entry double cannot show the walk's
+ *  progress, the render window, or "load earlier" — none of those mean anything
+ *  on a history that fits in one page. */
+const SEED_ENTRIES = Math.max(0, Number(arg("--seed-entries") ?? 0))
+for (let n = entries.length; n < SEED_ENTRIES; n++) {
+  addEntry({
+    role: n % 2 === 0 ? "user" : "assistant",
+    content: [
+      { type: "text", text: `seeded entry ${n + 1} of ${SEED_ENTRIES}` },
+    ],
+  })
+}
 
 // ── allow-list ───────────────────────────────────────────────────────────────
 
@@ -433,7 +470,7 @@ async function runTurn(
 
 // ── inbound ──────────────────────────────────────────────────────────────────
 
-relay.on("message", (line: string) => {
+relay.on("message", async (line: string) => {
   let outer: { peer?: string; room?: string; ct?: string }
   try {
     outer = JSON.parse(line)
@@ -483,6 +520,7 @@ relay.on("message", (line: string) => {
 
   const ub = inner.ub as Record<string, unknown> | undefined
   if (ub?.type === "session_sync") {
+    if (!syncSeenAt) syncSeenAt = Date.now()
     sendEnvelope(sender, "ub", {
       type: "hello",
       caps: ROOM_CAPS,
@@ -549,6 +587,24 @@ relay.on("message", (line: string) => {
       })
       return
     case "get_entries": {
+      const insideWindow =
+        syncSeenAt > 0 && Date.now() - syncSeenAt < ENTRIES_ERROR_MS
+      if (insideWindow) {
+        // The real machine's words, not a stand-in: what the client shows the
+        // reader is quoted from here.
+        rpc(sender, {
+          type: "response",
+          id,
+          command: "get_entries",
+          success: false,
+          error: "get_entries unavailable (no session bound)",
+        })
+        log(
+          `get_entries refused (${Date.now() - syncSeenAt} ms into the ${ENTRIES_ERROR_MS} ms window)`,
+        )
+        return
+      }
+      if (ENTRIES_DELAY_MS > 0) await sleep(ENTRIES_DELAY_MS)
       const since = typeof frame.since === "string" ? frame.since : undefined
       const from = since ? entries.findIndex((e) => e.id === since) + 1 : 0
       const page = entries.slice(from, from + 50)
@@ -616,6 +672,11 @@ async function main(): Promise<void> {
     roomMeta: {
       name: ROOM_NAME,
       cwd: "/tmp/fake-project",
+      // A real room_meta carries the pi session id, and the web client uses its
+      // absence (plus `remote_launch`) to decide a room is a launcher's control
+      // room with no transcript. Omitting it made this double's session room
+      // unattachable — sorted as a control room, no attach button.
+      sessionId: SESSION_ID,
       caps: ROOM_CAPS,
       model: "claude-test",
     },

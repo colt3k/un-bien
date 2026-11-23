@@ -205,6 +205,37 @@ export interface SessionClientOptions {
   onRelayIdentity?: (pubkey: string) => void
 }
 
+/** A pi rpc verb that came back wrong, or did not come back at all. The two are
+ *  not the same event and must not be handled the same way: an error ANSWER
+ *  deserves a retry (the machine often just has not bound the session yet), a
+ *  silence does not. `timedOut` is what lets the caller tell them apart without
+ *  string-matching its own timeout message. */
+export class RpcError extends Error {
+  constructor(
+    message: string,
+    readonly timedOut = false,
+  ) {
+    super(message)
+    this.name = "RpcError"
+  }
+}
+
+/** Attempts per page of the entry walk, for pages the machine ANSWERED with an
+ *  error. Three is enough to cover a machine that is still coming up without
+ *  turning a genuinely dead room into a long wait. */
+const ENTRY_PAGE_ATTEMPTS = 3
+const ENTRY_RETRY_BACKOFF_MS = [400, 900]
+
+/** How long to wait before attempt N+1. Past the end of the table the last
+ *  gap repeats — the walk must not slow down indefinitely. */
+const backoffAfter = (attempt: number): number =>
+  ENTRY_RETRY_BACKOFF_MS[
+    Math.min(attempt, ENTRY_RETRY_BACKOFF_MS.length - 1)
+  ] ?? 400
+
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms))
+
 export class SessionClient {
   private readonly events = new Emitter()
   private relay: RelayLike
@@ -473,13 +504,41 @@ export class SessionClient {
     this.sendUb("session_sync", { id: correlationId() })
   }
 
-  /** Walk the persisted transcript. Paged; a single call is one page. */
+  /** Walk the persisted transcript. Paged; a single call is one page.
+   *
+   *  A page can fail two ways, and they want different answers. An ANSWER that
+   *  says no is usually a race: `get_entries` on a machine that has not bound a
+   *  session to this peer yet comes back as an error on purpose (the extension
+   *  throws rather than serve a silent empty page, which would read as "no
+   *  history"), and on a slow link the reader's frames arrive before the attach
+   *  completes. Asking again is the whole fix, so retry a few times with a short
+   *  backoff. A page that never ANSWERED means the link or the machine is not
+   *  there, and asking again spends another 15 s of the reader's patience for
+   *  nothing — stop, and report which of the two it was. `error` carries the
+   *  machine's own words so the client can quote them rather than guess. */
   async getEntries(
     since?: string,
-    maxPages = 200,
-  ): Promise<{ entries: unknown[]; leafId?: string; complete: boolean }> {
+    opts: {
+      maxPages?: number
+      /** Called after each page lands, so the reader can watch the number climb
+       *  instead of wondering whether anything is happening. */
+      onPage?: (rows: number, pages: number) => void
+      /** Per-page budget. Default is pi's own generosity (15 s); a test double or
+       *  a reader in a hurry can ask for less. */
+      timeoutMs?: number
+    } = {},
+  ): Promise<{
+    entries: unknown[]
+    leafId?: string
+    complete: boolean
+    pages: number
+    error?: string
+    timedOut?: boolean
+  }> {
+    const maxPages = opts.maxPages ?? 200
     const all: unknown[] = []
     let cursor: string | undefined = since
+    let pages = 0
     // Whether the walk reached the end. A timeout mid-walk leaves an entry SET
     // that is too short while the leaf id is still the session's real leaf, and
     // the fold cannot tell the difference from the payload alone — so say it:
@@ -487,27 +546,51 @@ export class SessionClient {
     // folding a truncated set as authoritative lets a divergence reset the
     // transcript down to a partial path.
     let complete = false
+    let error: string | undefined
+    let timedOut: boolean | undefined
     for (let page = 0; page < maxPages; page++) {
+      // A successful page clears the blame: what gets reported is the reason the
+      // walk STOPPED, not every hiccup along the way.
+      error = undefined
+      timedOut = undefined
       let data: { entries?: unknown[]; leafId?: string } | undefined
-      try {
-        data = await this.request<{ entries?: unknown[]; leafId?: string }>(
-          "get_entries",
-          cursor ? { since: cursor } : {},
-        )
-      } catch {
-        break // timeout or error: keep whatever we already walked
+      for (let attempt = 0; ; attempt++) {
+        try {
+          data = await this.request<{ entries?: unknown[]; leafId?: string }>(
+            "get_entries",
+            cursor ? { since: cursor } : {},
+            opts.timeoutMs,
+          )
+          break
+        } catch (err) {
+          const rpc = err instanceof RpcError ? err : new RpcError(String(err))
+          error = rpc.message
+          timedOut = rpc.timedOut || undefined
+          if (rpc.timedOut || attempt + 1 >= ENTRY_PAGE_ATTEMPTS) break
+          await sleep(backoffAfter(attempt))
+        }
       }
-      const entries = data?.entries ?? []
-      const leaf = data?.leafId
+      if (!data) break
+      pages++
+      const entries = data.entries ?? []
+      const leaf = data.leafId
       if (entries.length === 0 || !leaf) {
         complete = true
         break
       }
       all.push(...entries)
+      opts.onPage?.(all.length, pages)
       if (leaf === cursor) break // leaf did not advance — the walk is spinning
       cursor = leaf
     }
-    return { entries: all, leafId: cursor, complete }
+    return {
+      entries: all,
+      leafId: cursor,
+      complete,
+      pages,
+      ...(error === undefined ? {} : { error }),
+      ...(timedOut === undefined ? {} : { timedOut }),
+    }
   }
 
   /** Issue a pi rpc verb and await its correlated `response`. */
@@ -525,14 +608,17 @@ export class SessionClient {
         if (frame.type !== "response" || frame.id !== id) return
         cleanup()
         if (frame.success === false) {
-          reject(new Error(String(frame.error ?? `${type} failed`)))
+          // The machine's own error text, kept verbatim — it is quoted to the
+          // reader, and "no session bound" is a different diagnosis from a
+          // timeout.
+          reject(new RpcError(String(frame.error ?? `${type} failed`)))
           return
         }
         resolve(frame.data as T | undefined)
       }
       const timer = setTimeout(() => {
         cleanup()
-        reject(new Error(`${type}: timed out`))
+        reject(new RpcError(`${type}: timed out`, true))
       }, timeoutMs)
       const cleanup = (): void => {
         clearTimeout(timer)
