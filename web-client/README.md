@@ -660,6 +660,23 @@ at 920x2000. Multiply coordinates by 1.31…`. pi re-encodes and downscales, and
   different x per row, scattered across the panel instead of lined up with it. The
   control is now excluded from that rule, sized to what it draws (18px), and the
   whole 40px row is the tap target.
+- **The sticky Close bar no longer lands on the row that ends the sheet.** It is
+  `position: sticky; bottom: 0` inside the sheet's own scroll box — right for the
+  thumb, wrong for the last control, because a sticky box may not leave its
+  containing block, and that block ends ABOVE the container's bottom padding,
+  which the bar had borrowed back with a negative `margin-bottom`. The clamp then
+  shoves the bar up by exactly what it borrowed, onto whatever row ends the sheet:
+  a tap aimed at "Monospace like pi" hit `#drawerCloseBottom` instead, so the
+  sheet closed and the box stayed unchecked. Measured at the end of the scroll on
+  a 375x667 viewport the control sat 0px clear of the bar; with the home-indicator
+  inset faked to 34px (Chrome reports 0 for `env(safe-area-inset-bottom)`, so the
+  shove that a notched phone gets was missing from the first measurement) the bar
+  lay 23px OVER the box. The bar carries its own safe-area padding now and the
+  sheet's bottom padding is 0, so the end of the scroll is a clean rest position:
+  16px of row, 27px of control, clear of the rule. `scroll-padding-bottom` covers
+  the keyboard case — Tab to the last checkbox scrolls it clear of the bar rather
+  than under it. Mid-scroll the bar still floats over the content, which is the
+  point of a sticky bar; what it no longer does is cover a control at rest.
 - **Notices stack, three deep.** A batch can carry several real problems; one
   label showed only the last, so the important one was lost to a later cosmetic
   one.

@@ -181,8 +181,15 @@ textarea:focus {
   border-right: 1px solid var(--line);
   background: var(--panel);
   color: inherit;
-  padding: 10px 14px calc(16px + env(safe-area-inset-bottom));
+  /* No bottom padding: the sticky Close bar lives at the bottom of THIS scroll
+     box, and a sticky box cannot leave its containing block, which ends above
+     the padding. Anything reserved here for the bar only pushes it back up into
+     the content — see `.drawer-foot`. */
+  padding: 10px 14px 0;
   overflow-y: auto;
+  /* Same reason for the keyboard: the bar is 10+44+10 of its own height plus a
+     1px rule, and Tab-to-the-last-checkbox must not park that box under it. */
+  scroll-padding-bottom: calc(65px + env(safe-area-inset-bottom));
 }
 
 /* The dimmed area outside the sheet. It is part of the dialog box, so a tap
@@ -206,7 +213,18 @@ textarea:focus {
   bottom: 0;
   display: flex;
   gap: 8px;
-  margin: 16px -14px calc(-16px - env(safe-area-inset-bottom));
+  /* The negative INLINE margins bleed the bar to the panel's edges; there is no
+     negative bottom margin, because the bar takes its bottom room from its own
+     padding rather than borrowing the container's. It used to borrow it
+     (`margin-bottom: calc(-16px - env(safe-area-inset-bottom))`), and the sticky
+     clamp then shoves the bar back up by exactly what was borrowed — on top of
+     whatever row ends the sheet. Measured on a 375x667 viewport with the sheet
+     scrolled to its end: the box of "Monospace like pi" sat 0px under the bar's
+     top edge, and with the home-indicator inset faked to 34px (Chrome reports 0
+     for `env()`) the bar was clamped 50px up and lay 23px OVER that box — a tap
+     aimed at the checkbox hit `#drawerCloseBottom`: the sheet closed, the box
+     stayed unchecked. Scrolled short of the end, it was covered either way. */
+  margin: 16px -14px 0;
   padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
   background: var(--panel);
   border-top: 1px solid var(--line);
