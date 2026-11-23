@@ -57,8 +57,10 @@ import {
 import { parseInvite, type PairingInvite } from "./invite.js"
 import {
   insetForLimitPx,
+  isAndroidUserAgent,
   keyboardInsetPx,
   keyboardProbeLines,
+  keyboardSlackPx,
   keyboardTopFromRectPx,
   liftForPokePx,
   type VirtualKeyboardLike,
@@ -688,11 +690,12 @@ export class App {
     this.keyboardProbe = { panel, ruler, insetProbe }
   }
 
-  private paintKeyboardProbe(
-    inset: number,
-    bottomLimit: number,
-    vk: VirtualKeyboardLike | null,
-  ): void {
+  private paintKeyboardProbe(facts: {
+    inset: number
+    bottomLimit: number
+    slack: number
+    vk: VirtualKeyboardLike | null
+  }): void {
     const probe = this.keyboardProbe
     const vv = window.visualViewport
     if (!probe || !vv) return
@@ -707,10 +710,12 @@ export class App {
       safeAreaBottom:
         Number.parseFloat(getComputedStyle(probe.insetProbe).paddingBottom) ||
         0,
-      keyboardRect: vk ? vk.boundingRect : null,
-      overlaysContent: vk ? vk.overlaysContent : null,
-      bottomLimit,
-      inset,
+      keyboardRect: facts.vk ? facts.vk.boundingRect : null,
+      overlaysContent: facts.vk ? facts.vk.overlaysContent : null,
+      secureContext: window.isSecureContext,
+      slack: facts.slack,
+      bottomLimit: facts.bottomLimit,
+      inset: facts.inset,
       composerBottom: box.bottom,
       composerHeight: box.height,
       focused: focused?.id || focused?.tagName || "(none)",
@@ -735,16 +740,22 @@ export class App {
     if (!vv) return
     const vk = this.virtualKeyboard()
     const keyboardTop = keyboardTopFromRectPx(vk?.boundingRect, vv.offsetTop)
+    const claim = keyboardInsetPx({
+      layoutHeight: window.innerHeight,
+      visualHeight: vv.height,
+      visualOffsetTop: vv.offsetTop,
+    })
+    const slack = keyboardSlackPx({
+      isAndroid: isAndroidUserAgent(navigator.userAgent),
+      limitFromViewport: keyboardTop === null,
+      keyboardReported: claim > 0,
+    })
     const bottomLimit = Math.min(
       keyboardTop ?? Number.POSITIVE_INFINITY,
-      vv.height + vv.offsetTop,
+      vv.height + vv.offsetTop - slack,
     )
     let inset = Math.max(
-      keyboardInsetPx({
-        layoutHeight: window.innerHeight,
-        visualHeight: vv.height,
-        visualOffsetTop: vv.offsetTop,
-      }),
+      claim,
       insetForLimitPx({
         layoutHeight: window.innerHeight,
         bottomLimit,
@@ -768,7 +779,7 @@ export class App {
       }
       this.revealFocusedAbove(bottomLimit)
     } finally {
-      this.paintKeyboardProbe(inset, bottomLimit, vk)
+      this.paintKeyboardProbe({ inset, bottomLimit, slack, vk })
     }
   }
 

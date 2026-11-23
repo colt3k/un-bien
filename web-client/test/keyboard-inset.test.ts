@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest"
 import {
+  ANDROID_KEYBOARD_SLACK_PX,
   insetForLimitPx,
+  isAndroidUserAgent,
   keyboardInsetPx,
+  keyboardProbeLines,
+  keyboardSlackPx,
   keyboardTopFromRectPx,
   liftForPokePx,
 } from "../src/keyboard-inset.js"
@@ -151,6 +155,105 @@ describe("insetForLimitPx", () => {
 
   it("rounds away from the keyboard", () => {
     expect(insetForLimitPx({ layoutHeight: 891.4, bottomLimit: 481 })).toBe(411)
+  })
+})
+
+describe("isAndroidUserAgent", () => {
+  it("recognises the platform the short keyboard happens on", () => {
+    expect(
+      isAndroidUserAgent(
+        "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+      ),
+    ).toBe(true)
+  })
+
+  it("is not iOS, and not a desktop browser", () => {
+    expect(
+      isAndroidUserAgent(
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
+      ),
+    ).toBe(false)
+    expect(
+      isAndroidUserAgent(
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      ),
+    ).toBe(false)
+  })
+})
+
+describe("keyboardSlackPx", () => {
+  it("is owed on Android when the line came from the viewport arithmetic", () => {
+    // The phone that started this: no VirtualKeyboard API (an untrusted
+    // certificate hides a secure-context-only API), a keyboard the viewport
+    // admits to, and the keys ~14px higher than the arithmetic says.
+    expect(
+      keyboardSlackPx({
+        isAndroid: true,
+        limitFromViewport: true,
+        keyboardReported: true,
+      }),
+    ).toBe(ANDROID_KEYBOARD_SLACK_PX)
+  })
+
+  it("is not owed when the keyboard itself said where it is", () => {
+    expect(
+      keyboardSlackPx({
+        isAndroid: true,
+        limitFromViewport: false,
+        keyboardReported: true,
+      }),
+    ).toBe(0)
+  })
+
+  it("is not owed with no keyboard, nor on iOS where the arithmetic is honest", () => {
+    expect(
+      keyboardSlackPx({
+        isAndroid: true,
+        limitFromViewport: true,
+        keyboardReported: false,
+      }),
+    ).toBe(0)
+    expect(
+      keyboardSlackPx({
+        isAndroid: false,
+        limitFromViewport: true,
+        keyboardReported: true,
+      }),
+    ).toBe(0)
+  })
+
+  it("clears the measured shortfall with room to spare", () => {
+    // Two screenshots put the deficit at 13-15px; the floor has to cover the
+    // larger of them even if the measurement is a pixel or two out.
+    expect(ANDROID_KEYBOARD_SLACK_PX).toBeGreaterThan(15)
+  })
+})
+
+describe("keyboardProbeLines", () => {
+  it("says which source set the line, and what the phone is missing", () => {
+    const lines = keyboardProbeLines({
+      innerHeight: 891,
+      visualHeight: 509,
+      visualOffsetTop: 0,
+      visualScale: 1,
+      dynamicViewportHeight: 891,
+      safeAreaBottom: 0,
+      keyboardRect: null,
+      overlaysContent: null,
+      secureContext: false,
+      slack: ANDROID_KEYBOARD_SLACK_PX,
+      bottomLimit: 489,
+      inset: 402,
+      composerBottom: 489,
+      composerHeight: 58,
+      focused: "input",
+    })
+    expect(lines.join("\n")).toContain("virtualKeyboard overlays=n/a")
+    expect(lines.join("\n")).toContain("secure context false")
+    expect(lines.join("\n")).toContain("android slack 20px")
+    expect(lines.join("\n")).toContain(
+      "bottom limit 489px   viewport claim 382px   painted 402px",
+    )
   })
 })
 

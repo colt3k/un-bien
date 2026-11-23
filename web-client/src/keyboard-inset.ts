@@ -23,14 +23,20 @@
  *
  * 1. `navigator.virtualKeyboard.boundingRect` (Chromium), with `overlaysContent =
  *    true` so the browser stops resizing the viewport and says where its keyboard
- *    actually is. That is the only number that knows about the navigation-bar
- *    credit.
+ *    actually is. That is the exact answer, and the only one.
  * 2. The visual viewport: `innerHeight − visualHeight − offsetTop`. Correct on
- *    iOS, short on Android.
+ *    iOS, ~14px short on Android.
  * 3. Where the bottom box ENDED UP (`liftForPokePx`): whatever still hangs below
  *    the line is added to the inset. This is the catch-all for the rest of the
  *    arithmetic disagreements — `100dvh` not matching `innerHeight`, fractional
  *    scale factors, a pan the browser made.
+ *
+ * The API is not always there to ask. It is restricted to secure contexts, so a
+ * tailnet certificate the phone does not trust — the "not secure" triangle in the
+ * address bar — hides it entirely, and the viewport arithmetic is all that is
+ * left. That is what `keyboardSlackPx` pays for: a small measured floor, on
+ * Android only, used only when the line came from the viewport rather than from
+ * the keyboard itself.
  *
  * `interactive-widget=resizes-content` (the viewport-meta switch for this) is
  * deliberately not used: it is Chromium-only, so it would fix Android and leave
@@ -140,6 +146,56 @@ export function liftForPokePx(input: {
 }
 
 /**
+ * What Android's viewport arithmetic is short by, when it is the only source.
+ *
+ * Measured, not guessed: two screenshots of the same phone (891px of layout
+ * viewport, keyboard up), calibrated against the on-screen readout's own numbers
+ * — the composer's top at 451px and its top border at 460px — put the keyboard's
+ * toolbar strip at 494px and 496px while `visualViewport` said 509px. So the box
+ * was 13-15px under the keys, and the number is stable across both shots.
+ *
+ * 20 rather than 14: the measurement is good to a pixel or two, and Gboard's
+ * toolbar strip is not one height across versions and layouts. The cost is a
+ * 20px gap between the composer and the keys on an Android browser that was
+ * already telling the truth, which is a much worse bug to have than the one it
+ * prevents. It never applies where the keyboard's own rectangle was used, nor on
+ * iOS, where the arithmetic is honest.
+ */
+export const ANDROID_KEYBOARD_SLACK_PX = 20
+
+/**
+ * Whether this is an Android browser — the platform Android's keyboard
+ * under-counting happens on. Used for that and nothing else; there is no
+ * capability signal for "the reported keyboard is short".
+ */
+export function isAndroidUserAgent(userAgent: string): boolean {
+  return /\bandroid\b/i.test(userAgent)
+}
+
+/**
+ * Whether that floor is owed right now.
+ *
+ * `limitFromViewport` is the important condition, not "the API exists": the API
+ * can be present and its rectangle absent, and then the line we are using is the
+ * arithmetic, arithmetic which Android is known to be short on. And it only makes
+ * sense when a keyboard is actually reported — with none, nothing is covering
+ * anything.
+ *
+ * `isAndroid` is a user-agent test. There is no capability signal for "this
+ * browser under-counts its keyboard", which is what a workaround for a browser
+ * bug needs, so the platform is the signal. It is used for nothing else.
+ */
+export function keyboardSlackPx(facts: {
+  isAndroid: boolean
+  limitFromViewport: boolean
+  keyboardReported: boolean
+}): number {
+  if (!facts.isAndroid || !facts.limitFromViewport || !facts.keyboardReported)
+    return 0
+  return ANDROID_KEYBOARD_SLACK_PX
+}
+
+/**
  * The numbers worth reading when a keyboard is wrong on a real phone.
  *
  * A dev-only readout (`?kbdebug`), because the interesting quantities are the
@@ -156,6 +212,8 @@ export function keyboardProbeLines(facts: {
   safeAreaBottom: number
   keyboardRect: KeyboardRect | null
   overlaysContent: boolean | null
+  secureContext: boolean
+  slack: number
   bottomLimit: number
   inset: number
   composerBottom: number
@@ -176,6 +234,7 @@ export function keyboardProbeLines(facts: {
     `innerHeight ${px(facts.innerHeight)}   dvh ${px(facts.dynamicViewportHeight)}`,
     `visualViewport ${px(facts.visualHeight)}  scale ${facts.visualScale}  offsetTop ${px(facts.visualOffsetTop)}`,
     `virtualKeyboard overlays=${facts.overlaysContent === null ? "n/a" : facts.overlaysContent}  ${keyboard}`,
+    `secure context ${facts.secureContext}   android slack ${px(facts.slack)}`,
     `bottom limit ${px(facts.bottomLimit)}   viewport claim ${px(claimed)}   painted ${px(facts.inset)}`,
     `env safe-area-inset-bottom ${px(facts.safeAreaBottom)}`,
     `composer top ${px(facts.composerBottom - facts.composerHeight)}  bottom ${px(facts.composerBottom)}`,

@@ -705,33 +705,41 @@ at 920x2000. Multiply coordinates by 1.31…`. pi re-encodes and downscales, and
   leaves the inset at 0px. `test/keyboard-inset.test.ts` pins the arithmetic: the
   one-viewport case, the no-double-count, a pan the browser already spent, and
   rounding that lifts rather than shaves.
-- **…and on Android, the browser's own number for the keyboard is 28px short.**
-  The first fix was measured on a laptop; a phone disagreed. Its `?kbdebug` panel
-  read `innerHeight 891`, `visualViewport 509`, so the claim was 382px and the
-  composer's bottom was put at 509px — and measuring the same screenshot, the keys
-  began at ~481px. The bottom 28px of the composer (its rounded corners, its 8px
-  padding, part of the field) was still behind the keys. The reason is that the
-  keys take over the strip the gesture navigation bar owned, so Chrome shrinks the
-  visual viewport by LESS than the keyboard covers: the "visible bottom" the page
-  is told about already sits below the keys, and `env(safe-area-inset-bottom)`
-  reads 0 there, so the difference cannot be recovered from CSS. What answers it is
-  the VirtualKeyboard API: with `navigator.virtualKeyboard.overlaysContent = true`
-  the browser stops resizing the viewport and says where its keyboard actually is
-  (`boundingRect`), which is the only number that knows about the navigation-bar
-  credit. `keyboard-inset.ts` now works from one quantity — the **bottom limit**,
-  the line the app must not cross: the keyboard's top when the browser admits
-  where that is, otherwise the bottom of the visible viewport. The inset is
-  whichever source asks for more, so a browser that ignores `overlaysContent` is
-  still caught by the viewport arithmetic. Taking responsibility for the keyboard
-  means giving up one thing the browser used to do: panning to reveal a focused
-  field. `revealFocusedAbove` does that for the fields inside a scroller (the
-  drawer's relay URL and pairing code). `liftForPokePx` stays as the catch-all for
-  arithmetic that disagrees on its own terms — a `100dvh` base not matching
-  `innerHeight`, fractional scale factors: it measures where the composer actually
-  landed against the line and pays the difference, converging in two passes. Only
-  Chromium has the API, and that is where it is needed: on iOS the two-viewport
-  arithmetic is honest, and the fallback path is exactly the code that was already
-  working there.
+- **…and on Android, the browser's own number for the keyboard is ~14px short —
+  and the API that knows better needs a trusted certificate.** The first fix was
+  measured on a laptop; a phone disagreed. Its `?kbdebug` panel read `innerHeight
+891`, `visualViewport 509`, so the claim was 382px and the composer's bottom was
+  put at 509px. Calibrating two screenshots against the readout's own numbers (the
+  composer's top at 451px, its top border at 460px) put the keys at 494px and
+  496px: the bottom ~14px of the composer — its rounded corners, its 8px padding,
+  part of the field — sat behind them. That number is stable across both shots and
+  across two different screenshot framings; an earlier estimate of 28px came from a
+  rougher scale factor and was wrong. Chrome shrinks the visual viewport by less
+  than the keyboard covers, and `env(safe-area-inset-bottom)` reads 0 there (with
+  `viewport-fit=cover` already set), so CSS cannot recover the difference.
+  `keyboard-inset.ts` now works from one quantity — the **bottom limit**, the line
+  the app must not cross:
+  1. `navigator.virtualKeyboard.boundingRect` with `overlaysContent = true`: the
+     browser stops resizing the viewport and says where its keyboard is. Exact.
+     But the API is restricted to **secure contexts**, so a tailnet certificate the
+     phone does not trust — the "not secure" triangle — hides it completely: the
+     phone read `virtualKeyboard overlays=n/a`. On iOS the two-viewport arithmetic
+     is honest, and the fallback path is exactly the code that already worked there.
+  2. The visual viewport, plus `keyboardSlackPx`: on Android, when the line came
+     from that arithmetic and a keyboard is reported, a measured **20px floor**
+     (14 measured, plus room for the measurement and for other Gboard layouts).
+     It costs a 20px gap above the keys on an Android browser that was telling the
+     truth — a much worse bug to have than the one it prevents.
+     The inset is whichever source asks for more. Taking responsibility for the
+     keyboard gives up one thing the browser used to do: panning to reveal a focused
+     field, which `revealFocusedAbove` now does for the fields inside a scroller (the
+     drawer's relay URL and pairing code). `liftForPokePx` stays as the catch-all for
+     arithmetic that disagrees on its own terms — a `100dvh` base not matching
+     `innerHeight`, fractional scale factors: it measures where the composer actually
+     landed against the line and pays the difference, converging in two passes.
+     `?kbdebug` prints all of it — `secure context`, `android slack`, `bottom limit`,
+     `viewport claim`, `painted` — because which of a phone's numbers lied is only
+     answerable on the phone.
 - **Notices stack, three deep.** A batch can carry several real problems; one
   label showed only the last, so the important one was lost to a later cosmetic
   one.
