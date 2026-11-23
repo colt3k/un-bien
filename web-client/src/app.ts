@@ -69,7 +69,12 @@ import {
   type LaunchDirRow,
   type LaunchDirsAnswer,
 } from "./launch-dirs.js"
-import { describeError, launchFailureHint, toastMessage } from "./notice.js"
+import {
+  describeError,
+  launchFailureHint,
+  roomListFailure,
+  toastMessage,
+} from "./notice.js"
 import {
   pairResultMessage,
   pairSectionBadge,
@@ -515,6 +520,16 @@ export class App {
   private client: SessionClient | null = null
   private relayUrl = ""
   private readonly peers = new Map<string, PairedPeer>()
+  /** Is the relay socket up RIGHT NOW. A `rooms_check` that goes unanswered on a
+   *  live socket is the relay staying quiet about an unchanged listing
+   *  (relay/src/handlers/peer.rs `last_rooms_resp`), not a dead wire — and the
+   *  sentence the reader gets has to know which. */
+  private relayConnected = false
+  /** Remembered machines the RELAY says do not know this device
+   *  (`rooms_check` → `unknown_peer`). The local record can outlive the pairing:
+   *  revoked, or the relay rebuilt. Kept separate from `peers` because the
+   *  machine is still worth listing — with the doubt said. */
+  private readonly pairingDoubt = new Set<string>()
   private readonly rooms = new Map<string, TrackedRoom[]>()
   private readonly reducer = new TranscriptReducer()
   /** row key → element, so streaming updates patch in place instead of
@@ -626,7 +641,9 @@ export class App {
       // section that holds it would fold it away under the hand that just
       // pressed `pair`. A sheet opened later shows it collapsed and `paired`.
       if (this.drawer.open)
-        this.setPairFormOpen(pairSectionOpens(this.peers.size))
+        this.setPairFormOpen(
+          pairSectionOpens(this.peers.size, this.doubtedPeers()),
+        )
       // A notice stack does not get to disappear because the half of the screen
       // it was painted in just closed. Re-render it into whichever is visible.
       if (this.toastLines.length > 0) this.renderNotices()
@@ -762,6 +779,7 @@ export class App {
 
     client.on("status", (status) => {
       this.statusDot.className = `dot ${status}`
+      this.relayConnected = status === "connected"
       if (status === "identity_mismatch") {
         this.toast(
           "relay identity mismatch — this URL is serving a different relay than the one you paired with",
@@ -890,6 +908,8 @@ export class App {
     }
     rememberPeer(paired)
     this.peers.set(paired.epk, paired)
+    // A fresh grant from the machine ends any doubt the relay had about it.
+    this.pairingDoubt.delete(paired.epk)
     if (verdict.relayPubkey) recordRelayPin(this.relayUrl, verdict.relayPubkey)
     // Spent. A single-use token left in the box comes back as `token_expired`
     // on the next click, which reads as a broken button rather than an old code.
@@ -921,10 +941,30 @@ export class App {
    * The trigger's state badge. An open pairing form next to a machine already
    * in the list reads as a step still owed; "paired" is what says it is not.
    */
+  /** How many machines this browser remembers the RELAY disputes. Counted over
+   *  the machines still listed, so an unpaired one cannot leave a doubt behind
+   *  that keeps the badge red forever. */
+  private doubtedPeers(): number {
+    let doubted = 0
+    for (const epk of this.peers.keys())
+      if (this.pairingDoubt.has(epk)) doubted++
+    return doubted
+  }
+
   private renderPairState(): void {
-    const badge = pairSectionBadge(this.peers.size)
+    const doubted = this.doubtedPeers()
+    const badge = pairSectionBadge(this.peers.size, doubted)
     this.pairState.hidden = badge === null
-    if (badge) this.pairState.textContent = badge
+    if (badge) {
+      this.pairState.textContent = badge
+      // Green is a claim about this browser's state; it must not be shown for a
+      // machine the relay will not list. Dashed like `control room`, because the
+      // state is genuinely uncertain rather than merely different.
+      this.pairState.className =
+        doubted >= this.peers.size && this.peers.size > 0
+          ? "tag tag-doubt"
+          : "tag tag-paired"
+    }
     // The trigger must not advertise an expanded section that the collapsed
     // state has already hidden, so the fold is decided here too — but only while
     // the sheet is shut, never under a pairing attempt in progress.
@@ -1029,9 +1069,10 @@ export class App {
       case "error": {
         const code = String(frame.code ?? "error")
         if (code === "unknown_peer") {
-          this.toast(
-            "this device is not paired on that machine — run /unbien pair again",
-          )
+          // One sentence for one condition: the room listing already says this,
+          // and a drawer that words the same fault two ways makes a reader
+          // wonder which one they are in.
+          this.toast(roomListFailure({ status: code }, this.relayConnected))
         }
         break
       }
@@ -1044,6 +1085,11 @@ export class App {
     if (!this.client) return
     for (const peer of this.peers.values()) {
       const result = await this.client.listRooms(peer.epk)
+      // The relay's answer is the authority on the pairing; `peers` is this
+      // browser's memory of it. `timeout` is evidence of neither, so it leaves
+      // the record alone.
+      if (result.status === "unknown_peer") this.pairingDoubt.add(peer.epk)
+      else if (result.status === "ok") this.pairingDoubt.delete(peer.epk)
       if (result.status === "ok")
         this.rooms.set(
           peer.epk,
@@ -1061,7 +1107,7 @@ export class App {
         result.status !== "ok" &&
         (this.rooms.get(peer.epk) ?? []).length === 0
       )
-        this.sub.textContent = explainRooms(result)
+        this.sub.textContent = roomListFailure(result, this.relayConnected)
     }
     this.renderPeerList()
   }
@@ -1092,6 +1138,7 @@ export class App {
         forgetPendingLaunch()
         this.peers.delete(peer.epk)
         this.rooms.delete(peer.epk)
+        this.pairingDoubt.delete(peer.epk)
         this.renderPeerList()
         this.toast(
           "unpaired locally — also revoke it on the machine with `/unbien revoke`",
@@ -2914,23 +2961,6 @@ export class App {
     shown.hidden = false
   }
   private readonly toastLines: string[] = []
-}
-
-function explainRooms(result: {
-  status: string
-  detail?: string
-  peer?: string
-}): string {
-  switch (result.status) {
-    case "unknown_peer":
-      return "not paired on that machine — run /unbien pair again"
-    case "refused":
-      return `relay refused the listing (${result.detail ?? "?"})`
-    case "timeout":
-      return "relay did not answer the session listing — is it reachable?"
-    default:
-      return ""
-  }
 }
 
 /** Draw a tool card the way its RESOLVED FACE says — a terminal as terminal

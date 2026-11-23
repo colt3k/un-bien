@@ -67,13 +67,32 @@ export function pairResultMessage(
  * the list below it proves.
  */
 
-/** `paired` / `3 paired`; null when there is nothing to claim. */
-export function pairSectionBadge(count: number): string | null {
+/**
+ * `paired` / `3 paired`; null when there is nothing to claim.
+ *
+ * `doubted` is how many of those remembered machines the RELAY says do not know
+ * this device (`rooms_check` answered `unknown_peer`). The local record and the
+ * relay can disagree — the pairing was revoked, or the relay was rebuilt — and
+ * a green "paired" over a machine the relay will not list is the drawer
+ * contradicting itself in one panel. So the count is what the relay confirms,
+ * and when none of it is confirmed the badge says the unglamorous truth.
+ */
+export function pairSectionBadge(count: number, doubted = 0): string | null {
   if (count <= 0) return null
-  return count === 1 ? "paired" : `${count} paired`
+  const confirmed = count - Math.min(Math.max(0, doubted), count)
+  if (confirmed === 0) return "not paired here"
+  // With a machine in doubt the count is arithmetic, so it is written as one:
+  // `1 paired` under a list of two says the list and the pairing disagree.
+  if (doubted > 0) return `${confirmed} paired`
+  return confirmed === 1 ? "paired" : `${confirmed} paired`
 }
 
-/** Folded once anything is paired: the form is for the NEXT machine. */
-export function pairSectionOpens(count: number): boolean {
-  return count === 0
+/**
+ * Folded once anything is paired and none of it is in doubt. Doubt IS the task:
+ * the form that prints a code is the fix for a machine that no longer knows this
+ * browser, so hiding it behind a fold labelled "paired" is how a reader ends up
+ * debugging a connection that is fine and a pairing that is not.
+ */
+export function pairSectionOpens(count: number, doubted = 0): boolean {
+  return count === 0 || Math.max(0, doubted) > 0
 }

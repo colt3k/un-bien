@@ -82,3 +82,35 @@ export function launchFailureHint(code: string): string {
         : "the machine refused the launch"
   }
 }
+
+/**
+ * What a room listing that did not work means.
+ *
+ * `relayConnected` is not decoration. The relay SUPPRESSES a repeat `rooms_check`
+ * whose answer would be unchanged (relay/src/handlers/peer.rs keeps
+ * `last_rooms_resp` per connection and counts a `rooms_suppressed` metric), so a
+ * timeout on a live socket is the ordinary result of pressing refresh twice on a
+ * healthy machine. Saying "is it reachable?" there sends the reader to check a
+ * wire that is demonstrably working — the socket carrying the machine's own card
+ * is the reason the card is on screen.
+ */
+export function roomListFailure(
+  result: { status: string; detail?: string },
+  relayConnected: boolean,
+): string {
+  switch (result.status) {
+    case "unknown_peer":
+      // The relay has no pairing for this device on that machine: the pairing
+      // was revoked, or the relay was rebuilt. Only this code justifies telling
+      // someone to pair again.
+      return "this device is not paired with that machine on this relay — run /unbien pair again"
+    case "refused":
+      return `the relay refused the listing (${result.detail ?? "?"})`
+    case "timeout":
+      return relayConnected
+        ? "no session list came back for that machine — the relay stays quiet when nothing has changed since the last listing, so it is probably offline"
+        : "the relay is not reachable — it did not answer the session listing"
+    default:
+      return "the session listing failed"
+  }
+}

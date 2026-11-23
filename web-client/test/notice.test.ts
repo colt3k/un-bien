@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest"
 import {
   describeError,
   launchFailureHint,
+  roomListFailure,
   toastMessage,
 } from "../src/notice.js"
 
@@ -121,5 +122,39 @@ describe("launchFailureHint", () => {
   it("keeps an unknown code instead of inventing a reason", () => {
     expect(launchFailureHint("backend_on_fire")).toContain("backend_on_fire")
     expect(launchFailureHint("")).not.toBe("")
+  })
+})
+
+describe("roomListFailure", () => {
+  it("does not call the relay unreachable while the socket is up", () => {
+    // The relay SUPPRESSES a repeat `rooms_check` whose answer is unchanged
+    // (relay `last_rooms_resp`), so a timeout on a live socket is what pressing
+    // refresh twice does to a healthy machine. Telling that reader to go check
+    // the relay sent them to a wire that is carrying the page they are on.
+    const text = roomListFailure({ status: "timeout" }, true)
+    expect(text).not.toContain("reachable")
+    expect(text).toContain("no session list came back for that machine")
+    expect(text).toContain("probably offline")
+  })
+
+  it("says unreachable only when the socket says so", () => {
+    expect(roomListFailure({ status: "timeout" }, false)).toContain(
+      "the relay is not reachable",
+    )
+  })
+
+  it("recommends pairing only for the code that means pairing", () => {
+    expect(roomListFailure({ status: "unknown_peer" }, true)).toContain(
+      "run /unbien pair again",
+    )
+    // A quiet relay is not a revoked pairing, and sending someone to fetch a
+    // single-use code they do not need is the trap.
+    expect(roomListFailure({ status: "timeout" }, true)).not.toContain("pair")
+  })
+
+  it("quotes the relay's own refusal", () => {
+    expect(
+      roomListFailure({ status: "refused", detail: "not_authorized" }, true),
+    ).toBe("the relay refused the listing (not_authorized)")
   })
 })

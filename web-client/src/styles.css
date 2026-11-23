@@ -1080,6 +1080,17 @@ details[open] > .collapsed {
   border-color: color-mix(in oklab, var(--ok) 45%, var(--line));
 }
 
+/* The RELAY says a machine this browser remembers does not know this device —
+   revoked, or a rebuilt relay. Dashed like `control room`, because the state is
+   uncertain rather than merely different. Lightened 15% toward --fg: at 10px the
+   raw --danger measures 4.56:1 on --panel, which is on AA's floor rather than
+   clear of it; this lands near 5.3:1. */
+.tag-doubt {
+  color: color-mix(in oklab, var(--danger) 85%, var(--fg));
+  border-style: dashed;
+  border-color: color-mix(in oklab, var(--danger) 45%, var(--line));
+}
+
 /* "open" is the same kind of fact — which room THIS device is in, not what kind
    of room it is. It has to be said on the card because the control there is
    "detach", and that only reads as "leave" once the card says you are in. */

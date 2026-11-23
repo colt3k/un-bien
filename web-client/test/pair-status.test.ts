@@ -87,3 +87,24 @@ describe("pairSectionOpens / pairSectionBadge", () => {
     expect(pairSectionOpens(-1)).toBe(false)
   })
 })
+
+describe("the pairing badge when the relay disputes it", () => {
+  it("counts only what the relay confirms", () => {
+    // Two machines remembered, one of them answering `unknown_peer`: claiming
+    // "2 paired" is a claim the app knows to be wrong.
+    expect(pairSectionBadge(2, 1)).toBe("1 paired")
+    expect(pairSectionBadge(3, 2)).toBe("1 paired")
+  })
+
+  it("says the unglamorous truth when none of it holds", () => {
+    expect(pairSectionBadge(1, 1)).toBe("not paired here")
+    // Defensive: `doubted` cannot exceed the remembered machines, but the badge
+    // must not go negative if a caller lets it.
+    expect(pairSectionBadge(2, 5)).toBe("not paired here")
+  })
+
+  it("re-opens the form, because a doubted machine IS the task", () => {
+    expect(pairSectionOpens(2, 1)).toBe(true)
+    expect(pairSectionOpens(1, 0)).toBe(false)
+  })
+})
