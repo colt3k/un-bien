@@ -721,9 +721,13 @@ at 920x2000. Multiply coordinates by 1.31…`. pi re-encodes and downscales, and
   the app must not cross:
   1. `navigator.virtualKeyboard.boundingRect` with `overlaysContent = true`: the
      browser stops resizing the viewport and says where its keyboard is. Exact.
-     But the API is restricted to **secure contexts**, so a tailnet certificate the
-     phone does not trust — the "not secure" triangle — hides it completely: the
-     phone read `virtualKeyboard overlays=n/a`. On iOS the two-viewport arithmetic
+     But the API is restricted to **secure contexts**, and on the phone that
+     reported this one it was simply absent (`virtualKeyboard overlays=n/a`). Why is
+     not settled, and the README will not pretend otherwise: the API has been in
+     Chromium since 94, so it is not a version gap, and the secure-context
+     restriction is the leading candidate rather than a proven cause. `?kbdebug`
+     prints `secure context …` and the browser's version on one line so the next
+     device answers it instead of guessing. On iOS the two-viewport arithmetic
      is honest, and the fallback path is exactly the code that already worked there.
   2. The visual viewport, plus `keyboardSlackPx`: on Android, when the line came
      from that arithmetic and a keyboard is reported, a measured **20px floor**

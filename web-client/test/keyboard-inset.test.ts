@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   ANDROID_KEYBOARD_SLACK_PX,
+  browserLabel,
   insetForLimitPx,
   isAndroidUserAgent,
   keyboardInsetPx,
@@ -229,6 +230,26 @@ describe("keyboardSlackPx", () => {
   })
 })
 
+describe("browserLabel", () => {
+  it("names the engine family the readout needs to see", () => {
+    expect(
+      browserLabel(
+        "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+      ),
+    ).toBe("Chrome/131.0.0.0")
+    expect(
+      browserLabel(
+        "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/25.0 Chrome/122.0.0.0 Mobile Safari/537.36",
+      ),
+    ).toBe("SamsungBrowser/25.0")
+    expect(
+      browserLabel(
+        "Mozilla/5.0 (Android; Mobile; rv:131.0) Gecko/131.0 Firefox/131.0",
+      ),
+    ).toBe("Firefox/131.0")
+  })
+})
+
 describe("keyboardProbeLines", () => {
   it("says which source set the line, and what the phone is missing", () => {
     const lines = keyboardProbeLines({
@@ -241,6 +262,9 @@ describe("keyboardProbeLines", () => {
       keyboardRect: null,
       overlaysContent: null,
       secureContext: false,
+      browser: browserLabel(
+        "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+      ),
       slack: ANDROID_KEYBOARD_SLACK_PX,
       bottomLimit: 489,
       inset: 402,
@@ -250,6 +274,7 @@ describe("keyboardProbeLines", () => {
     })
     expect(lines.join("\n")).toContain("virtualKeyboard overlays=n/a")
     expect(lines.join("\n")).toContain("secure context false")
+    expect(lines.join("\n")).toContain("Chrome/131.0.0.0")
     expect(lines.join("\n")).toContain("android slack 20px")
     expect(lines.join("\n")).toContain(
       "bottom limit 489px   viewport claim 382px   painted 402px",

@@ -56,6 +56,7 @@ import {
 } from "./history-status.js"
 import { parseInvite, type PairingInvite } from "./invite.js"
 import {
+  browserLabel,
   insetForLimitPx,
   isAndroidUserAgent,
   keyboardInsetPx,
@@ -713,6 +714,7 @@ export class App {
       keyboardRect: facts.vk ? facts.vk.boundingRect : null,
       overlaysContent: facts.vk ? facts.vk.overlaysContent : null,
       secureContext: window.isSecureContext,
+      browser: browserLabel(navigator.userAgent),
       slack: facts.slack,
       bottomLimit: facts.bottomLimit,
       inset: facts.inset,

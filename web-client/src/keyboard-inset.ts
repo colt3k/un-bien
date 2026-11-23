@@ -31,12 +31,14 @@
  *    arithmetic disagreements — `100dvh` not matching `innerHeight`, fractional
  *    scale factors, a pan the browser made.
  *
- * The API is not always there to ask. It is restricted to secure contexts, so a
- * tailnet certificate the phone does not trust — the "not secure" triangle in the
- * address bar — hides it entirely, and the viewport arithmetic is all that is
- * left. That is what `keyboardSlackPx` pays for: a small measured floor, on
- * Android only, used only when the line came from the viewport rather than from
- * the keyboard itself.
+ * The API is not always there to ask — and one phone that reported this bug had
+ * no `navigator.virtualKeyboard` at all, for a reason that is still not settled:
+ * the API has been in Chromium since 94, so it is not a version gap, and the
+ * leading candidate is the secure-context restriction, which `?kbdebug` prints as
+ * `secure context …` precisely so it can be checked rather than assumed. When the
+ * API is absent the viewport arithmetic is all that is left, and that is what
+ * `keyboardSlackPx` pays for: a small measured floor, on Android only, used only
+ * when the line came from the viewport rather than from the keyboard itself.
  *
  * `interactive-widget=resizes-content` (the viewport-meta switch for this) is
  * deliberately not used: it is Chromium-only, so it would fix Android and leave
@@ -196,6 +198,21 @@ export function keyboardSlackPx(facts: {
 }
 
 /**
+ * The browser's name and version, trimmed out of the user agent for the readout.
+ *
+ * Only ever printed, so it can stay crude: the first token that names the engine
+ * family, which is what tells you whether to expect `virtualKeyboard` at all.
+ */
+export function browserLabel(userAgent: string): string {
+  const token = userAgent
+    .split(/[ ()]/)
+    .find((part) =>
+      /^(Chrome|EdgA|Edg|Firefox|FxiOS|CriOS|SamsungBrowser)\//.test(part),
+    )
+  return token ?? userAgent.slice(0, 24)
+}
+
+/**
  * The numbers worth reading when a keyboard is wrong on a real phone.
  *
  * A dev-only readout (`?kbdebug`), because the interesting quantities are the
@@ -213,6 +230,7 @@ export function keyboardProbeLines(facts: {
   keyboardRect: KeyboardRect | null
   overlaysContent: boolean | null
   secureContext: boolean
+  browser: string
   slack: number
   bottomLimit: number
   inset: number
@@ -234,7 +252,7 @@ export function keyboardProbeLines(facts: {
     `innerHeight ${px(facts.innerHeight)}   dvh ${px(facts.dynamicViewportHeight)}`,
     `visualViewport ${px(facts.visualHeight)}  scale ${facts.visualScale}  offsetTop ${px(facts.visualOffsetTop)}`,
     `virtualKeyboard overlays=${facts.overlaysContent === null ? "n/a" : facts.overlaysContent}  ${keyboard}`,
-    `secure context ${facts.secureContext}   android slack ${px(facts.slack)}`,
+    `secure context ${facts.secureContext}  ${facts.browser}  android slack ${px(facts.slack)}`,
     `bottom limit ${px(facts.bottomLimit)}   viewport claim ${px(claimed)}   painted ${px(facts.inset)}`,
     `env safe-area-inset-bottom ${px(facts.safeAreaBottom)}`,
     `composer top ${px(facts.composerBottom - facts.composerHeight)}  bottom ${px(facts.composerBottom)}`,
