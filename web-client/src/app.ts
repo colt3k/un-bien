@@ -492,11 +492,17 @@ export class App {
    *  reader who is not following needs to know the stream did not stop. */
   private readonly jumpToEnd = $<HTMLButtonElement>("jumpToEnd")
   private readonly sendBtn = $<HTMLButtonElement>("sendBtn")
+  /** Queue a message for after the running turn. A field rather than a `$()` at
+   *  each use, because the ended view hides it alongside the other controls. */
+  private readonly queueBtn = $<HTMLButtonElement>("queueBtn")
   /** End the session (the remote `/quit`). `endSentFor` holds the request id we
    *  put on the wire — the machine answers by ENDING THE ROOM, never with a
    *  result frame, so a request that is not followed by `room_ended` inside the
    *  quiet window was refused by its gate, however the click felt. */
   private readonly endBtn = $<HTMLButtonElement>("endSessionBtn")
+  /** The finished-conversation bar that takes the composer's place. */
+  private readonly endedNote = $<HTMLDivElement>("endedNote")
+  private readonly closeEndedBtn = $<HTMLButtonElement>("closeEndedBtn")
   /** Re-read the attached session's history. The reader's escape hatch when a
    *  read came back short or empty — and the nudge a machine that has not bound
    *  the session yet needs, since `session_sync` is the frame that triggers the
@@ -515,6 +521,11 @@ export class App {
   /** The open session is over. Its caps outlive the room in this client, so the
    *  control needs the fact itself to go away. */
   private sessionEnded = false
+  /** Whether the composer is currently painted as finished (the fold's ended
+   *  flag). Tracked so the switch runs once per change rather than on every
+   *  frame, and so the header controls can ask the same question the composer
+   *  answers. */
+  private endedInView = false
   private endArmTimer: ReturnType<typeof setTimeout> | undefined
   private endWaitTimer: ReturnType<typeof setTimeout> | undefined
   /** Hidden while a control room is open — see `joinControlRoom`. */
@@ -899,6 +910,7 @@ export class App {
       if (url) void this.connect(url)
     })
     $("pairBtn").addEventListener("click", () => void this.pair())
+    this.closeEndedBtn.addEventListener("click", () => this.closeEnded())
     $("showControlRooms").addEventListener("change", () =>
       this.renderPeerList(),
     )
@@ -1018,7 +1030,7 @@ export class App {
     })
     this.launchName.addEventListener("input", () => this.scheduleDraftSave())
     this.sendBtn.addEventListener("click", () => this.send("auto"))
-    $("queueBtn").addEventListener("click", () => this.send("queue"))
+    this.queueBtn.addEventListener("click", () => this.send("queue"))
     this.stopBtn.addEventListener("click", () => this.client?.abort())
     this.endBtn.addEventListener("click", () => this.onEndSessionClick())
     this.refreshBtn.addEventListener("click", () => void this.refreshHistory())
@@ -1311,6 +1323,7 @@ export class App {
         // launcher's control room seconds after load and its launch button with
         // it. See `applyRoomUpdate`.
         this.rooms.set(epk, applyRoomUpdate(this.rooms.get(epk) ?? [], room))
+        this.syncActiveCaps()
         this.renderPeerList()
         // The room one of OUR launches produced, if this announce carries the
         // request id back: open it, the way the app does. Exact match only — a
@@ -1405,6 +1418,7 @@ export class App {
           peer.epk,
           mergeRoomLists(this.rooms.get(peer.epk) ?? [], result.rooms),
         )
+      if (result.status === "ok") this.syncActiveCaps()
       // A failed lookup leaves the last known list standing: an error reply is
       // not evidence that the machine's rooms disappeared.
       // Said only when the machine's card is already empty. A second identical
@@ -1778,14 +1792,16 @@ export class App {
     this.clearEndRequest()
     this.launchPanel.hidden = true
     this.transcript.hidden = false
-    this.composer.hidden = false
+    // No room in view, no input. An empty "message the session…" box on a page
+    // that says `not attached` is the same trap the ended bar above replaced: it
+    // looks drivable, and the send has nowhere to go. `attach` puts it back.
+    this.composer.hidden = true
     this.syncHistoryNotice()
     $("loadEarlier").hidden = true
     this.compactionJump.hidden = true
     this.chipRowId = null
-    // `reset()` clears the ended flag too, so the composer comes back armed for
-    // whatever is opened next rather than still greyed out for the room that is
-    // gone.
+    // `reset()` clears the ended flag too, so the NEXT room's composer is not
+    // still painted as the finished state of the room that just went away.
     this.reducer.reset()
     this.rowEls.clear()
     this.window = null
@@ -1793,6 +1809,7 @@ export class App {
     this.lastItems = []
     this.lastItemCount = 0
     this.shouldPin = true
+    this.setEndedView(false)
     this.transcript.replaceChildren()
     this.render()
     this.renderPeerList()
@@ -2056,7 +2073,12 @@ export class App {
    *  read-only, and any live session (not a control room) can come back short. */
   private refreshSessionControls(): void {
     this.refreshBtn.hidden =
-      this.active === null || this.active.control === true
+      this.active === null ||
+      this.active.control === true ||
+      // Re-reading a transcript needs the ROOM. A session the relay has dropped
+      // has nothing left to answer `get_entries`, so offering refresh there is a
+      // button that can only fail.
+      this.endedInView
     this.endBtn.hidden = !canEndSession({
       attached: this.active !== null,
       caps: this.active?.caps ?? [],
@@ -2125,7 +2147,11 @@ export class App {
     if (!client) return
     client.setRoutingPeer(epk)
     client.setRoom(roomId)
-    this.active = { epk, roomId, name, caps: [] }
+    // Seeded from the room's own record when the listing already has it. Only a
+    // machine `hello` used to fill this, and a resume — a reload, a recycled
+    // phone tab, a reconnect — never gets one, so every cap-gated control (the
+    // session's **end** above all) sat hidden on a live, drivable session.
+    this.active = { epk, roomId, name, caps: this.roomCaps(epk, roomId) }
     // Where the reader was, or where they asked to be. A resume (a reload, a
     // recycled phone tab, a socket reconnect, a machine re-announce) puts them
     // back on the row they were reading; an attach they asked for by name
@@ -2151,6 +2177,7 @@ export class App {
     // the previous room left behind.
     this.reducer.setEnded(false)
     this.sessionEnded = false
+    this.setEndedView(false)
     this.title.textContent = name
     this.sub.textContent = "syncing…"
     if (this.drawer.open) this.drawer.close()
@@ -2644,11 +2671,15 @@ export class App {
     this.busy = snapshot.busy
     this.stopBtn.hidden = !snapshot.busy
     // An ended session is not drivable: say so where the user will hit it rather
-    // than letting `prompt` fail with `unknown_peer`/`room_ended` toasts.
-    this.sendBtn.disabled = snapshot.flags.ended
-    this.input.disabled = snapshot.flags.ended
+    // than letting `prompt` fail with `unknown_peer`/`room_ended` toasts. Say it
+    // by taking the input AWAY, not by greying it out — a disabled text field
+    // still reads as "a chat, paused", and the reader has nowhere to go: the
+    // room's card, which carries `detach`, left with the room.
+    this.setEndedView(snapshot.flags.ended)
     if (snapshot.flags.ended)
-      this.sub.textContent = `${this.active?.name ?? "session"} · ended`
+      this.sub.textContent = `${
+        this.active?.name ?? "session"
+      } · ended on the machine — close to put it down`
     // A jump wins over both scroll rules: the row asked for gets centred, and
     // the chip re-aims at whatever is now off screen.
     if (this.pendingJump !== null) {
@@ -2688,6 +2719,56 @@ export class App {
     }
     this.syncCompactionChip(items)
     this.syncJumpToEnd(items)
+  }
+
+  /** Put a finished conversation down.
+   *
+   *  **close**, not **detach**: there is nothing left running to stop following,
+   *  and the card that carries `detach` went away when the room was dropped from
+   *  the listing. What ends here is this device's page — the transcript, the
+   *  records that would bring it back on the next load, and the routing. The
+   *  machine keeps the session's log; nothing is deleted anywhere. */
+  private closeEnded(): void {
+    const was = this.active?.name ?? "session"
+    this.clearRoomView()
+    this.toast(`closed ${was} here — its log stays on the machine`)
+  }
+
+  /** Paint the composer as drivable, or as finished.
+   *
+   *  Hidden rather than disabled: a control that cannot be used should not hold
+   *  the space of one, and `hidden` takes it out of the tab order and the a11y
+   *  tree in the same move. The queue button goes with them — queueing a message
+   *  for a turn that can never arrive is not a thing to offer. */
+  private setEndedView(ended: boolean): void {
+    if (this.endedInView === ended) return
+    this.endedInView = ended
+    this.input.hidden = ended
+    this.sendBtn.hidden = ended
+    this.queueBtn.hidden = ended
+    this.stopBtn.hidden = ended || !this.busy
+    this.endedNote.hidden = !ended
+    this.refreshSessionControls()
+  }
+
+  /** The caps the machine's own listing advertises for a room, if that room is
+   *  known. Copied, never invented: the machine stays the authority on what a
+   *  session allows. */
+  private roomCaps(epk: string, roomId: string): string[] {
+    return this.rooms.get(epk)?.find((r) => r.room_id === roomId)?.caps ?? []
+  }
+
+  /** Move a room's advertised caps onto the room this view is holding, when
+   *  nothing has filled them yet, and re-decide the controls gated on them.
+   *  Called wherever a listing or an announce lands, because on boot the resume
+   *  attaches BEFORE the listing arrives. */
+  private syncActiveCaps(): void {
+    const active = this.active
+    if (!active || active.caps.length > 0) return
+    const caps = this.roomCaps(active.epk, active.roomId)
+    if (caps.length === 0) return
+    active.caps = caps
+    this.refreshSessionControls()
   }
 
   /** Dev-only (`?capture=1`): drive the fold from the console or a driver

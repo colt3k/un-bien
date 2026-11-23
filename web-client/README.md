@@ -115,6 +115,32 @@ prompts, tool output, paths — so it goes in `/tmp`, never in the repo.
 - Dialog: an `extension_ui_request select` rendered as an overlay; answering it
   sent `extension_ui_response` and cleared the overlay.
 - Abort: the ■ button sent `abort`.
+- **Ending a session, from the browser.** **end** (header) sends the same
+  `terminate` the machine's `/quit` does locally, and appears only when the
+  machine advertises `remote_terminate`. A RESUMED session — a reload, a phone
+  tab recycled in the background, a reconnect — gets no `hello` frame, and only
+  `hello` used to fill the room's cap list, so the button sat hidden on a live,
+  drivable session. Measured on a real page before the fix: `end` hidden, while
+  the header said `synced` and the composer was enabled; a wire capture
+  (`?capture=1`) over the same load showed `session_sync_end` and no `hello`.
+  Caps are now seeded from the machine's own room record at attach and filled
+  from the listing when the listing lands later (it does, on boot). Measured
+  after: the same reload offers **end**.
+- **A finished conversation says it is finished.** When the room goes away, the
+  composer is REPLACED by a bar — "this conversation ended on the machine"
+  plus **close** (`#endedNote`) — rather than a greyed-out input: a disabled
+  text field reads as "chat, paused", and `detach` was no help, since the card
+  that carries it left with the room. **close** puts the page down (`clearRoomView`
+  — routing, transcript, and the resume records); the machine keeps its log.
+  Verified against the double: kill it, and the same load goes to header
+  `… (ended)` / sub `… ended on the machine — close to put it down`, the note
+  shows (button 57×40px at a 12px inset on a 390px viewport, inside the
+  composer's `safe-area-inset-bottom` padding), `input`/`send`/`queue`/`stop`
+  hide, `refresh` hides (a room the relay dropped cannot answer `get_entries`),
+  `end` hides, and **close** lands on `not attached` with `lastRoom` gone. The
+  composer also starts `hidden` in `index.html`: on a page that says
+  `not attached`, an empty "message the session…" box is the same lie run the
+  other way.
 - Machine restart: the relay's `room_announced` re-triggered a full re-attach,
   so the transcript re-synced instead of ageing.
 - Relay restart: reconnect, re-subscribe, re-attach; the pinned identity still

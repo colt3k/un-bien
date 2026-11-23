@@ -1072,6 +1072,26 @@ details[open] > .collapsed {
   font-family: inherit;
   font-size: 15px;
 }
+/* The bar that replaces the composer once the conversation has ended on the
+   machine (#endedNote, index.html). It occupies the input's place on purpose:
+   that is where the reader's attention — and their thumb — already is, and a
+   greyed-out input sitting there reads as "chat paused, type something". The
+   line says the state; the button is the way out (`detach` is the wrong offer
+   for a session that is already over, and its card is gone with the room). */
+.ended-note {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 13.5px;
+}
+.ended-note button {
+  /* Thumb-sized, the same floor as the icon buttons and the checkbox rows. */
+  min-height: 40px;
+  flex: 0 0 auto;
+}
 /* The `hidden` attribute is only a UA default, and any author rule that sets
    `display` on the element beats it. `.toast { display: flex }` therefore made
    the toast panel impossible to hide: an empty amber box, `position: fixed`,

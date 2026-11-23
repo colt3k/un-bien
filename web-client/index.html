@@ -285,7 +285,11 @@
       <div id="panels" class="panels" hidden></div>
       <div id="asks" class="asks"></div>
 
-      <footer id="composer" class="composer">
+      <!-- Starts HIDDEN: an input only exists once there is a room to drive.
+           On the `not attached` page — first load, after **close**, after
+           **detach** — a "message the session…" box looks drivable and has
+           nowhere to send. `attach` in app.ts is the one place that shows it. -->
+      <footer id="composer" class="composer" hidden>
         <textarea
           id="input"
           rows="1"
@@ -298,6 +302,25 @@
         <button id="stopBtn" class="icon danger" title="stop the turn" hidden>
           ■
         </button>
+
+        <!-- An ended conversation REPLACES the input rather than greying it
+             out. A disabled text field still reads as "a chat, paused": the
+             reader keeps typing into nothing, and the control that used to get
+             them out of a room (`detach`, on the room's card) is gone with the
+             room — so a finished session sat on screen with no way to put it
+             down. This states the state and offers the one action that is left:
+             close it HERE. Nothing is deleted; the session's log stays on the
+             machine, where `pi --continue` can pick it back up. -->
+        <div id="endedNote" class="ended-note" role="status" hidden>
+          <span>this conversation ended on the machine</span>
+          <button
+            id="closeEndedBtn"
+            type="button"
+            title="put this finished conversation down here — its log stays on the machine"
+          >
+            close
+          </button>
+        </div>
       </footer>
 
       <!-- `hidden`, not a z-index: this box sits on the page, so it is behind
