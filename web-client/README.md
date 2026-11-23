@@ -677,9 +677,70 @@ at 920x2000. Multiply coordinates by 1.31…`. pi re-encodes and downscales, and
   the keyboard case — Tab to the last checkbox scrolls it clear of the bar rather
   than under it. Mid-scroll the bar still floats over the content, which is the
   point of a sticky bar; what it no longer does is cover a control at rest.
+- **The keyboard no longer lands on the message box.** `#app` is `100dvh` tall and
+  the composer is its last flex item, so the field a person is typing into sits at
+  the bottom of the LAYOUT viewport — and a soft keyboard is painted OVER that
+  viewport, not folded out of it. Chrome 108 moved Android onto iOS's behaviour:
+  the keys shrink only the visual viewport, leaving `100dvh`, `position: fixed`
+  and the composer exactly where they were, so the keyboard ends up on top of the
+  one element that has to stay in sight. Simulated at 393x852 with a 300px band,
+  the whole 42px input sat under the keys with 0px of it visible.
+  `src/keyboard-inset.ts` keeps one number — `window.innerHeight` minus
+  `visualViewport.height` minus its `offsetTop` — painted into `--keyboard-inset`,
+  which CSS subtracts from the boxes that end at the bottom edge: `#app` (the
+  composer rests on the keys, the transcript absorbs the loss), `#drawer` (its
+  sticky Close bar and the relay/pairing fields stop reaching under), and the toast
+  — which is usually fired at a send that failed while the keyboard is still up,
+  and used to be painted behind it. The number is 0px with no keyboard, and 0px on
+  a browser that shrank the layout viewport along with it
+  (`interactive-widget=resizes-content`, Android before 108), so nothing is
+  counted twice. That meta tag is deliberately NOT used: it is Chromium-only, so
+  it would fix Android and leave iPhone users exactly where they were, and the
+  formula needs neither. Verified in Chrome at 393x852 by patching
+  `visualViewport.height` — desktop Chrome cannot pop a real OSK, so the phone
+  case is measured as a band, not felt: the composer's bottom edge and the sheet's
+  Close bar both land on the simulated keys, the toast lifts to `84px + inset`, the
+  last Display checkbox is still 27px clear of the Close bar at the sheet's new
+  height, and emulating a 552px-tall layout viewport (the `resizes-content` shape)
+  leaves the inset at 0px. `test/keyboard-inset.test.ts` pins the arithmetic: the
+  one-viewport case, the no-double-count, a pan the browser already spent, and
+  rounding that lifts rather than shaves.
+- **…and on Android, the browser's own number for the keyboard is 28px short.**
+  The first fix was measured on a laptop; a phone disagreed. Its `?kbdebug` panel
+  read `innerHeight 891`, `visualViewport 509`, so the claim was 382px and the
+  composer's bottom was put at 509px — and measuring the same screenshot, the keys
+  began at ~481px. The bottom 28px of the composer (its rounded corners, its 8px
+  padding, part of the field) was still behind the keys. The reason is that the
+  keys take over the strip the gesture navigation bar owned, so Chrome shrinks the
+  visual viewport by LESS than the keyboard covers: the "visible bottom" the page
+  is told about already sits below the keys, and `env(safe-area-inset-bottom)`
+  reads 0 there, so the difference cannot be recovered from CSS. What answers it is
+  the VirtualKeyboard API: with `navigator.virtualKeyboard.overlaysContent = true`
+  the browser stops resizing the viewport and says where its keyboard actually is
+  (`boundingRect`), which is the only number that knows about the navigation-bar
+  credit. `keyboard-inset.ts` now works from one quantity — the **bottom limit**,
+  the line the app must not cross: the keyboard's top when the browser admits
+  where that is, otherwise the bottom of the visible viewport. The inset is
+  whichever source asks for more, so a browser that ignores `overlaysContent` is
+  still caught by the viewport arithmetic. Taking responsibility for the keyboard
+  means giving up one thing the browser used to do: panning to reveal a focused
+  field. `revealFocusedAbove` does that for the fields inside a scroller (the
+  drawer's relay URL and pairing code). `liftForPokePx` stays as the catch-all for
+  arithmetic that disagrees on its own terms — a `100dvh` base not matching
+  `innerHeight`, fractional scale factors: it measures where the composer actually
+  landed against the line and pays the difference, converging in two passes. Only
+  Chromium has the API, and that is where it is needed: on iOS the two-viewport
+  arithmetic is honest, and the fallback path is exactly the code that was already
+  working there.
 - **Notices stack, three deep.** A batch can carry several real problems; one
   label showed only the last, so the important one was lost to a later cosmetic
   one.
+- **The composer's growth cap still measures against the whole screen.**
+  `max-height: 34vh` is 290px on an iPhone 15, and the keyboard leaves about 552px
+  to work with — so a long draft can claim over half of what is visible. A 12-line
+  draft reaches 177px and still leaves 316px of transcript, which is why this has
+  not bitten yet; on a small phone in landscape it would. The cap is the thing to
+  make keyboard-aware if it ever does.
 - No model/thinking pickers, no session list controls (fork/compact/new/navigate),
   and the call's ARGUMENTS are not shown — only the face chip and the result.
   Partial output streams as the running face (terminal text for a shell, plain
@@ -688,7 +749,7 @@ at 920x2000. Multiply coordinates by 1.31…`. pi re-encodes and downscales, and
   retired here rather than left to mislead.** There IS a `session_launch` UI —
   the panel behind **new conversation**, which asks the machine what it will
   launch into and paints the answer as rows you tap ("Remote launch"). And code
-  faces ARE painted: `src/highlight.ts` tokenises per language *family* (a C-ish
+  faces ARE painted: `src/highlight.ts` tokenises per language _family_ (a C-ish
   family covering js/ts/go/rs/java/cpp, a shell family, a CSS family, python and
   ruby, JSON, and a markup family — ~30 aliases), the faces carry `--tk-*`
   colours for comments, keywords, strings, numbers and functions, and it is wired
@@ -719,8 +780,8 @@ at 920x2000. Multiply coordinates by 1.31…`. pi re-encodes and downscales, and
 | `src/session-client.ts`           | port of `unbien-cli/src/client.ts`: pairing awaited, `rooms_check` honesty, paged `get_entries`, identity pin      |
 | `src/framing.ts`                  | outer envelope, plane stamping (`rpc`/`evt`/`ub` — an unstamped frame is silently dropped), inbound classification |
 | `src/reducer.ts`                  | the fold: live frames and replayed entries through one path                                                        |
-| `src/identity.ts`, `src/store.ts` | device Ed25519 key in localStorage, relay pins (TOFU), pairing records, the room and page to resume |
-| `src/view-state.ts`               | the page to put back after a reload: anchor row, its offset, the window the reader asked for          |
+| `src/identity.ts`, `src/store.ts` | device Ed25519 key in localStorage, relay pins (TOFU), pairing records, the room and page to resume                |
+| `src/view-state.ts`               | the page to put back after a reload: anchor row, its offset, the window the reader asked for                       |
 | `src/invite.ts`                   | `unbien://pair?…` parsing + key canonicalization                                                                   |
 | `src/app.ts`                      | DOM: drawer, transcript patching, composer, dialogs                                                                |
 | `src/shims/`                      | `node:crypto` (noble), `ws` (native socket), `debug_log`                                                           |

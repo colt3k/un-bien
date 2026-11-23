@@ -77,7 +77,14 @@ body {
 #app {
   display: flex;
   flex-direction: column;
-  height: 100dvh;
+  /* Not plain `100dvh`: an on-screen keyboard is painted OVER the layout
+     viewport rather than folded out of it, so the composer — the last item in
+     this column — sits where the keyboard lands. `--keyboard-inset` is the
+     difference between the viewport the page is laid out against and the part of
+     it a phone is actually showing (app.ts, src/keyboard-inset.ts), 0px when no
+     keyboard is up. The transcript takes the loss; the field being typed in does
+     not. */
+  height: calc(100dvh - var(--keyboard-inset, 0px));
 }
 .bar {
   display: flex;
@@ -174,7 +181,12 @@ textarea:focus {
      that says "tap outside to dismiss". At 92vw it was a 31px sliver on an
      iPhone 15 viewport — technically tappable, practically invisible. */
   width: min(80vw, 360px);
-  height: 100%;
+  /* The sheet holds the two fields a phone spends the most time typing (relay
+     URL, pairing code), and it lives in the top layer — sized against the layout
+     viewport, which a keyboard does not shrink. Without this its bottom half,
+     sticky Close bar included, sits under the keyboard while the field you are
+     typing in is above it. */
+  height: calc(100% - var(--keyboard-inset, 0px));
   max-width: none;
   max-height: none;
   border: 0;
@@ -1033,10 +1045,34 @@ details[open] > .collapsed {
   display: none !important;
 }
 
+/* The `?kbdebug` readout: viewport facts for a phone, which is the only place a
+   keyboard disagrees with itself about where it starts. Over the transcript,
+   never over a control, and it cannot swallow a tap. */
+.kb-debug {
+  position: fixed;
+  top: calc(56px + env(safe-area-inset-top));
+  left: 12px;
+  z-index: 40;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(0, 0, 0, 0.86);
+  color: #eaeaea;
+  font:
+    10.5px/1.5 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+  white-space: pre;
+  pointer-events: none;
+}
+
 .toast {
   position: fixed;
   left: 50%;
-  bottom: 84px;
+  /* The notice for a send that just failed is worth seeing, and the moment it
+     appears is usually while the keyboard is still up over the composer. */
+  bottom: calc(84px + var(--keyboard-inset, 0px));
   transform: translateX(-50%);
   background: #241a12;
   border: 1px solid #6b3b12;

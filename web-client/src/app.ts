@@ -55,6 +55,14 @@ import {
   historyRetryable,
 } from "./history-status.js"
 import { parseInvite, type PairingInvite } from "./invite.js"
+import {
+  insetForLimitPx,
+  keyboardInsetPx,
+  keyboardProbeLines,
+  keyboardTopFromRectPx,
+  liftForPokePx,
+  type VirtualKeyboardLike,
+} from "./keyboard-inset.js"
 import { RELAY_PORT, relayUrlForPage } from "./framing.js"
 import { tokenize } from "./highlight.js"
 import {
@@ -617,7 +625,206 @@ export class App {
 
   // ── wiring ────────────────────────────────────────────────────────────────
 
+  /**
+   * Paint the keyboard's claim on the screen into `--keyboard-inset`, which CSS
+   * subtracts from the boxes that end at the bottom edge (`#app`, `#drawer`, the
+   * toast). Without it the keyboard is painted over the message box: see
+   * `src/keyboard-inset.ts` for why the two viewports diverge, and for why the
+   * viewport-meta alternative is not used. `scroll` is listened to as well as
+   * `resize` because a browser that pans the layout viewport to reveal a field
+   * moves the claim without changing its size, and `focusin` because a keyboard
+   * can appear without either viewport being resized at all.
+   */
+  private trackKeyboardInset(): void {
+    const vv = window.visualViewport
+    if (!vv) return
+    this.mountKeyboardProbe()
+    // Chromium will say where its keyboard is — but only if we take
+    // responsibility for staying out of it. With `overlaysContent` on, the browser
+    // stops resizing the viewport and reports the keyboard's rectangle instead,
+    // and that rectangle is the only number that knows Android handed the keys the
+    // navigation bar's strip for free. See src/keyboard-inset.ts for the numbers.
+    const vk = this.virtualKeyboard()
+    if (vk) {
+      try {
+        vk.overlaysContent = true
+      } catch {
+        // No support, or an insecure context: the viewport path still works.
+      }
+      vk.addEventListener("geometrychange", () => this.paintKeyboardInset())
+    }
+    for (const event of ["resize", "scroll"])
+      vv.addEventListener(event, () => this.paintKeyboardInset())
+    document.addEventListener("focusin", () => this.paintKeyboardInset())
+    this.paintKeyboardInset()
+  }
+
+  private virtualKeyboard(): VirtualKeyboardLike | null {
+    const nav = navigator as Navigator & {
+      virtualKeyboard?: VirtualKeyboardLike
+    }
+    return nav.virtualKeyboard ?? null
+  }
+
+  /**
+   * `?kbdebug`: a panel of viewport facts, for the keyboard cases that only
+   * happen on a phone. A phone disagrees with itself about where its keyboard
+   * starts — the reported visible bottom can sit BELOW the keys — and which of
+   * its numbers lied is only answerable on the device. One screenshot of this
+   * panel answers it. Dev-only: it exists only when the URL asks for it, and
+   * nothing else reads it.
+   */
+  private mountKeyboardProbe(): void {
+    if (!location.search.toLowerCase().includes("kbdebug")) return
+    const ruler = document.createElement("div")
+    ruler.style.cssText =
+      "position:fixed;top:0;left:0;width:0;height:100dvh;visibility:hidden;pointer-events:none"
+    const insetProbe = document.createElement("div")
+    insetProbe.style.cssText =
+      "position:fixed;height:0;padding-bottom:env(safe-area-inset-bottom);visibility:hidden;pointer-events:none"
+    const panel = document.createElement("div")
+    panel.className = "kb-debug"
+    document.body.append(ruler, insetProbe, panel)
+    this.keyboardProbe = { panel, ruler, insetProbe }
+  }
+
+  private paintKeyboardProbe(
+    inset: number,
+    bottomLimit: number,
+    vk: VirtualKeyboardLike | null,
+  ): void {
+    const probe = this.keyboardProbe
+    const vv = window.visualViewport
+    if (!probe || !vv) return
+    const box = this.composer.getBoundingClientRect()
+    const focused = document.activeElement
+    probe.panel.textContent = keyboardProbeLines({
+      innerHeight: window.innerHeight,
+      visualHeight: vv.height,
+      visualOffsetTop: vv.offsetTop,
+      visualScale: vv.scale,
+      dynamicViewportHeight: probe.ruler.getBoundingClientRect().height,
+      safeAreaBottom:
+        Number.parseFloat(getComputedStyle(probe.insetProbe).paddingBottom) ||
+        0,
+      keyboardRect: vk ? vk.boundingRect : null,
+      overlaysContent: vk ? vk.overlaysContent : null,
+      bottomLimit,
+      inset,
+      composerBottom: box.bottom,
+      composerHeight: box.height,
+      focused: focused?.id || focused?.tagName || "(none)",
+    }).join("\n")
+  }
+
+  /**
+   * Put the bottom of the app on the line the keyboard cannot cross, then measure
+   * what that missed and pay for it too.
+   *
+   * The line is the keyboard's top when the browser admits where that is
+   * (`virtualKeyboard.boundingRect` — the only source that counts the strip of
+   * navigation bar the keys sit on), and the bottom of the visible viewport
+   * otherwise. The inset starts at whichever source asks for more, then each pass
+   * moves the box by the last pass's debt: two passes converge, three is the guard.
+   *
+   * The measuring pass runs only while a keyboard is in play. With none, `100dvh`
+   * is the honest height and the bottom edge should not move.
+   */
+  private paintKeyboardInset(): void {
+    const vv = window.visualViewport
+    if (!vv) return
+    const vk = this.virtualKeyboard()
+    const keyboardTop = keyboardTopFromRectPx(vk?.boundingRect, vv.offsetTop)
+    const bottomLimit = Math.min(
+      keyboardTop ?? Number.POSITIVE_INFINITY,
+      vv.height + vv.offsetTop,
+    )
+    let inset = Math.max(
+      keyboardInsetPx({
+        layoutHeight: window.innerHeight,
+        visualHeight: vv.height,
+        visualOffsetTop: vv.offsetTop,
+      }),
+      insetForLimitPx({
+        layoutHeight: window.innerHeight,
+        bottomLimit,
+      }),
+    )
+    try {
+      this.setKeyboardInset(inset)
+      if (inset === 0 && !this.someoneIsTyping()) return
+      for (let pass = 0; pass < 3; pass++) {
+        const box = this.composer.getBoundingClientRect()
+        // A control room hides the composer, so there is nothing to keep clear.
+        if (box.height === 0) break
+        const paid = liftForPokePx({
+          inset,
+          boxBottom: box.bottom,
+          bottomLimit,
+        })
+        if (paid === inset) break
+        inset = paid
+        this.setKeyboardInset(inset)
+      }
+      this.revealFocusedAbove(bottomLimit)
+    } finally {
+      this.paintKeyboardProbe(inset, bottomLimit, vk)
+    }
+  }
+
+  /**
+   * With `overlaysContent` on, Chromium no longer pans the page to reveal a
+   * focused field, so the fields that live in a scroller — the drawer's relay URL
+   * and pairing code — need that courtesy from us: if the focused box hangs below
+   * the line, scroll its nearest scrollable ancestor by the difference. The
+   * composer needs nothing; the inset already moved it.
+   */
+  private revealFocusedAbove(bottomLimit: number): void {
+    const el = document.activeElement
+    if (!(el instanceof Element)) return
+    const box = el.getBoundingClientRect()
+    if (box.height === 0 || box.bottom <= bottomLimit) return
+    for (let node = el.parentElement; node; node = node.parentElement) {
+      if (node.scrollHeight <= node.clientHeight + 1) continue
+      node.scrollTop += box.bottom - bottomLimit
+      return
+    }
+  }
+
+  private setKeyboardInset(px: number): void {
+    document.documentElement.style.setProperty("--keyboard-inset", `${px}px`)
+  }
+
+  /** The `?kbdebug` panel and its two measuring sticks, when that is asked for. */
+  private keyboardProbe: {
+    panel: HTMLElement
+    ruler: HTMLElement
+    insetProbe: HTMLElement
+  } | null = null
+
+  /** A text field holds focus, so a keyboard is wanted even if no viewport
+   *  reports having shrunk — an overlaying keyboard leaves both untouched. */
+  private someoneIsTyping(): boolean {
+    const el = document.activeElement
+    if (
+      !(el instanceof HTMLTextAreaElement) &&
+      !(el instanceof HTMLInputElement)
+    )
+      return false
+    return ![
+      "checkbox",
+      "radio",
+      "button",
+      "submit",
+      "image",
+      "range",
+      "color",
+      "file",
+    ].includes(el.type)
+  }
+
   private bindUi(): void {
+    this.trackKeyboardInset()
     // A modal <dialog>: the browser handles Escape, restores focus to this
     // trigger on close, and makes the rest of the page inert while it is open.
     // That inertness is exactly why the ☰ cannot double as the close control —
