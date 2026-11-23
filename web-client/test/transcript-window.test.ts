@@ -4,6 +4,7 @@ import {
   LOAD_MORE,
   growWindow,
   hasHiddenHistory,
+  hiddenAfter,
   hiddenBefore,
   nextWindow,
   sliceWindow,
@@ -107,5 +108,24 @@ describe("the hidden-history handle", () => {
   it("has nothing to offer for a short session", () => {
     const w = nextWindow(null, 3, true)
     expect(hasHiddenHistory(w, 3)).toBe(false)
+  })
+})
+
+describe("what is waiting below the reader", () => {
+  it("counts the rows that arrived while the pin was off", () => {
+    const total = 1000
+    // Reading history: the window holds its start, so every new row lands
+    // outside the drawn slice. That is the count the pill shows.
+    const w = { start: 500, count: INITIAL_WINDOW }
+    expect(hiddenAfter(w, 640)).toBe(20)
+    expect(hiddenAfter(w, total)).toBe(total - 620)
+  })
+
+  it("is zero when the slice already ends at the newest row", () => {
+    const w = nextWindow(null, 300, true)
+    expect(hiddenAfter(w, 300)).toBe(0)
+    // A session shorter than the request: the slice is naturally shorter and
+    // nothing is being withheld.
+    expect(hiddenAfter({ start: 0, count: INITIAL_WINDOW }, 3)).toBe(0)
   })
 })

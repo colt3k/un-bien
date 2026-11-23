@@ -272,7 +272,15 @@
         <button id="historyRetryBtn" type="button">try again</button>
       </div>
 
-      <main id="transcript" class="transcript" aria-live="polite"></main>
+      <main id="transcript" class="transcript" aria-live="polite">
+        <!-- The "you are not looking at the newest line" pill. It lives INSIDE
+             the scroll box so `position: sticky` can float it over whatever the
+             reader is looking at, clear of the composer, without measuring the
+             composer's height (which grows as they type). A full replay empties
+             the transcript with `replaceChildren()`, and every render hangs it
+             back on (`syncJumpToEnd`). -->
+        <button id="jumpToEnd" class="jump-end" type="button" hidden></button>
+      </main>
 
       <div id="panels" class="panels" hidden></div>
       <div id="asks" class="asks"></div>

@@ -102,6 +102,13 @@ prompts, tool output, paths — so it goes in `/tmp`, never in the repo.
 - Live turn: deltas coalesced into one row per content block; the authoritative
   `message_end` landed on the same row instead of duplicating it; tool card ran
   `running → ok`; `turn_end`/`agent_settled` cleared the streaming flag.
+- **Reading while it streams**: the follow is a standing decision, not a
+  measurement (`src/tail-pin.ts`) — a 90px scroll up during a live stream now
+  holds, the rows landing below are left alone, and scrolling back to the bottom
+  (or the "↓ newest" pill) takes the follow straight back. The rule that used to
+  live here — "follow if you are within 220px of the bottom" — was reproduced
+  doing the opposite: each delta undid a wheel-up inside the same frame, so
+  scrolling up mid-turn was a fight the page always won.
 - Composer: `prompt` when idle, `steer` while the turn was running, and
   `prompt` + `streamingBehavior: "followUp"` for the queue button — all three
   observed in the machine's log.

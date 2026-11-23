@@ -406,11 +406,48 @@ textarea {
 .transcript {
   flex: 1;
   overflow-y: auto;
+  /* The transcript does its OWN scroll anchoring — render() holds the reader's
+     anchor row still when content grows or moves above them — so the browser's
+     is switched off rather than layered on top: it would write a scrollTop the
+     tail pin then has to guess the meaning of, and the pin's whole job is
+     telling the reader's scrolls from the app's. Known cost: a layout change
+     that lands BETWEEN renders (an inline image finishing its decode, most
+     often) is no longer held for free — and Safari ignores this property, so
+     the pin has to tolerate a browser-written scroll either way. What that
+     costs in practice is one self-healing miss: a reader whose pin drops
+     because something above them shrank sees the "↓ newest" pill, and scrolling
+     back down takes the follow straight back. */
+  overflow-anchor: none;
   padding: 12px 12px 8px;
   display: flex;
   flex-direction: column;
   gap: 10px;
   -webkit-overflow-scrolling: touch;
+}
+
+/* The pill that says the stream is still going and you are not watching it. A
+   pinned reader never sees it; an unpinned one has stopped the follow on
+   purpose and needs to know how much went by, plus a way back that is not a
+   scroll hunt. Sticky at the bottom edge of the scroll box — the same trick as
+   the drawer's Close bar — so it stays put over the log without knowing the
+   composer's height. */
+.jump-end {
+  position: sticky;
+  bottom: 8px;
+  z-index: 3;
+  align-self: center;
+  padding: 6px 14px;
+  font-size: 12.5px;
+  color: var(--accent);
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 35%);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.jump-end:hover {
+  color: var(--fg);
 }
 
 /* Remote launch. Replaces the transcript while a machine's control room is

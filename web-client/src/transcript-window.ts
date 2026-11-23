@@ -79,6 +79,14 @@ export function hiddenBefore(window: TranscriptWindow, total: number): number {
   return Math.max(0, window.start)
 }
 
+/** Rows that exist below the drawn slice. Reading history holds the slice's
+ *  `start` (`nextWindow`), so everything that arrives while the reader is up
+ *  there stays undrawn — this is how many rows are waiting below them, and what
+ *  the "jump to end" pill counts. */
+export function hiddenAfter(window: TranscriptWindow, total: number): number {
+  return Math.max(0, total - (window.start + window.count))
+}
+
 /** Is there history we are not drawing? */
 export function hasHiddenHistory(
   window: TranscriptWindow,

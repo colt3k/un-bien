@@ -43,11 +43,19 @@ import {
   INITIAL_WINDOW,
   LOAD_MORE,
   growWindow,
+  hiddenAfter,
   hiddenBefore,
   nextWindow,
   sliceWindow,
   type TranscriptWindow,
 } from "./transcript-window.js"
+import {
+  ARRIVE_PX,
+  belowTail,
+  gestureDisarms,
+  keyDisarms,
+  pinAfterScroll,
+} from "./tail-pin.js"
 import {
   type HistoryRead,
   historyDetail,
@@ -480,6 +488,9 @@ export class App {
   /** The "↑ <what the compaction said>" pointer in the header. It exists only
    *  because the marker row itself gets buried. See `syncCompactionChip`. */
   private readonly compactionJump = $<HTMLButtonElement>("compactionJump")
+  /** The "↓ N below" pill. It exists only because the pin can be off, and a
+   *  reader who is not following needs to know the stream did not stop. */
+  private readonly jumpToEnd = $<HTMLButtonElement>("jumpToEnd")
   private readonly sendBtn = $<HTMLButtonElement>("sendBtn")
   /** End the session (the remote `/quit`). `endSentFor` holds the request id we
    *  put on the wire — the machine answers by ENDING THE ROOM, never with a
@@ -562,7 +573,19 @@ export class App {
   /** What the last render drew, so a bare scroll can re-aim the chip without
    *  asking the fold for another snapshot. */
   private lastItems: TranscriptItem[] = []
-  private chipQueued = false
+  private viewQueued = false
+  /** The standing decision to keep the reader at the newest line — the tail
+   *  pin (src/tail-pin.ts). `true` until the reader scrolls into history; the
+   *  follow then stays off until they get back to the bottom. Deliberately NOT
+   *  re-derived from the scroll position each render: that is what made
+   *  scrolling up during a turn impossible, because every delta undid a little
+   *  bit of the reader's scroll and they never got clear of the band. */
+  private shouldPin = true
+  /** What the scroll box was last told to be by SCRIPT (the follow, the anchor
+   *  correction, a jump). A `scroll` event that reads this value is the echo of
+   *  the app's own write, not the reader moving — only an echo-free scroll
+   *  counts as intent, and only intent may move the pin. */
+  private appScrollTop = 0
   private active: ActiveSession | null = null
   private busy = false
   /** A pair request in flight (up to the 15s verdict timeout). */
@@ -885,17 +908,84 @@ export class App {
       this.render()
     })
     this.compactionJump.addEventListener("click", () => this.jumpToCompaction())
-    // Scrolling changes what is on screen without a single frame arriving, so
-    // the chip re-aims on scroll too. Measured once per animation frame, not
-    // once per wheel tick.
+    this.jumpToEnd.addEventListener("click", () => {
+      // Reading the newest line. The next render re-pins the window to the tail
+      // (so the rows that arrived while the pin was off get drawn) and scrolls
+      // to its bottom.
+      this.shouldPin = true
+      this.render()
+    })
+    // Scrolling changes what is on screen and who is following without a single
+    // frame arriving. Measured once per animation frame, not once per wheel
+    // tick — except the pin, which is decided from the event itself: waiting a
+    // frame for it lets a delta land first and yank the reader back.
     this.transcript.addEventListener("scroll", () => {
+      const top = this.transcript.scrollTop
+      if (top !== this.appScrollTop) {
+        this.shouldPin = pinAfterScroll(
+          this.shouldPin,
+          top - this.appScrollTop,
+          this.tailDistance(),
+        )
+        this.appScrollTop = top
+      }
       this.scheduleViewSave()
-      if (this.chipQueued) return
-      this.chipQueued = true
+      if (this.viewQueued) return
+      this.viewQueued = true
       requestAnimationFrame(() => {
-        this.chipQueued = false
+        this.viewQueued = false
         this.syncCompactionChip(this.lastItems)
+        this.syncJumpToEnd(this.lastItems)
       })
+    })
+    // The gestures come BEFORE the scroll they cause, and that is the whole
+    // point: the follow has to be off before the next delta lands, or that
+    // delta scrolls under the reader's finger and the two fight for the rest of
+    // the turn. (Verified against the old rule on purpose: a 100px wheel up
+    // during a stream was undone inside the same frame.)
+    this.transcript.addEventListener(
+      "wheel",
+      (event) => {
+        if (gestureDisarms(event.deltaY, this.canScrollUp()))
+          this.shouldPin = false
+      },
+      { passive: true },
+    )
+    // A finger dragged DOWN brings earlier rows into view, which in wheel terms
+    // is a negative delta. Kept relative to the previous move so one long drag
+    // keeps its meaning.
+    let touchY: number | null = null
+    this.transcript.addEventListener(
+      "touchstart",
+      (event) => {
+        touchY = event.touches[0]?.clientY ?? null
+      },
+      { passive: true },
+    )
+    this.transcript.addEventListener(
+      "touchmove",
+      (event) => {
+        const y = event.touches[0]?.clientY
+        if (touchY === null || y === undefined) return
+        if (gestureDisarms(touchY - y, this.canScrollUp()))
+          this.shouldPin = false
+        touchY = y
+      },
+      { passive: true },
+    )
+    this.transcript.addEventListener("touchend", () => {
+      touchY = null
+    })
+    document.addEventListener("keydown", (event) => {
+      // While the sheet is open the keys belong to the sheet.
+      if (this.drawer.open) return
+      const target = event.target as HTMLElement | null
+      // Typing in the composer, the drawer, or the launch form is not a request
+      // to move the log.
+      if (target?.isContentEditable) return
+      if (["TEXTAREA", "INPUT", "SELECT"].includes(target?.tagName ?? ""))
+        return
+      if (keyDisarms(event.key) && this.canScrollUp()) this.shouldPin = false
     })
     $("launchClose").addEventListener("click", () => this.closeLaunchPanel())
     $("launchBtn").addEventListener("click", () => this.requestLaunch())
@@ -1555,6 +1645,7 @@ export class App {
     this.pendingRestore = null
     this.pendingAnchor = null
     this.lastItemCount = 0
+    this.shouldPin = true
     this.transcript.replaceChildren()
     this.transcript.hidden = true
     this.historyNotice.hidden = true
@@ -1701,6 +1792,7 @@ export class App {
     this.jumpWindow = null
     this.lastItems = []
     this.lastItemCount = 0
+    this.shouldPin = true
     this.transcript.replaceChildren()
     this.render()
     this.renderPeerList()
@@ -2072,6 +2164,10 @@ export class App {
     this.reducer.reset()
     this.rowEls.clear()
     this.window = null
+    // Opening a session means looking at where it is now. A resumed view that
+    // lands mid-transcript re-decides the pin from the position it restored to
+    // (render, `pinFromPosition`).
+    this.shouldPin = true
     this.transcript.replaceChildren()
 
     // The first frame to a trusted peer is what triggers the extension's
@@ -2459,14 +2555,14 @@ export class App {
     const items = this.reasoningHidden
       ? snapshot.items.filter((item) => item.kind !== "reasoning")
       : snapshot.items
+    // Who is following the output: the reader's standing decision, not a
+    // measurement of where the scroll happens to be (src/tail-pin.ts). It is
+    // read once, at the top, so a `scroll` event cannot change it halfway
+    // through a render.
+    const followTail = this.shouldPin
     // Where the reader was, BEFORE the DOM moves. Rows born by a rootward
     // extension insert ABOVE the viewport, and a naive follow would yank the
     // reader to the bottom (or to the top when the column empties).
-    const followTail =
-      this.transcript.scrollHeight -
-        this.transcript.scrollTop -
-        this.transcript.clientHeight <
-      220
     const anchor = this.anchorRow()
     const anchorTop = anchor?.getBoundingClientRect().top
     // Renames first: a row that became a pi entry id keeps ITS element (and the
@@ -2559,7 +2655,11 @@ export class App {
       const row = this.pendingJump
       this.pendingJump = null
       this.centerRow(this.rowEls.get(row) ?? null)
+      // A jump is the reader naming a row, which may be in the middle of the
+      // log. Whatever that position is, that is where they are now.
+      this.pinFromPosition()
       this.syncCompactionChip(items)
+      this.syncJumpToEnd(items)
       return
     }
     // The resumed position: the saved row at the saved height. It outranks
@@ -2568,19 +2668,26 @@ export class App {
       const { row, dy } = this.pendingAnchor
       this.pendingAnchor = null
       if (!this.placeAnchor(row, dy))
-        this.transcript.scrollTop = this.transcript.scrollHeight
+        this.setScrollTop(this.transcript.scrollHeight)
+      this.pinFromPosition()
       this.syncCompactionChip(items)
+      this.syncJumpToEnd(items)
       return
     }
     if (followTail || !anchor || !anchor.isConnected) {
-      this.transcript.scrollTop = this.transcript.scrollHeight
+      this.setScrollTop(this.transcript.scrollHeight)
     } else {
       // Not following the tail: hold the anchor row visually still, whatever
-      // grew or moved above it.
-      this.transcript.scrollTop +=
-        anchor.getBoundingClientRect().top - anchorTop!
+      // grew or moved above it. This is the other half of the fix — a reader
+      // who has stopped the follow needs the rows arriving BELOW them to leave
+      // their place alone, and one arriving ABOVE them to be paid back.
+      this.setScrollTop(
+        this.transcript.scrollTop +
+          (anchor.getBoundingClientRect().top - anchorTop!),
+      )
     }
     this.syncCompactionChip(items)
+    this.syncJumpToEnd(items)
   }
 
   /** Dev-only (`?capture=1`): drive the fold from the console or a driver
@@ -2616,6 +2723,7 @@ export class App {
         this.transcript.scrollHeight -
         this.transcript.scrollTop -
         this.transcript.clientHeight,
+      pinned: this.shouldPin,
       window: this.window,
       rows: this.transcript.children.length,
     })
@@ -2699,8 +2807,12 @@ export class App {
     if (!node) return
     const box = this.transcript.getBoundingClientRect()
     const rect = node.getBoundingClientRect()
-    this.transcript.scrollTop +=
-      rect.top - box.top - (box.height - rect.height) / 2
+    this.setScrollTop(
+      this.transcript.scrollTop +
+        rect.top -
+        box.top -
+        (box.height - rect.height) / 2,
+    )
   }
 
   /** Put a row back at the height it was at, for a resumed view. False when the
@@ -2709,8 +2821,74 @@ export class App {
     const node = this.rowEls.get(row)
     if (!node || !node.isConnected) return false
     const box = this.transcript.getBoundingClientRect()
-    this.transcript.scrollTop += node.getBoundingClientRect().top - box.top - dy
+    this.setScrollTop(
+      this.transcript.scrollTop +
+        node.getBoundingClientRect().top -
+        box.top -
+        dy,
+    )
     return true
+  }
+
+  /** Every SCRIPT-side scroll goes through here, so the `scroll` listener can
+   *  recognise its own echo (`appScrollTop`) instead of reading the app's
+   *  follow as the reader's intent. Read back rather than assumed: a value
+   *  beyond the bottom is clamped by the browser, and an assumed one would
+   *  never match the echo. */
+  private setScrollTop(top: number): void {
+    this.transcript.scrollTop = top
+    this.appScrollTop = this.transcript.scrollTop
+  }
+
+  /** Pixels from the bottom edge of the scroll box to the bottom of its
+   *  content; ~0 means the newest drawn row is on the fold. */
+  private tailDistance(): number {
+    const box = this.transcript
+    return belowTail(box.scrollHeight, box.scrollTop, box.clientHeight)
+  }
+
+  /** Is there earlier content above to move into? Without it a scroll up is not
+   *  "leave the tail": with the whole log inside the viewport, disarming would
+   *  strand the next rows below the fold with no gesture left to reach them. */
+  private canScrollUp(): boolean {
+    const box = this.transcript
+    return box.scrollTop > 0 && box.scrollHeight > box.clientHeight + ARRIVE_PX
+  }
+
+  /** A position the app put the reader at (a jump, a resumed view) decides the
+   *  pin by itself: mid-log means the follow is off, on the bottom means it is
+   *  on. Not `pinAfterScroll` — there is no movement to read, and keeping the
+   *  previous value would let the next delta undo the jump. */
+  private pinFromPosition(): void {
+    this.shouldPin = this.tailDistance() <= ARRIVE_PX
+  }
+
+  /** The pill for a reader who stopped following the tail: rows keep arriving
+   *  below them, unseen, and a transcript that has stopped moving needs to say
+   *  WHY. Same job as the compaction chip (which says where a row went); this
+   *  one says how much has gone by. The app has the same control
+   *  (`jumpToEndButton`, TranscriptView.swift). */
+  private syncJumpToEnd(items: TranscriptItem[]): void {
+    const pill = this.jumpToEnd
+    // A full replay, a detach, and a session swap all empty the transcript with
+    // `replaceChildren()`, which takes the pill with them. Re-hanging it here
+    // (the end of every render) means no clear site has to remember it.
+    if (!pill.isConnected) this.transcript.append(pill)
+    // No pill for a reader who is already looking at the bottom, however the
+    // pin got there: the pill promises content they cannot see, and there is
+    // none.
+    if (
+      this.shouldPin ||
+      this.tailDistance() <= ARRIVE_PX ||
+      items.length === 0
+    ) {
+      pill.hidden = true
+      return
+    }
+    const below = this.window ? hiddenAfter(this.window, items.length) : 0
+    pill.textContent = below > 0 ? `↓ ${below} below` : "↓ newest"
+    pill.title = "show the newest lines"
+    pill.hidden = false
   }
 
   /** Write where the reader is standing, for the next load. Debounced on scroll
@@ -2902,6 +3080,18 @@ export class App {
     button.addEventListener("click", () => {
       const expanded = node.classList.toggle("expanded")
       button.textContent = expanded ? "show less" : "show more"
+      // Collapsing a long row is a layout change the app caused, not the reader
+      // leaving the tail — but it moves the scroll box (the browser's own
+      // anchoring adjusts it on Safari, which cannot be told otherwise), and a
+      // `scroll` event for it reads like intent. So re-take the echo value once
+      // the frame has laid out, and put the pin back if it was on. The rendering
+      // steps dispatch scroll events before running animation-frame callbacks,
+      // so the disarming lands first and is undone here, inside one frame.
+      const wasPinned = this.shouldPin
+      requestAnimationFrame(() => {
+        this.appScrollTop = this.transcript.scrollTop
+        if (wasPinned) this.shouldPin = true
+      })
     })
     node.append(button)
   }
@@ -3113,6 +3303,11 @@ export class App {
     if (mode === "queue") this.client.queue(text)
     else if (this.busy) this.client.steer(text)
     else this.client.prompt(text)
+    // Sending is the clearest possible "show me the newest": a reader who had
+    // scrolled up to read history does not want their own message — and the
+    // answer to it — happening below the fold. The iOS app arms its pin on
+    // submit for the same reason.
+    this.shouldPin = true
     this.input.value = ""
     this.autogrow()
   }
