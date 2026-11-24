@@ -65,21 +65,37 @@ listener_pid() { # port
 }
 
 # The URL to type into the drawer, and the URL to open on another device.
+# Reads `tailscale status --json` on stdin and prints Self.DNSName (empty if
+# there is no tailnet). jq is NOT required: node is a hard prerequisite of this
+# repo, so the JSON is parsed with it. One fewer thing a fresh clone must install.
+tailscale_field() {
+  node -e '
+    let raw = "";
+    process.stdin.on("data", (d) => (raw += d));
+    process.stdin.on("end", () => {
+      try {
+        const v = JSON.parse(raw).Self?.DNSName ?? "";
+        process.stdout.write(String(v));
+      } catch {
+        /* not JSON, not running, no tailnet — leave empty */
+      }
+    });
+  '
+}
+
 show_urls() { # port
   local port="$1" host
   say ""
   say "  open here:      http://localhost:${port}"
   if command -v tailscale >/dev/null 2>&1; then
     host=""
-    if command -v jq >/dev/null 2>&1; then
-      # `|| true` matters: with set -e + pipefail, a pipeline where tailscale is
-      # merely NOT RUNNING would otherwise abort the script mid-report.
-      host="$(tailscale status --json 2>/dev/null | jq -r '.Self.DNSName // empty' 2>/dev/null | sed 's/\.$//' || true)"
-    fi
-    # No jq: the tailnet IP still works in a URL, just without the MagicDNS name.
+    # `|| true` matters: with set -e + pipefail, a pipeline where tailscale is
+    # merely NOT RUNNING would otherwise abort the script mid-report.
+    host="$( { tailscale status --json 2>/dev/null || true; } | tailscale_field | sed 's/\.$//' || true)"
+    # No MagicDNS name (no tailnet, or tailscale too old to report one): the
+    # tailnet IP still works in a URL.
     if [[ -z "${host:-}" ]]; then
       host="$(tailscale ip -4 2>/dev/null || true)"
-      [[ -n "${host:-}" ]] && warn "jq not installed — showing the tailnet IP instead of the MagicDNS name"
     fi
     if [[ -n "${host:-}" ]]; then
       say "  open elsewhere: http://${host}:${port}"
