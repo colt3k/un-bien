@@ -12,6 +12,10 @@
 # started at login: `dev`/`preview` bring it up, and `relay down` takes it down.
 # Staying down after `relay down` is the point — it is not a KeepAlive-always job.
 #
+# This script only STARTS and STOPS that unit. To INSTALL it from a clone (binary
+# in ~/.cargo/bin, plist rendered from extension/service-templates/), use
+# `scripts/relay-service.sh install` — see docs/from-clone.md §4.
+#
 # It never starts a relay: that is pi's job (`/unbien pair` bootstraps the
 # services). If no relay is answering, doctor tells you exactly that, so you do
 # not spend ten minutes debugging a client that has nothing to connect to.
@@ -66,7 +70,17 @@ show_urls() { # port
   say ""
   say "  open here:      http://localhost:${port}"
   if command -v tailscale >/dev/null 2>&1; then
-    host="$(tailscale status --json 2>/dev/null | jq -r '.Self.DNSName // empty' 2>/dev/null | sed 's/\.$//')"
+    host=""
+    if command -v jq >/dev/null 2>&1; then
+      # `|| true` matters: with set -e + pipefail, a pipeline where tailscale is
+      # merely NOT RUNNING would otherwise abort the script mid-report.
+      host="$(tailscale status --json 2>/dev/null | jq -r '.Self.DNSName // empty' 2>/dev/null | sed 's/\.$//' || true)"
+    fi
+    # No jq: the tailnet IP still works in a URL, just without the MagicDNS name.
+    if [[ -z "${host:-}" ]]; then
+      host="$(tailscale ip -4 2>/dev/null || true)"
+      [[ -n "${host:-}" ]] && warn "jq not installed — showing the tailnet IP instead of the MagicDNS name"
+    fi
     if [[ -n "${host:-}" ]]; then
       say "  open elsewhere: http://${host}:${port}"
       say "  relay URL:    http://${host}:${RELAY_PORT}"
@@ -83,7 +97,12 @@ show_urls() { # port
 }
 
 relay_up() {
-  nc -z 127.0.0.1 "$RELAY_PORT" >/dev/null 2>&1
+  # No nc dependency: /dev/tcp is a bash builtin, and the subshell closes the
+  # socket when it exits. nc is the fallback for shells built without /dev/tcp.
+  if (exec 3<>"/dev/tcp/127.0.0.1/$RELAY_PORT") 2>/dev/null; then
+    return 0
+  fi
+  command -v nc >/dev/null 2>&1 && nc -z 127.0.0.1 "$RELAY_PORT" >/dev/null 2>&1
 }
 
 doctor() {
@@ -131,7 +150,9 @@ RELAY_PLIST="$HOME/Library/LaunchAgents/$RELAY_LABEL.plist"
 relay_loaded() { launchctl print "gui/$(id -u)/$RELAY_LABEL" >/dev/null 2>&1; }
 relay_up_cmd()   {
   if [[ ! -f "$RELAY_PLIST" ]]; then
-    warn "no LaunchAgent at $RELAY_PLIST — run /unbien install relay (or recreate it)"
+    warn "no LaunchAgent at $RELAY_PLIST"
+    warn "  from a clone:      scripts/relay-service.sh install"
+    warn "  from the package:  run /unbien install relay in pi"
     return 1
   fi
   relay_loaded || launchctl bootstrap "gui/$(id -u)" "$RELAY_PLIST" >/dev/null 2>&1 \
