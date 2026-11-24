@@ -55,22 +55,31 @@ export default defineConfig({
     target: "es2022",
     sourcemap: true,
   },
-  test: {},
   // The tests run in node, but through Vite's resolver, so the shims above are
   // what the tests actually load — the same module graph the browser gets.
+  test: {},
+  // A TAILNET IS AN OPTION, NOT A REQUIREMENT. Two supported ways to reach this
+  // from a phone, and neither is mandatory:
+  //   - same LAN: an address like http://192.168.1.86:5173. Vite allows any IP
+  //     host header unconditionally (verified against vite's own isHostAllowed:
+  //     ipv4/ipv6 return true before allowedHosts is consulted), so this needs
+  //     no configuration at all. A hostname like `Gils-MacBook-Pro.local` does,
+  //     because mDNS names are NOT IPs and would otherwise get 403'd.
+  //   - a mesh VPN (Tailscale/Headscale/etc): http://<node>.<tailnet>.ts.net.
+  // `host: true` binds every interface either way; allowedHosts stays a list
+  // rather than `true` so the DNS-rebinding protection Vite added for this
+  // still applies to everything else. Dev-server only — see README for serving
+  // this properly.
   server: {
-    // Reachable from a phone on the same tailnet: bind every interface, and
-    // allow any MagicDNS host (`m5max.tail5f1ece.ts.net`) past Vite's host
-    // check. Dev-server only — see README for serving this properly.
     host: true,
     port: 5173,
     strictPort: true,
-    allowedHosts: [".ts.net", "localhost"],
+    allowedHosts: [".ts.net", ".local", "localhost"],
   },
   preview: {
     host: true,
     port: 4173,
     strictPort: true,
-    allowedHosts: [".ts.net", "localhost"],
+    allowedHosts: [".ts.net", ".local", "localhost"],
   },
 })

@@ -222,9 +222,10 @@ preflight() {
   fi
 
   if command -v tailscale >/dev/null 2>&1 && tailscale status --json >/dev/null 2>&1; then
-    ok "tailscale up — a phone on your tailnet can reach this machine"
+    ok "tailscale up — reachable from anywhere on your tailnet"
   else
-    warn "no tailnet here — the client is only reachable on the LAN (or localhost)"
+    note "no tailnet, and that is fine: the phone reaches this machine by LAN address."
+    note "a mesh VPN buys access from OUTSIDE your network — see docs/from-clone.md"
   fi
 
   return $fail

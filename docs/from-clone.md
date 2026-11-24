@@ -217,12 +217,43 @@ web-client/scripts/start.sh relay status|up|down
 ```
 
 `start.sh` derives the repo root from its own location, finds pnpm (or corepack,
-or `npx pnpm@<pinned>`), and prints the tailnet/LAN URLs plus the relay URL to
-paste into the drawer. Vite binds every interface and allows `.ts.net`, so a
-phone on the same tailnet can open `http://<your-node>:5173`.
+or `npx pnpm@<pinned>`), and prints the URLs to type — tailnet name if there is
+one, tailnet or LAN address otherwise — plus the relay URL for the drawer.
+
+### Reaching it from a phone: a mesh VPN is optional
+
+Both of these work, and neither is required. Pick by where the phone is:
+
+| Same network | What you type | Notes |
+| --- | --- | --- |
+| Same LAN | `http://192.168.1.86:5173` | Vite allows any **IP** host header unconditionally — no configuration needed. `start.sh` prints this address when there is no tailnet. |
+| Same LAN, by name | `http://<mac-name>.local:5173` | mDNS names are not IPs, so they need to be in `allowedHosts` — `.local` is there for that reason. |
+| Anywhere, mesh VPN | `http://<node>.<your-tailnet>.ts.net:5173` | The relay and the client are both reached by the tailnet address. |
+
+Verified against a running preview server (Vite 7.3.8), with `allowedHosts:
+[".ts.net", ".local", "localhost"]`:
+
+```text
+localhost:4173            -> 200
+192.168.1.86:4173         -> 200   (LAN address, allowed because it is an IP)
+Gils-MacBook-Pro.local    -> 200   (.local — only after that entry was added)
+somehost.example.com      -> 403   (still refused — the check is not disabled)
+```
+
+`allowedHosts` is a list, not `true`, on purpose: that check is Vite's protection
+against DNS rebinding against a dev server that is bound to `0.0.0.0`. Widen it
+only if you have a reason.
+
+What you give up by skipping the VPN: access from outside your network. Pairing
+and every crypto step are unaffected — the wire is signed and fail-closed, and
+`http` on a LAN is not a barrier to pairing (see the `crypto.randomUUID` note in
+[`../web-client/README.md`](../web-client/README.md)). What is true either way is
+that the relay sees routed plaintext, so do not port-forward `:3000` to the
+internet; if you need remote access, that is what the mesh VPN in
+[`install.md`](install.md) is for.
 
 Use `preview`, not `dev`, on a phone: the dev server's HMR socket drops on a
-tailnet blip or a backgrounded tab and full-reloads the page, which looks exactly
+network blip or a backgrounded tab and full-reloads the page, which looks exactly
 like losing the session.
 
 Then pair: `/unbien pair` in the pi session prints a single-use code; the drawer
