@@ -59,15 +59,20 @@ not a duplicate:
 Then it serves the built client on **`http://localhost:4173`**.
 
 ```sh
-./scripts/setup-from-clone.sh --dev        # Vite on :5173 instead (laptop only)
+./scripts/setup-from-clone.sh --dev        # Vite dev server on :5173 instead
 ./scripts/setup-from-clone.sh --no-run     # set up, don't serve
 ./scripts/setup-from-clone.sh --dry-run    # print the plan, change nothing
 ./scripts/setup-from-clone.sh doctor       # read-only state report, safe any time
 ```
 
-Use the served `:4173` build on a phone, not `--dev`: the dev server's HMR socket
-drops on a network blip and full-reloads the page, which looks exactly like
-losing the session.
+Use the served `:4173` build on a phone. `:5173` is not restricted — the dev
+server works from a phone too (pairing over plain `http`, a LAN address or a
+`<machine>.local` name), and on the laptop you are editing it is what you want,
+since it hot-reloads instead of asking you to rebuild. The cost shows up on
+mobile: the dev server's HMR socket drops on a network blip or a backgrounded
+tab, and the page full-reloads. Nothing is lost — the session lives on the relay,
+and the transcript comes back — but it looks exactly like losing it, which is
+worth knowing before you debug a phone problem from a reload.
 
 Two things the script will not do:
 
