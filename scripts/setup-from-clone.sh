@@ -129,6 +129,29 @@ find_cargo() {
   return 1
 }
 
+# Copies of the extension installed OUTSIDE this checkout. They matter because
+# the installer delegates: _delegateToGlobalCopy makes `install launcher` run
+# the package manager's global copy of the extension, and that copy resolves the
+# launcher entry from its OWN dist — so the unit ends up pointing at the global
+# copy, not this one. Observed on a real machine: a stale fork build (0.25.19
+# -fork.3, four months of fixes behind) was running as the launcher daemon
+# because of a leftover global install nobody remembered.
+global_extension_copies() {
+  local -a roots=("$HOME/.pi/agent/npm/node_modules")
+  if command -v npm >/dev/null 2>&1; then
+    local r
+    r="$(npm root -g 2>/dev/null || true)"
+    [[ -n "$r" ]] && roots+=("$r")
+  fi
+  local root
+  for root in "${roots[@]}"; do
+    if [[ -d "$root/@geohar/un-bien" ]]; then
+      printf '         %s\n' "$root/@geohar/un-bien"
+    fi
+  done
+  return 0
+}
+
 # Is this checkout already registered as a Pi package? Pi stores local packages
 # as a path relative to the settings file, so resolve before comparing. The
 # published npm package is a DIFFERENT identity from this path — if both are
@@ -205,6 +228,17 @@ preflight() {
     note "brew install ./HomebrewFormula/unbien-relay.rb                      # prebuilt formula"
     note "or run this with --skip-relay and start any relay yourself on :$RELAY_PORT"
     fail=1
+  fi
+
+  local copies
+  copies="$(global_extension_copies)"
+  if [[ -n "$copies" ]]; then
+    warn "a copy of the extension is installed outside this checkout:"
+    printf '%s\n' "$copies"
+    warn "'install launcher/relay/cli' DELEGATES to that copy, so the service unit"
+    warn "would run it rather than this checkout — a silent downgrade to whatever"
+    warn "version is sitting in the global prefix."
+    note "npm uninstall -g @geohar/un-bien      # then installs run from here"
   fi
 
   if command -v tmux >/dev/null 2>&1; then

@@ -204,6 +204,35 @@ python3 -c "import json;print(json.load(open('$HOME/.pi/agent/settings.json')).g
 `unbien` (the separate `@geohar/unbien-cli` package) is not installed by that
 command. `npm i -g ./unbien-cli` from the clone if you want the CLI from source.
 
+### The one way this goes wrong silently
+
+The installer **delegates**. `_delegateToGlobalCopy` in `housekeeping.ts`: if a
+package manager is resolvable, `install <target>` first ensures the extension is
+installed globally, then runs **that copy's** `unbien-admin <verb> <target>`. A
+global copy resolves the launcher entry from its own `dist/`, so the unit points
+at the global copy — not at the checkout you ran the command from. Check with:
+
+```sh
+npm ls -g @geohar/un-bien
+ls ~/.pi/agent/npm/node_modules/@geohar/ 2>/dev/null
+```
+
+If either finds `un-bien`, and you want the clone to be the source of truth,
+remove it: `npm uninstall -g @geohar/un-bien`. That is not a hypothetical — on
+the machine this fork is developed on, a leftover global build (older than the
+development branch by several days of fixes) was what the launcher daemon was
+actually running, because every install had been delegating to it. `scripts/
+setup-from-clone.sh doctor` now reports these copies.
+
+Two smaller footguns in the same area:
+
+- `unbien-admin install` with **no target means `all`** (launcher + cli + relay),
+  not "show help". Type the target.
+- `install launcher` also runs `npm install -g @geohar/un-bien-launcher` from the
+  registry (the standalone package, its own version line). The daemon does not
+  run it — the unit runs this checkout — but if you want that command from source
+  too: `npm i -g ./launcher`.
+
 ---
 
 ## 6. The browser client
