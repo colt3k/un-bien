@@ -40,8 +40,9 @@ mkdirSync(state, { recursive: true })
 const b64 = (fill) => Buffer.alloc(32, fill).toString("base64")
 const A = b64(0x41) // no keypair, no log mention           → REVOKABLE
 const B = b64(0x42) // private key held in web-dump file    → KEEP
-const C = b64(0x43) // authenticated yesterday              → KEEP
-const D = b64(0x44) // authenticated 200 days ago           → REVOKABLE
+const C = b64(0x43) // authenticated yesterday, still open  → KEEP, CONNECTED
+const D = b64(0x44) // authenticated 200 days ago, closed   → REVOKABLE
+const E = b64(0x45) // mentioned ONLY in a coloured line    → KEEP (parser strips ANSI)
 const ISO = (days) => new Date(Date.now() - days * 86400000).toISOString()
 
 writeFileSync(
@@ -53,6 +54,7 @@ writeFileSync(
         { name: "key-held-tool", remote_epk: B, paired_at: ISO(30) },
         { name: "phone-browser", remote_epk: C, paired_at: ISO(20) },
         { name: "old-laptop", remote_epk: D, paired_at: ISO(210) },
+        { name: "ansi-only", remote_epk: E, paired_at: ISO(3) },
       ],
     },
     null,
@@ -66,17 +68,25 @@ writeFileSync(
   state + "/web-dump-identity.json",
   JSON.stringify({ seed: b64(0x99), publicKey: B }),
 )
-// Retained log: yesterday for C, 200 days ago for D. Tags are the 8-char tail
-// the relay logs use.
-const line = (when, epk) =>
-  `${when}  INFO relay::handlers::peer: authenticated peer=${epk.slice(-8)} room=HI5Ogu addr=100.64.0.2:50000\n`
+// Retained log: yesterday for C (socket still open) and for the E lines, 200
+// days ago for D. Tags are the 8-char tail the relay logs use. The E lines are
+// ANSI-coloured the way a TTY-written relay log is — matching raw text misses
+// them entirely.
+const line = (when, epk, addr = "10.9.9.9:51111") =>
+  `${when}  INFO relay::handlers::peer: authenticated peer=${epk.slice(-8)} room=HI5Ogu addr=${addr}\n`
+const coloured = (when, epk) =>
+  `${when}\u001b[0m  \u001b[32mINFO\u001b[0m \u001b[2mrelay::handlers::peer\u001b[0m\u001b[2m:\u001b[0m authenticated ` +
+  `\u001b[3mpeer\u001b[0m\u001b[2m=\u001b[0m${epk.slice(-8)} ` +
+  `\u001b[3mroom\u001b[0m\u001b[2m=\u001b[0mHI5Ogu \u001b[3maddr\u001b[0m\u001b[2m=\u001b[0m10.7.7.7:40000\n`
 writeFileSync(
   state + "/relay.log",
   [
     `${ISO(200)}  INFO relay::handlers::peer: pairing_set: stored SIGNED allow-list\n`,
-    line(ISO(200), D),
+    line(ISO(200), D, "10.5.5.5:40000"),
+    `${ISO(199)}  INFO relay::handlers::peer: disconnected peer=${D.slice(-8)} room=HI5Ogu addr=10.5.5.5:40000\n`,
     "not-a-timestamp line (must be ignored)\n",
     line(ISO(1), C),
+    coloured(ISO(1), E),
   ].join(""),
 )
 // The stub revoke verb: same full-set semantics as pairing/storage.ts removePeer.
@@ -105,10 +115,14 @@ count_peers() {
 }
 # The real shortid prefixes, read back from the fixture in fixture order
 # (dead, key-held, phone, old) — never guessed from how the bytes were built.
-read -r ID_DEAD ID_KEY ID_PHONE ID_OLD <<EOF
+read -r ID_DEAD ID_KEY ID_PHONE ID_OLD ID_ANSI <<EOF
 $(node -e 'const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).peers; console.log(p.map((x) => x.remote_epk.slice(0, 8)).join(" "))' "$STATE/peers.json")
 EOF
-echo "  fixture shortids: $ID_DEAD $ID_KEY $ID_PHONE $ID_OLD"
+echo "  fixture shortids: $ID_DEAD $ID_KEY $ID_PHONE $ID_OLD $ID_ANSI"
+
+# A stand-in for the socket probe: one endpoint matching peer C's last auth
+# address, so "connected" is derived rather than assumed.
+export SS_CMD="printf 'node 4242 0 0 IPv4 10.9.9.9:51111->10.0.0.1:3000 (established)\n'"
 
 # A relay-side db, so the verification step reads something real. Worth having:
 # the sqlite3 CLI does not bind `?` from extra arguments (it parses them as more
@@ -132,12 +146,26 @@ grep -q "key-held-tool.*KEEP.*private key on disk" <<<"$audit" && ok "locally-he
 grep -q "phone-browser.*KEEP.*seen in relay.log" <<<"$audit" && ok "recently-active peer is KEEP" || no "recently-active peer is KEEP" "$audit"
 grep -q "old-laptop.*REVOKABLE" <<<"$audit" && ok "mention outside the window is REVOKABLE" || no "mention outside the window is REVOKABLE" "$audit"
 grep -q "oldest line 200\|oldest line 20" <<<"$audit" || grep -q "oldest line" <<<"$audit" && ok "audit states its evidence window" || no "audit states its evidence window" "$audit"
+# The colour-escape regression: a TTY-written relay log wraps field NAMES in
+# escapes, so a parser that matches raw text never sees this peer at all and
+# would call it REVOKABLE.
+grep -q "ansi-only.*KEEP" <<<"$audit" && ok "keeps a peer mentioned only in a coloured log line" || no "keeps a peer mentioned only in a coloured log line" "$audit"
+
+echo
+echo "== status: presence =="
+status_out="$("$SCRIPT" status 2>&1)"
+grep -q "$ID_PHONE.*CONNECTED" <<<"$status_out" && ok "marks the peer whose auth address still holds a socket CONNECTED" || no "marks the peer whose auth address still holds a socket CONNECTED" "$status_out"
+grep -q "$ID_OLD.*disconnected" <<<"$status_out" && ok "marks a later disconnect line as disconnected" || no "marks a later disconnect line as disconnected" "$status_out"
+grep -q "$ID_DEAD.*never seen" <<<"$status_out" && ok "says never seen for an absent peer" || no "says never seen for an absent peer" "$status_out"
+grep -q "$ID_ANSI.*unknown" <<<"$status_out" && ok "says unknown, not absent, when the address is not live" || no "says unknown, not absent, when the address is not live" "$status_out"
+grep -q "this machine" <<<"$status_out" && ok "shows the owning machine's own presence" || no "shows the owning machine's own presence" "$status_out"
+grep -qi "liveness is inferred" <<<"$status_out" && ok "states how liveness is inferred" || no "states how liveness is inferred" "$status_out"
 
 echo
 echo "== revoke: the gates =="
 out="$("$SCRIPT" revoke "$ID_KEY" --no-restart 2>&1)"; rc=$?
 [[ $rc -ne 0 ]] && grep -q "refusing: private key on disk" <<<"$out" && ok "refuses a peer whose key is held locally" || no "refuses a peer whose key is held locally" "rc=$rc $out"
-[[ $(count_peers) == 4 ]] && ok "refusal changed nothing" || no "refusal changed nothing" "peers=$(count_peers)"
+[[ $(count_peers) == 5 ]] && ok "refusal changed nothing" || no "refusal changed nothing" "peers=$(count_peers)"
 
 out="$("$SCRIPT" revoke "$ID_PHONE" --no-restart 2>&1)"; rc=$?
 [[ $rc -ne 0 ]] && grep -q "refusing:.*seen in relay.log" <<<"$out" && ok "refuses a recently active peer" || no "refuses a recently active peer" "rc=$rc $out"
@@ -146,13 +174,13 @@ out="$("$SCRIPT" revoke zzzzzzzz --no-restart 2>&1)"; rc=$?
 [[ $rc -ne 0 ]] && grep -qi "no peer" <<<"$out" && ok "unknown shortid is an error" || no "unknown shortid is an error" "rc=$rc $out"
 
 out="$("$SCRIPT" revoke "$ID_OLD" --no-restart --dry-run 2>&1)"
-grep -q -- "--dry-run" <<<"$out" && [[ $(count_peers) == 4 ]] && ok "--dry-run changes nothing" || no "--dry-run changes nothing" "peers=$(count_peers) $out"
+grep -q -- "--dry-run" <<<"$out" && [[ $(count_peers) == 5 ]] && ok "--dry-run changes nothing" || no "--dry-run changes nothing" "peers=$(count_peers) $out"
 
 echo
 echo "== revoke: the happy paths =="
 out="$("$SCRIPT" revoke "$ID_DEAD" --no-restart 2>&1)"; rc=$?
 [[ $rc -eq 0 ]] && grep -q "Revoked: $ID_DEAD" <<<"$out" && ok "revokes a peer with no evidence behind it" || no "revokes a peer with no evidence behind it" "rc=$rc $out"
-[[ $(count_peers) == 3 ]] && ok "peers.json lost exactly that entry" || no "peers.json lost exactly that entry" "peers=$(count_peers)"
+[[ $(count_peers) == 4 ]] && ok "peers.json lost exactly that entry" || no "peers.json lost exactly that entry" "peers=$(count_peers)"
 if [[ "$HAVE_SQLITE" == 1 ]]; then
   grep -q "relay now holds: 3 owner(s) for this machine" <<<"$out" && ok "reads the relay-side owner count back" || no "reads the relay-side owner count back" "$out"
 else
@@ -163,11 +191,12 @@ grep -q "key-held-tool" "$STATE/peers.json" && ok "other peers untouched" || no 
 
 out="$("$SCRIPT" revoke "$ID_PHONE" --no-restart --force 2>&1)"; rc=$?
 [[ $rc -eq 0 ]] && ok "--force overrides the recency gate" || no "--force overrides the recency gate" "rc=$rc $out"
-[[ $(count_peers) == 2 ]] && ok "--force revoked it" || no "--force revoked it" "peers=$(count_peers)"
+[[ $(count_peers) == 3 ]] && ok "--force revoked it" || no "--force revoked it" "peers=$(count_peers)"
 
 echo
 echo "== the lock-yourself-out guard =="
 "$SCRIPT" revoke "$ID_KEY" --no-restart --force >/dev/null 2>&1
+"$SCRIPT" revoke "$ID_ANSI" --no-restart --force >/dev/null 2>&1
 out="$("$SCRIPT" revoke "$ID_OLD" --no-restart 2>&1)"; rc=$?
 [[ $rc -ne 0 ]] && grep -q "ONLY peer" <<<"$out" && ok "refuses to empty the list without --force" || no "refuses to empty the list without --force" "rc=$rc $out"
 

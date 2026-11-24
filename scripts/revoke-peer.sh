@@ -35,6 +35,7 @@
 #
 # Usage:
 #   scripts/revoke-peer.sh audit              # list + evidence + verdicts
+#   scripts/revoke-peer.sh status             # paired devices and who is live now
 #   scripts/revoke-peer.sh list               # plain peers.json listing
 #   scripts/revoke-peer.sh revoke <shortid>   # gate, back up, revoke, re-push
 #
@@ -57,6 +58,7 @@ IDENTITY="$STATE_DIR/identity.json"
 REVOKE_CMD="${REVOKE_CMD:-node $REPO_ROOT/extension/dist/index.js revoke}"
 
 RECENT_DAYS=14
+RELAY_PORT="${UNBIEN_RELAY_PORT:-3000}"
 DRY=0
 FORCE=0
 RESTART=1
@@ -71,10 +73,11 @@ die() { printf '!! %s\n' "$*" >&2; exit 1; }
 # same handle can be stored base64, base64url or unpadded, so compare bytes,
 # not strings).
 _evidence() {
-  STATE_DIR="$STATE_DIR" PEERS="$PEERS" IDENTITY="$IDENTITY" \
+  STATE_DIR="$STATE_DIR" PEERS="$PEERS" IDENTITY="$IDENTITY" RELAY_PORT="$RELAY_PORT" \
     RECENT_DAYS="$RECENT_DAYS" SCAN_DIRS="${SCAN_DIRS[*]}" \
     node --input-type=module -e '
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs"
+import { execSync } from "node:child_process"
 import { join } from "node:path"
 
 const stateDir = process.env.STATE_DIR
@@ -125,26 +128,34 @@ for (const dir of scanDirs) {
   }
 }
 
-// relay.log* mentions, with the timestamp of the newest one and the oldest
-// line we retained (the honest bound on "never seen"). Any line naming the
-// peer counts — auth, grants, forwarding — because for a KEEP decision the
-// question is only "is there evidence something still holds this key?".
+// relay.log* facts. Colour escapes are stripped before anything is matched:
+// a relay log written against a TTY wraps the field NAMES in escapes, so
+// `peer=` appears as `\x1b[3mpeer\x1b[0m\x1b[2m=\x1b[0mvalue`. Matching the raw
+// text sees roughly half the mentions it should (measured: 4214 vs 8536 in one
+// rotated log), which would make a live peer look REVOKABLE.
 const logs = (() => {
-  try { return readdirSync(stateDir).filter((f) => /^relay\.log(\.\d+)?$/.test(f)) } catch { return [] }
+  try { return readdirSync(stateDir).filter((n) => /^relay\.log(\.\d+)?$/.test(n)) } catch { return [] }
 })()
-const tagHits = new Map()
+const stripAnsi = (s) => s.replace(/\x1b\[[0-9;]*m/g, "")
+const anyHit = new Map(), authHit = new Map(), discHit = new Map()
+const bump = (m, k, v) => { const p = m.get(k); if (!p || v.when > p.when) m.set(k, v) }
 let oldestLogLine = null
 for (const f of logs) {
   let text
   try { text = readFileSync(join(stateDir, f), "utf8") } catch { continue }
-  for (const line of text.split("\n")) {
-    const m = line.match(/^(\d{4}-\d{2}-\d{2}T[\d:.]+Z)/)
-    if (!m) continue
-    if (!oldestLogLine || m[1] < oldestLogLine) oldestLogLine = m[1]
+  for (const rawLine of text.split("\n")) {
+    const line = stripAnsi(rawLine)
+    const ts = line.match(/^(\d{4}-\d{2}-\d{2}T[\d:.]+Z)/)?.[1]
+    if (!ts) continue
+    if (!oldestLogLine || ts < oldestLogLine) oldestLogLine = ts
     const peer = line.match(/peer=([A-Za-z0-9+/]+={0,2})/)
     if (!peer) continue
-    const prev = tagHits.get(peer[1])
-    if (!prev || m[1] > prev.when) tagHits.set(peer[1], { when: m[1], file: f })
+    bump(anyHit, peer[1], { when: ts, file: f })
+    if (line.includes("authenticated peer=")) {
+      bump(authHit, peer[1], { when: ts, file: f, addr: line.match(/addr=([\d.]+:\d+)/)?.[1] ?? null })
+    } else if (line.includes("disconnected")) {
+      bump(discHit, peer[1], { when: ts, file: f })
+    }
   }
 }
 
@@ -159,7 +170,7 @@ const rows = []
 for (const p of peers) {
   const raw = rawOf(p.remote_epk)
   const keyHit = raw ? localKeys.find((k) => k.raw.equals(raw)) : null
-  const seen = tagHits.get(p.remote_epk.slice(-8)) || null
+  const seen = anyHit.get(p.remote_epk.slice(-8)) || null
   const ageDays = seen ? (now - Date.parse(seen.when)) / 86400000 : null
   let verdict, why
   if (keyHit) { verdict = "KEEP"; why = `private key on disk (${keyHit.file})` }
@@ -167,9 +178,38 @@ for (const p of peers) {
     verdict = "KEEP"
     why = `seen in ${seen.file} ${ageDays < 1 ? "today" : Math.round(ageDays) + "d ago"} — a log line names this peer, so something may still hold the key`
   } else { verdict = "REVOKABLE"; why = "no local keypair" + (seen ? `, no log mention since ${seen.when}` : ", no log mention in the retained window") }
-  rows.push({ shortid: p.remote_epk.slice(0, 8), name: p.name || "(unnamed)", paired: (p.paired_at || "?").slice(0, 10), verdict, why, epk: p.remote_epk })
+  rows.push({
+    shortid: p.remote_epk.slice(0, 8), name: p.name || "(unnamed)",
+    paired: (p.paired_at || "?").slice(0, 10), verdict, why, epk: p.remote_epk,
+    auth: authHit.get(p.remote_epk.slice(-8)) ?? null,
+    disc: discHit.get(p.remote_epk.slice(-8)) ?? null,
+    any: anyHit.get(p.remote_epk.slice(-8)) ?? null,
+  })
 }
-console.log(JSON.stringify({ rows, oldestLogLine, logCount: logs.length, localKeyCount: localKeys.length }))
+
+// This machine is the owner of the list, not a peer on it, but its own presence
+// is the context the peer rows are read against.
+let mine = null
+try {
+  const pk = JSON.parse(readFileSync(process.env.IDENTITY, "utf8")).pk
+  if (typeof pk === "string") {
+    mine = { tag: pk.slice(-8), any: anyHit.get(pk.slice(-8)) ?? null, auth: authHit.get(pk.slice(-8)) ?? null, disc: discHit.get(pk.slice(-8)) ?? null }
+  }
+} catch {}
+
+// Live sockets. SS_CMD lets a test (or an unusual box) supply its own probe.
+const port = process.env.RELAY_PORT || "3000"
+const probeCmd = process.env.SS_CMD ?? (process.platform === "darwin"
+  ? `lsof -nP -iTCP:${port} -sTCP:ESTABLISHED`
+  : `ss -Hn -t state established "( sport = :${port} )"`)
+let sockets = [], probeOk = true
+try {
+  sockets = execSync(probeCmd, { stdio: ["ignore", "pipe", "ignore"] }).toString().match(/[\d.]+:\d+/g) ?? []
+} catch { probeOk = false }
+console.log(JSON.stringify({
+  rows, mine, oldestLogLine, logCount: logs.length, localKeyCount: localKeys.length,
+  sockets, probeOk, port,
+}))
 '
 }
 
@@ -190,6 +230,46 @@ console.log("    a key absent from that window may still have been used earlier,
 console.log("    key is not visible on disk at all. That is why recency, not the pairing date, gates a revoke.")
 const n = d.rows.filter((r) => r.verdict === "REVOKABLE").length
 console.log(`\n  ${n} revocable, ${d.rows.length - n} kept. Revoke with: scripts/revoke-peer.sh revoke <shortid>`)
+'
+}
+
+_status() {
+  [[ -f "$PEERS" ]] || die "no peers file at $PEERS (state dir: $STATE_DIR)"
+  local health service
+  health="$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 "http://127.0.0.1:$RELAY_PORT/health" 2>/dev/null || true)"
+  case "$(uname -s)" in
+    Darwin) service="$(launchctl list 2>/dev/null | grep -c com.georgeharker.unbien.relay | sed 's/^$/0/')"
+            [[ "$service" != 0 && -n "$service" ]] && service="registered" || service="not registered" ;;
+    Linux)  service="$(systemctl --user is-active unbien-relay.service 2>/dev/null || true)"
+            [[ -n "$service" ]] || service="unknown" ;;
+    *)      service="n/a" ;;
+  esac
+  _evidence | HEALTH="${health:-no response}" SERVICE="$service" RELAY_PORT="$RELAY_PORT" node --input-type=module -e '
+import { readFileSync } from "node:fs"
+const d = JSON.parse(readFileSync(0, "utf8"))
+const live = new Set(d.sockets)
+const pres = (r) => {
+  if (!r.auth) return r.any ? "seen, no auth in window" : "never seen in the retained logs"
+  if (r.disc && r.disc.when > r.auth.when) return `disconnected ${r.disc.when.slice(0, 19)}Z`
+  if (r.auth.addr && live.has(r.auth.addr)) return "CONNECTED"
+  if (!d.probeOk) return "unknown (no socket probe)"
+  return "unknown (last auth not on a live socket)"
+}
+console.log(`relay :${process.env.RELAY_PORT} — /health ${process.env.HEALTH}, service ${process.env.SERVICE}`)
+if (d.mine) console.log(`this machine (${d.mine.tag})  ${pres({ auth: d.mine.auth, disc: d.mine.disc })}\n`)
+console.log(`paired devices — ${d.rows.length} allowed to see this machine'"'"'s rooms\n`)
+for (const r of d.rows) {
+  const at = r.auth ? `${r.auth.when.slice(0, 19)}Z${r.auth.addr ? "  " + r.auth.addr : ""}` : "—"
+  console.log(`  ${r.shortid}  ${(r.name).padEnd(24)} last auth ${at.padEnd(38)} ${pres(r)}`)
+}
+const n = (f) => d.rows.filter((r) => f(pres(r))).length
+console.log(`\n  ${n((s) => s === "CONNECTED")} connected, ${n((s) => s.startsWith("disconnected"))} disconnected, ${n((s) => s.startsWith("unknown") || s.startsWith("never") || s.startsWith("seen,"))} unknown/never seen`)
+console.log(`  ${new Set(d.sockets).size} distinct endpoints seen by the probe${d.probeOk ? "" : " (socket probe unavailable)"}`)
+console.log("")
+console.log("  liveness is inferred: the address from a peer'"'"'s most recent auth line, still")
+console.log("  holding an ESTABLISHED socket. Ports are ephemeral and change on every reconnect,")
+console.log("  NAT collapses several devices onto one address, and the logs only reach back to")
+console.log(`  ${d.oldestLogLine ?? "(no logs)"} — so "unknown" never claims absence.`)
 '
 }
 
@@ -225,7 +305,7 @@ _restart_relay() {
     *) say "!! unknown OS — restart the relay yourself so the new list gets pushed" ;;
   esac
   for _ in 1 2 3 4 5 6 7 8 9 10; do
-    curl -fsS --max-time 2 http://127.0.0.1:3000/health >/dev/null 2>&1 && break
+    curl -fsS --max-time 2 "http://127.0.0.1:$RELAY_PORT/health" >/dev/null 2>&1 && break
     sleep 0.5
   done
 }
@@ -279,6 +359,7 @@ done
 
 case "$_cmd" in
   audit) _audit ;;
+  status) _status ;;
   list)
     [[ -f "$PEERS" ]] || die "no peers file at $PEERS"
     PEERS="$PEERS" node --input-type=module -e '
