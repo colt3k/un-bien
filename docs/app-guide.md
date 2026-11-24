@@ -133,6 +133,38 @@ After pairing the group fills in, and it holds **two different kinds of row**:
   for a directory, you can start a session on it from here; the spinner is the
   app looking for that daemon.
 
+### Keeping the pairing list honest
+
+A paired device stays on the list forever — there is no expiry, and a browser
+or a capture script mints a fresh device key every time it connects, so
+`/unbien devices` gradually fills with rows nobody can name (`web-client
+fixture dump`, five unnamed `unbien-web`). Revoking one is a real security
+action: it removes that device's ability to see this machine's rooms. So the
+question is not whether a row looks ugly but **whether that key can ever
+connect again**, and the pairing date cannot answer it.
+
+`scripts/revoke-peer.sh audit` answers it with the two kinds of evidence that
+do:
+
+```bash
+scripts/revoke-peer.sh audit                      # each peer + verdict + why
+scripts/revoke-peer.sh revoke <shortid>           # gate, back up, revoke, re-push
+scripts/revoke-peer.test.sh                       # the gate logic, against fixtures
+```
+
+A peer is **KEEP** if its private key exists locally (a tool like the
+conformance dump script keeps one, and can come back) or if a retained relay
+log names it inside the recency window (a browser holds its key where no scan
+can see it). Everything else is **REVOKABLE**. Log absence is not proof of
+non-use — logs rotate, and audit prints the oldest line it can see rather than
+pretending otherwise; `--force` overrides when you know better.
+
+Removal goes through the extension's own verb (`removePeer`, the path
+`/unbien revoke` uses), never by editing `peers.json` or `pairing.db` by hand.
+The relay holds a **signed full-set replacement** of this machine's list, so
+the script restarts the relay afterwards: every client reconnects and re-pushes
+the shorter list, which is what actually takes the revocation effect.
+
 ---
 
 ## Reading a transcript
