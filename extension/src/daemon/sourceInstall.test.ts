@@ -103,6 +103,87 @@ describe("localPackageFor", () => {
     expect(d.reason).toContain("from this checkout")
   })
 
+  it("a NESTED workspace file does not stop the walk", () => {
+    // The real repo's shape: pnpm-workspace.yaml at the root AND inside
+    // extension/ (allowBuilds/overrides). Stopping at the nearest marker looks
+    // for extension/launcher, finds nothing, and installs the registry build.
+    const root = mkdtempSync(join(tmpdir(), "unbien-nested-"))
+    writeFileSync(
+      join(root, "pnpm-workspace.yaml"),
+      "packages:\n  - launcher\n",
+    )
+    const ext = join(root, "extension")
+    mkdirSync(ext, { recursive: true })
+    writeFileSync(
+      join(ext, "pnpm-workspace.yaml"),
+      "allowBuilds:\n  esbuild: true\n",
+    )
+    const here = join(ext, "dist", "daemon")
+    mkdirSync(here, { recursive: true })
+    const pkgDir = join(root, "launcher")
+    mkdirSync(join(pkgDir, "dist"), { recursive: true })
+    writeFileSync(
+      join(pkgDir, "package.json"),
+      JSON.stringify({ name: "@geohar/un-bien-launcher", version: "0.1.93" }),
+    )
+    writeFileSync(join(pkgDir, "dist", "index.js"), "// built\n")
+    const d = localPackageFor({
+      pkgName: "@geohar/un-bien-launcher",
+      mode: "auto",
+      here,
+      requireFile: "dist/index.js",
+    })
+    expect(d.source?.path).toBe(pkgDir)
+  })
+
+  it("workspace markers without that package say so, precisely", () => {
+    const root = mkdtempSync(join(tmpdir(), "unbien-nomember-"))
+    writeFileSync(join(root, "pnpm-workspace.yaml"), "packages:\n  - other\n")
+    const here = join(root, "extension", "dist", "daemon")
+    mkdirSync(here, { recursive: true })
+    const d = localPackageFor({
+      pkgName: "@geohar/un-bien-launcher",
+      mode: "auto",
+      here,
+    })
+    expect(d.source).toBeNull()
+    expect(d.reason).toContain("contains launcher/ naming")
+  })
+
+  it("a wrong-named member below does not hide the right one above", () => {
+    const base = mkdtempSync(join(tmpdir(), "unbien-twolevel-"))
+    const inner = join(base, "inner")
+    mkdirSync(inner, { recursive: true })
+    writeFileSync(
+      join(inner, "pnpm-workspace.yaml"),
+      "packages:\n  - launcher\n",
+    )
+    mkdirSync(join(inner, "launcher"), { recursive: true })
+    writeFileSync(
+      join(inner, "launcher", "package.json"),
+      JSON.stringify({ name: "unrelated-launcher" }),
+    )
+    const here = join(inner, "launcher", "dist")
+    mkdirSync(here, { recursive: true })
+    writeFileSync(
+      join(base, "pnpm-workspace.yaml"),
+      "packages:\n  - launcher\n",
+    )
+    mkdirSync(join(base, "launcher", "dist"), { recursive: true })
+    writeFileSync(
+      join(base, "launcher", "package.json"),
+      JSON.stringify({ name: "@geohar/un-bien-launcher", version: "0.1.93" }),
+    )
+    writeFileSync(join(base, "launcher", "dist", "index.js"), "// built\n")
+    const d = localPackageFor({
+      pkgName: "@geohar/un-bien-launcher",
+      mode: "auto",
+      here,
+      requireFile: "dist/index.js",
+    })
+    expect(d.source?.path).toBe(join(base, "launcher"))
+  })
+
   it("an unbuilt package is NOT installed from source", () => {
     // Installing a directory ships what is on disk; with no dist/ the command
     // that lands cannot run, which is worse than the registry copy.

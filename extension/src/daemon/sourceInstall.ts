@@ -82,12 +82,18 @@ export function workspaceRootFor(
  * workspace, its package.json must actually name `pkgName`, and it must be
  * built (a directory install ships whatever is on disk — `files`/`dist`
  * included — so an unbuilt package would install a command that cannot run).
+ *
+ * The workspace is the closest level above `here` that CONTAINS the package,
+ * not the closest `pnpm-workspace.yaml`: this repo has one inside `extension/`
+ * as well (it carries allowBuilds/overrides), and stopping there searches
+ * `extension/launcher`, finds nothing, and silently installs the registry
+ * build. Found by probing the built output, not by reading the code.
  */
 export function localPackageFor(opts: {
   /** Published name of the package, e.g. `@geohar/un-bien-launcher`. */
   pkgName: string
   mode: InstallFromSource
-  /** A path inside the running copy — usually this module's directory. */
+  /** A path inside the running copy — a file URL or directory. */
   here: string
   /** Extra file that must exist inside the package (e.g. `dist/index.js`). */
   requireFile?: string
@@ -108,58 +114,64 @@ export function localPackageFor(opts: {
     }
   }
 
-  const root = workspaceRootFor(opts.here, exists)
-  if (!root) {
-    return {
-      source: null,
-      reason:
-        opts.mode === "always"
-          ? "install_from_source: always, but this is not a workspace checkout (no pnpm-workspace.yaml above it)"
-          : "not a workspace checkout — installing the published package",
+  let dir = resolve(opts.here)
+  let sawWorkspace = false
+  let nearMiss: string | null = null
+  for (;;) {
+    if (exists(join(dir, "pnpm-workspace.yaml"))) {
+      sawWorkspace = true
+      const pkgDir = resolve(join(dir, dirName))
+      const manifest = join(pkgDir, "package.json")
+      if (exists(manifest)) {
+        let name: string | null = null
+        let version: string | null = null
+        try {
+          const pkg = JSON.parse(readFile(manifest)) as {
+            name?: string
+            version?: string
+          }
+          name = typeof pkg.name === "string" ? pkg.name : null
+          version = typeof pkg.version === "string" ? pkg.version : null
+        } catch {
+          nearMiss ??= `${manifest} does not parse`
+        }
+        if (name === opts.pkgName) {
+          // Found the package. Only now does the build check apply: a directory
+          // install ships what is on disk, so no dist/ means an installed
+          // command that cannot run — worse than the published build.
+          const unbuilt = opts.requireFile
+            ? !exists(join(pkgDir, opts.requireFile))
+            : !exists(join(pkgDir, "dist"))
+          if (unbuilt) {
+            const needed = opts.requireFile ?? "dist/"
+            return {
+              source: null,
+              reason:
+                `${dirName}/ is in this checkout but has no ${needed} — ` +
+                `build it (pnpm build) or the installed command would not run`,
+            }
+          }
+          return {
+            source: { path: pkgDir, version },
+            reason: `from this checkout: ${pkgDir}`,
+          }
+        }
+        nearMiss ??= `${manifest} names ${name ?? "(no name)"}, not ${opts.pkgName}`
+      }
     }
+    const parent = dirname(dir)
+    if (parent === dir) break
+    dir = parent
   }
 
-  const pkgDir = resolve(join(root, dirName))
-  const manifest = join(pkgDir, "package.json")
-  if (!exists(manifest)) {
-    return { source: null, reason: `${manifest} is missing` }
-  }
-  let name: string | null = null
-  let version: string | null = null
-  try {
-    const pkg = JSON.parse(readFile(manifest)) as {
-      name?: string
-      version?: string
-    }
-    name = typeof pkg.name === "string" ? pkg.name : null
-    version = typeof pkg.version === "string" ? pkg.version : null
-  } catch {
-    return { source: null, reason: `${manifest} does not parse` }
-  }
-  if (name !== opts.pkgName) {
-    return {
-      source: null,
-      reason: `${manifest} names ${name ?? "(no name)"}, not ${opts.pkgName}`,
-    }
-  }
-
-  // A directory install ships the checkout's build output, not its sources.
-  const unbuilt = opts.requireFile
-    ? !exists(join(pkgDir, opts.requireFile))
-    : !exists(join(pkgDir, "dist"))
-  if (unbuilt) {
-    const needed = opts.requireFile ?? "dist/"
-    return {
-      source: null,
-      reason:
-        `${dirName}/ is in this checkout but has no ${needed} — ` +
-        `build it (pnpm build) or the installed command would not run`,
-    }
-  }
-
+  if (nearMiss) return { source: null, reason: nearMiss }
   return {
-    source: { path: pkgDir, version },
-    reason: `from this checkout: ${pkgDir}`,
+    source: null,
+    reason: sawWorkspace
+      ? `no workspace checkout above this copy contains ${dirName}/ naming ${opts.pkgName}`
+      : opts.mode === "always"
+        ? "install_from_source: always, but this is not a workspace checkout (no pnpm-workspace.yaml above it)"
+        : "not a workspace checkout — installing the published package",
   }
 }
 
