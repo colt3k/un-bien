@@ -14,6 +14,7 @@
     "build": "pnpm -C extension build && pnpm -C launcher build && pnpm -C unbien-cli build",
     "typecheck": "pnpm -C extension typecheck && pnpm -C launcher typecheck && pnpm -C unbien-cli typecheck && pnpm -C web-client exec tsc --noEmit",
     "test": "pnpm -C extension test && pnpm -C unbien-cli test && pnpm -C web-client test",
+    "test:scripts": "for f in scripts/*.test.sh; do bash \"$f\" || exit 1; done",
     "format": "prettier --write \"extension/src/**/*.ts\" \"launcher/src/**/*.ts\" \"unbien-cli/src/**/*.ts\" \"web-client/src/**/*.ts\" \"web-client/test/**/*.ts\" \"web-client/scripts/**/*.ts\"",
     "format:check": "prettier --check \"extension/src/**/*.ts\" \"launcher/src/**/*.ts\" \"unbien-cli/src/**/*.ts\" \"web-client/src/**/*.ts\" \"web-client/test/**/*.ts\" \"web-client/scripts/**/*.ts\""
   },
