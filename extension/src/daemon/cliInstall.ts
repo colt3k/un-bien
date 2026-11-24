@@ -1,5 +1,6 @@
 /**
- * CLI package install — `npm install -g @geohar/unbien-cli`.
+ * CLI package install — `npm install -g @geohar/unbien-cli`, or
+ * `npm install -g <this checkout>/unbien-cli` when running from a checkout.
  *
  * The terminal client (`unbien`) is its own npm package, separate from the
  * extension. `/unbien install cli` (and `all`) installs it globally so the
@@ -20,6 +21,7 @@ import {
   globalInstallCommand,
   packageManager,
 } from "./service_env.js"
+import { chooseInstallSpec, installFromSourceMode } from "./sourceInstall.js"
 
 const execFileAsync = promisify(execFile)
 
@@ -54,12 +56,21 @@ export async function installCliPackage(
   opts?: { dev?: boolean },
 ): Promise<CliInstallResult> {
   const dev = opts?.dev ?? extIsDevChannel()
-  const spec = dev ? `${CLI_PACKAGE}@dev` : CLI_PACKAGE
   const log: string[] = []
   const push = (l: string) => {
     log.push(l)
     onLog?.(l)
   }
+  // The checkout's unbien-cli when running from a checkout, so the `unbien`
+  // command is the same build as everything else installed here; the registry
+  // package otherwise. See sourceInstall.ts.
+  const spec = chooseInstallSpec({
+    pkgName: CLI_PACKAGE,
+    registrySpec: dev ? `${CLI_PACKAGE}@dev` : CLI_PACKAGE,
+    mode: installFromSourceMode(loadConfig().install_from_source),
+    requireFile: "dist/main.js",
+    onLog: push,
+  }).spec
 
   // The configured package manager (`package_manager`: npm, bun or pnpm).
   const pm = packageManager(loadConfig())

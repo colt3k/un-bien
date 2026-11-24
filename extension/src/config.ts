@@ -191,6 +191,19 @@ export type UnBienConfig = {
    */
   package_manager?: "npm" | "bun" | "pnpm"
   /**
+   * Where `install launcher|cli|all` gets un-bien's OWN packages (the
+   * extension, the launcher wrapper, the CLI). `auto` (default): when the
+   * running copy sits inside a workspace checkout, install the sibling package
+   * directory instead of the published one — the global tree then holds this
+   * checkout's build rather than a registry build that may be older, and the
+   * service unit (and the install's own delegation) follows it. Falls back to
+   * the registry, with the reason logged, if the package is not built. `never`
+   * is the published-package behaviour; `always` uses the checkout and reports
+   * rather than downgrades when it cannot. Registry DEPENDENCIES are unaffected
+   * — this is only about packages this repo ships. See daemon/sourceInstall.ts.
+   */
+  install_from_source?: "auto" | "always" | "never"
+  /**
    * Subagent surfacing. When `rooms` is true, a
    * Pi SUBAGENT is surfaced to the paired app as its OWN session — a distinct
    * relay room (under this machine's identity) that nests under its parent via

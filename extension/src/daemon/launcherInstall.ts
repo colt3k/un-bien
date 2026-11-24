@@ -1,11 +1,17 @@
 /**
- * Launcher package install — `npm install -g @geohar/un-bien-launcher`.
+ * Launcher package install — `npm install -g @geohar/un-bien-launcher`, or
+ * `npm install -g <this checkout>/launcher` when running from a checkout.
  *
  * The launcher daemon's wrapper is its own npm package, separate from the
  * extension — and nothing else ever updated it (observed live: the daemon
  * ran 0.20.54 across five ext releases because no install path touched the
  * package). `/unbien install launcher` (and `all`) installs/UPGRADES it
  * globally so the daemon runs current code, mirroring the CLI install.
+ *
+ * Which build lands matters as much as landing one: see sourceInstall.ts. From
+ * a workspace checkout the sibling `launcher/` is installed, so the global tree
+ * and the checkout are the same code; from a published install the registry
+ * package is, as before.
  *
  * Idempotent: npm install -g over an existing install upgrades to latest.
  * We verify the bin afterwards via `unbien-launcher --version` and report
@@ -24,6 +30,7 @@ import {
   globalPackageRoot,
   packageManager,
 } from "./service_env.js"
+import { chooseInstallSpec, installFromSourceMode } from "./sourceInstall.js"
 
 const execFileAsync = promisify(execFile)
 
@@ -58,12 +65,20 @@ export async function installLauncherPackage(
   opts?: { dev?: boolean },
 ): Promise<LauncherInstallResult> {
   const dev = opts?.dev ?? extIsDevChannel()
-  const spec = dev ? `${LAUNCHER_PACKAGE}@dev` : LAUNCHER_PACKAGE
   const log: string[] = []
   const push = (l: string) => {
     log.push(l)
     onLog?.(l)
   }
+  // This checkout when there is one, the registry otherwise (the reason is
+  // logged when it falls back — never silently).
+  const spec = chooseInstallSpec({
+    pkgName: LAUNCHER_PACKAGE,
+    registrySpec: dev ? `${LAUNCHER_PACKAGE}@dev` : LAUNCHER_PACKAGE,
+    mode: installFromSourceMode(loadConfig().install_from_source),
+    requireFile: "dist/index.js",
+    onLog: push,
+  }).spec
 
   // The configured package manager (`package_manager`: npm, bun or pnpm).
   const pm = packageManager(loadConfig())
@@ -167,8 +182,16 @@ export async function installExtensionGlobally(
   }
   const pm = packageManager(loadConfig())
   const version = extVersion()
-  const spec = version ? `${EXTENSION_PACKAGE}@${version}` : EXTENSION_PACKAGE
-  const install = globalInstallCommand(pm, spec)
+  const chosen = chooseInstallSpec({
+    pkgName: EXTENSION_PACKAGE,
+    registrySpec: version
+      ? `${EXTENSION_PACKAGE}@${version}`
+      : EXTENSION_PACKAGE,
+    mode: installFromSourceMode(loadConfig().install_from_source),
+    requireFile: "dist/bin/launcher.js",
+    onLog: push,
+  })
+  const install = globalInstallCommand(pm, chosen.spec)
   push(`${install.display} …`)
   const { stdout, stderr } = await execFileAsync(install.cmd, install.args, {
     timeout: 5 * 60_000,
@@ -182,6 +205,16 @@ export async function installExtensionGlobally(
   })
   for (const line of `${stdout}\n${stderr}`.split("\n")) {
     if (line.trim()) push(line.trim())
+  }
+  if (chosen.fromSource) {
+    // Installed from a directory: the global entry is this checkout (npm links
+    // it), so the launcher entry is the checkout's — no global-root guess.
+    const launcherScript = join(chosen.spec, "dist", "bin", "launcher.js")
+    if (!existsSync(launcherScript)) {
+      throw new Error(`installed, but ${launcherScript} is missing`)
+    }
+    push(`launcher entry: ${launcherScript} (this checkout)`)
+    return { launcherScript, version, log }
   }
   const root = globalPackageRoot(pm)
   if (!root) throw new Error(`could not find ${pm}'s global package directory`)

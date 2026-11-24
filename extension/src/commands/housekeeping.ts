@@ -23,6 +23,7 @@ import {
   unlinkCliBinaries,
 } from "../daemon/install.js"
 import { loadConfig } from "../config.js"
+import { isGlobalCopy } from "../daemon/sourceInstall.js"
 import {
   globalBinPath,
   globalPackageRoot,
@@ -57,7 +58,7 @@ import {
   writeFileSync,
 } from "node:fs"
 import { tmpdir } from "node:os"
-import { dirname, join, resolve, sep } from "node:path"
+import { dirname, join, resolve } from "node:path"
 import { createInterface } from "node:readline"
 import { fileURLToPath } from "node:url"
 
@@ -212,13 +213,15 @@ export function parseInstallTarget(raw: string): InstallTarget | null {
  *  Raw package-manager output (cargo/npm lines) streams as transient toasts
  *  and is NOT copied into the summary — the component result lines carry the
  *  verdict. */
-/** Whether this code is the configured package manager's global copy of
- *  the extension (the copy installs should run from). */
+/** Whether this code is the configured package manager's global copy of the
+ *  extension (the copy installs should run from). Compared by realpath, not by
+ *  string prefix: a from-source install links the global entry into the
+ *  checkout, and then the two paths differ lexically while being one copy —
+ *  delegating in that state re-runs this same code in another process. */
 function _runningFromGlobalCopy(): boolean {
   const root = globalPackageRoot(packageManager(loadConfig()))
   if (!root) return false
-  const own = resolve(root, EXTENSION_PACKAGE)
-  return findLauncherScript().startsWith(own + sep)
+  return isGlobalCopy(root, EXTENSION_PACKAGE, findLauncherScript())
 }
 
 /** With a configured package manager, installs and uninstalls run from its

@@ -210,19 +210,32 @@ The installer **delegates**. `_delegateToGlobalCopy` in `housekeeping.ts`: if a
 package manager is resolvable, `install <target>` first ensures the extension is
 installed globally, then runs **that copy's** `unbien-admin <verb> <target>`. A
 global copy resolves the launcher entry from its own `dist/`, so the unit points
-at the global copy — not at the checkout you ran the command from. Check with:
+at the global copy.
+
+From a checkout that is now the same thing as pointing at the checkout: with
+`install_from_source` at its default (`auto`), the global install IS this
+checkout — the package manager links `<checkout>/extension` into its global
+tree, so delegation lands on the code you are editing. It also means `unbien`
+and `unbien-launcher` come from `unbien-cli/` and `launcher/` rather than from
+the registry.
+
+What still bites is an **older, registry-installed copy** sitting there from
+before: it is a copy, not a link, so it wins, and the service runs a build
+nobody is editing. Check with:
 
 ```sh
 npm ls -g @geohar/un-bien
 ls ~/.pi/agent/npm/node_modules/@geohar/ 2>/dev/null
 ```
 
-If either finds `un-bien`, and you want the clone to be the source of truth,
+If either finds `un-bien` and you want the clone to be the source of truth,
 remove it: `npm uninstall -g @geohar/un-bien`. That is not a hypothetical — on
 the machine this fork is developed on, a leftover global build (older than the
 development branch by several days of fixes) was what the launcher daemon was
-actually running, because every install had been delegating to it. `scripts/
-setup-from-clone.sh doctor` now reports these copies.
+actually running, because every install had been delegating to it.
+`scripts/setup-from-clone.sh doctor` reports these copies. Set
+`install_from_source: "never"` if you would rather always take the published
+packages.
 
 Two smaller footguns in the same area:
 

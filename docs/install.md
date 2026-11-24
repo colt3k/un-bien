@@ -433,6 +433,18 @@ terminal opened before the install won't have them on `$PATH` yet.
 }
 ```
 
+**Running from a clone: install from the checkout.** `install_from_source`
+(`"auto"` by default, `"always"` or `"never"`) decides where un-bien's **own**
+packages come from — the extension, the launcher wrapper, the CLI. In `auto`, a
+running copy inside a workspace checkout (detected by `pnpm-workspace.yaml`
+above it) installs the sibling package directory — `npm install
+-g <checkout>/launcher` — instead of the published build, so the package
+manager's global tree and the checkout are the same code, and the delegation
+above lands on the checkout rather than on a registry build that may be older. A
+package that is not built falls back to the registry with the reason logged, so
+nothing silently installs an unusable command. Registry *dependencies* (ws,
+@noble/*, vite, …) are unaffected — this only covers packages the repo ships.
+
 **Startup order doesn't matter.** Both daemons reconnect on their own: the
 launcher retries the relay every 3 seconds (single in-flight chain), and the
 extension's relay client force-closes dead sockets via a liveness ping and
