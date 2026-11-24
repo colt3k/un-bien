@@ -16,19 +16,39 @@ service), the **launcher** daemon (starts sessions on this machine), and the
 
 ## Prerequisites
 
-- **Node 20+** (`node --version`) and **pi** installed.
-- **Rust** (`cargo`) — the setup compiles the relay from `relay/`.
-- **tmux** — without it pairing and watching work, but launching a *new* session
-  from the phone will not.
-- **pnpm** is nice to have; the script falls back to `corepack` or `npx` with the
-  version pinned in `package.json`, so the lockfile never churns.
-- **Tailscale is optional.** The phone can reach this machine by LAN address —
-  a `<machine>.local` name works, and `allowedHosts` already includes `.local`
-  because mDNS names are not IPs. A mesh VPN only buys you access from outside
-  your network.
+`./scripts/setup-from-clone.sh doctor` checks every one of these and names what
+is missing, so you can read this table while it complains.
+
+| Need | Why | Get it | Check |
+| --- | --- | --- | --- |
+| **pi** | the sessions this drives | npm package, not in Homebrew:<br>`npm install -g --ignore-scripts @earendil-works/pi-coding-agent` | `pi list` |
+| **Node 20+** | everything JavaScript | `brew install node` — or [nodejs.org](https://nodejs.org) | `node --version` |
+| **Rust (`cargo`) 1.85+** | the relay is Rust | `brew install rust`, **or** rustup: `brew install rustup` then `rustup default stable` (that formula installs the toolchain *manager* — you still need a toolchain), **or** [rustup.rs](https://rustup.rs) | `cargo --version` |
+| **tmux** | the remote-launch backend | `brew install tmux` (Linux: `sudo apt install tmux`) | `tmux -V` |
+| **Tailscale** (optional) | access from outside your network | `brew install --cask tailscale` — or [tailscale.com](https://tailscale.com) | `tailscale status` |
+
+**pnpm: do not `brew install pnpm`.** The workspace pins `pnpm@11.13.1` in
+`package.json`, Homebrew's is a newer major, and a mismatched version rewrites
+the lockfile behind your back. You also do not need it: the setup script
+resolves pnpm as `PATH` → `corepack` → `npx pnpm@11.13.1`. If you want it on your
+PATH yourself, match the pin — `npm install -g pnpm@11.13.1` (or `corepack
+enable`, if your Node still ships corepack).
+
+**tmux** is the one that changes what you can do without noticing: pairing and
+watching sessions work without it, but launching a *new* session from the phone
+will not.
+
+**Tailscale is optional.** The phone can reach this machine by LAN address — a
+`<machine>.local` name works, and `allowedHosts` already includes `.local`
+because mDNS names are not IPs. A mesh VPN only buys you access from outside
+your network. No `jq` is needed anywhere; anything JSON-shaped is parsed with
+node, which is already required.
 
 Run the setup from a **normal login shell**, not a sparse one: the service units
-embed the `node` and `PATH` of the shell that installs them.
+embed the `node` and `PATH` of the shell that installs them. This matters most
+for rustup, whose shims live in `~/.cargo/bin` — the setup script also looks in
+`~/.cargo/bin` and `~/.rustup/toolchains/*/bin`, but a shell that has neither on
+PATH will not find a `cargo` you installed ten minutes ago.
 
 On **Linux**, the services are `systemd --user` units, which need a real user
 session. For an always-on box, turn on lingering first
