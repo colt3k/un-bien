@@ -110,6 +110,20 @@ $(node -e 'const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")
 EOF
 echo "  fixture shortids: $ID_DEAD $ID_KEY $ID_PHONE $ID_OLD"
 
+# A relay-side db, so the verification step reads something real. Worth having:
+# the sqlite3 CLI does not bind `?` from extra arguments (it parses them as more
+# SQL), so a base64 pubkey passed that way is a syntax error and the count comes
+# back 0 — which looks like "the revoke had no effect" rather than a broken query.
+HAVE_SQLITE=0
+if command -v sqlite3 >/dev/null 2>&1; then
+  OURS_PK="$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).pk)' "$STATE/identity.json")"
+  sqlite3 "$STATE/pairing.db" "create table pairing_allow(machine text, owner text);
+    insert into pairing_allow values
+      ('$OURS_PK','$ID_DEAD'),('$OURS_PK','$ID_KEY'),('$OURS_PK','$ID_PHONE'),
+      ('unrelatedmachineAAAAAAAAAAAAAAAAAAAAAAA=','$ID_OLD');"
+  HAVE_SQLITE=1
+fi
+
 echo
 echo "== audit: evidence and verdicts =="
 audit="$("$SCRIPT" audit 2>&1)"
@@ -139,6 +153,11 @@ echo "== revoke: the happy paths =="
 out="$("$SCRIPT" revoke "$ID_DEAD" --no-restart 2>&1)"; rc=$?
 [[ $rc -eq 0 ]] && grep -q "Revoked: $ID_DEAD" <<<"$out" && ok "revokes a peer with no evidence behind it" || no "revokes a peer with no evidence behind it" "rc=$rc $out"
 [[ $(count_peers) == 3 ]] && ok "peers.json lost exactly that entry" || no "peers.json lost exactly that entry" "peers=$(count_peers)"
+if [[ "$HAVE_SQLITE" == 1 ]]; then
+  grep -q "relay now holds: 3 owner(s) for this machine" <<<"$out" && ok "reads the relay-side owner count back" || no "reads the relay-side owner count back" "$out"
+else
+  grep -q "no pairing.db here" <<<"$out" && ok "says so when there is no relay db to read" || no "says so when there is no relay db to read" "$out"
+fi
 ls "$STATE"/peers.json.bak-* >/dev/null 2>&1 && ok "backed up peers.json first" || no "backed up peers.json first"
 grep -q "key-held-tool" "$STATE/peers.json" && ok "other peers untouched" || no "other peers untouched"
 

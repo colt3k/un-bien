@@ -238,12 +238,27 @@ _verify_relay_side() {
     return 0
   fi
   local ours count
-  ours="$(node --input-type=module -e '
+  # Env, not argv: under --input-type=module the extra argument is not
+  # reliably argv[1], and an empty machine filter silently returns 0 rows.
+  ours="$(IDENTITY="$IDENTITY" node --input-type=module -e '
 import { readFileSync } from "node:fs"
-try { console.log(JSON.parse(readFileSync(process.argv[1], "utf8")).pk ?? "") } catch { console.log("") }
-' "$IDENTITY")"
+try { console.log(JSON.parse(readFileSync(process.env.IDENTITY, "utf8")).pk ?? "") } catch { console.log("") }
+')"
   [[ -n "$ours" ]] || { note "could not read our own pubkey from $IDENTITY — skipping verification"; return 0; }
-  count="$(sqlite3 "file:$STATE_DIR/pairing.db?mode=ro" "select count(*) from pairing_allow where machine=?;" "$ours" 2>/dev/null || echo "?")"
+  # Right after a restart the relay holds the db open and a read can fail with
+  # "database is locked", which is transient — retry rather than report "?".
+  # The sqlite3 CLI does NOT bind `?` from extra arguments — it treats them as
+  # more SQL, so a base64 pubkey there is a syntax error and the count silently
+  # comes back 0. Inline it as a string literal instead, having ruled out the
+  # one character that could break out of it.
+  case "$ours" in *"'"*) note "unexpected quote in our pubkey — skipping verification"; return 0 ;; esac
+  local count=""
+  for _ in 1 2 3 4 5 6; do
+    count="$(sqlite3 "file:$STATE_DIR/pairing.db?mode=ro" "select count(*) from pairing_allow where machine='$ours';" 2>/dev/null)"
+    [[ -n "$count" ]] && break
+    sleep 0.5
+  done
+  [[ -n "$count" ]] || count="?"
   note "relay now holds: $count owner(s) for this machine"
   note "if that number did not drop, no client has re-pushed yet — a reconnect does it"
 }
