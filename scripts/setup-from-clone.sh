@@ -84,6 +84,32 @@ health_ok() {
   curl -fsS --max-time 3 "http://127.0.0.1:$RELAY_PORT/health" >/dev/null 2>&1
 }
 
+# What the launcher unit actually runs, read off disk. The install command's
+# exit code is not the check: the unit is written BEFORE the launcher PACKAGE
+# is fetched from the registry, so an offline run exits non-zero with a working
+# daemon already in place.
+LAUNCHER_LABEL="com.georgeharker.unbien.launcher"
+launcher_state() {
+  local plist="$HOME/Library/LaunchAgents/$LAUNCHER_LABEL.plist" target
+  if [[ ! -f "$plist" ]]; then
+    warn "no launcher unit at $plist"
+    return 1
+  fi
+  target="$(plutil -extract ProgramArguments.1 raw -o - "$plist" 2>/dev/null || true)"
+  printf '   unit   runs: %s\n' "${target:-?}"
+  if [[ -n "${target:-}" && -f "$target" ]]; then
+    ok "entry file exists"
+  else
+    bad "entry file is MISSING — that is a build problem, not a service problem"
+    return 1
+  fi
+  if launchctl print "gui/$(id -u)/$LAUNCHER_LABEL" >/dev/null 2>&1; then
+    ok "launchd has it loaded"
+  else
+    warn "launchd does not have it loaded (start it, or log out/in)"
+  fi
+}
+
 # Cargo is often present but NOT on PATH — a non-login shell (an IDE task, a
 # cron job, this repo's own script run from a bare terminal) will not have
 # rustup's shim dir. Probe the usual homes before declaring it missing, and put
@@ -166,8 +192,10 @@ preflight() {
   if cargo="$(find_cargo)"; then
     ok "cargo: $cargo — the relay will be built from relay/"
     if [[ "$cargo" != "cargo" ]]; then
-      export PATH="$(dirname "$cargo"):$PATH"
-      note "not on PATH — added $(dirname "$cargo") for this run (put it in your shell profile to make it stick)"
+      local cargodir
+      cargodir="$(dirname "$cargo")"
+      export PATH="$cargodir:$PATH"
+      note "not on PATH — added $cargodir for this run (put it in your shell profile to make it stick)"
     fi
   elif [[ "$SKIP_RELAY" == 1 ]]; then
     warn "no cargo, and --skip-relay set — relay services not touched"
@@ -233,6 +261,7 @@ doctor() {
   step "services"
   "$ROOT/scripts/relay-service.sh" status || true
   "$WEB/scripts/start.sh" relay status || true
+  launcher_state || true
 }
 
 if [[ "$DOCTOR" == 1 ]]; then
@@ -321,7 +350,13 @@ elif [[ ! -f "$ROOT/extension/dist/index.js" ]]; then
   bad "extension/dist/index.js missing — run without --skip-build"
   exit 1
 else
-  run node "$ROOT/extension/dist/index.js" install launcher
+  if ! run node "$ROOT/extension/dist/index.js" install launcher; then
+    warn "the install command exited non-zero. The unit is written BEFORE the"
+    warn "launcher package is fetched from the registry, so check the state:"
+  fi
+  if [[ "$DRY" == 0 ]]; then
+    launcher_state || { bad "the launcher is not usable"; exit 1; }
+  fi
 fi
 
 # --- done ---------------------------------------------------------------------

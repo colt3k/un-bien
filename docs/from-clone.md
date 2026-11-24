@@ -10,6 +10,37 @@ path is simpler, and it will **not** contain anything in this fork.
 
 ---
 
+## The short version
+
+```sh
+scripts/setup-from-clone.sh             # everything below, then serve the client
+```
+
+It runs the five steps in §2–§5 (workspace install → build → register this
+checkout with Pi → relay as an OS service → launcher daemon) and then starts the
+browser client on `:4173`. Options: `--dev` (Vite on `:5173` instead), `--no-run`
+(stop before serving), `--skip-relay` / `--skip-launcher` / `--skip-pi` /
+`--skip-deps` / `--skip-build`, `--dry-run` (print the plan, change nothing).
+
+Two things it will not do for you:
+
+- **Pairing.** `/unbien pair` prints a single-use code inside a Pi session. A
+  script that prints it is a script deciding who gets a device.
+- **Your relay URL and `launch.dirs`.** They live in
+  `~/.pi/agent/extensions/un-bien.json`, and only you know which folders the
+  phone is allowed to start sessions in.
+
+Read-only state report, safe to run any time:
+
+```sh
+scripts/setup-from-clone.sh doctor
+```
+
+The rest of this page is what each step is for, and what to do when a step needs
+fixing by hand.
+
+---
+
 ## 0. What runs, and where each piece comes from
 
 ```
@@ -42,14 +73,18 @@ Two consequences worth knowing up front:
 
 ## 1. Prerequisites
 
+`scripts/setup-from-clone.sh` checks all of this and tells you what is missing.
+
 | Need | Why | Check |
 | --- | --- | --- |
 | Node 20+ | everything | `node --version` |
 | pnpm `11.13.1` | the lockfile; other versions churn it | `pnpm --version`, or `corepack enable` |
-| Rust (`cargo`) | the relay is Rust | `cargo --version`; or use `cargo install un-bien-relay` / the `HomebrewFormula/unbien-relay.rb` formula instead of building here |
+| Rust (`cargo`) | the relay is Rust | `cargo --version`; the setup script also looks in `~/.cargo/bin` and `~/.rustup/toolchains/*/bin`, because a non-login shell has no rustup shims. Or use `cargo install un-bien-relay` / `brew install ./HomebrewFormula/unbien-relay.rb` instead |
 | `tmux` | the remote-launch backend (`launch.backend`) | `tmux -V` |
 | Tailscale (optional) | reaching the relay + client from a phone off-LAN | `tailscale status` |
-| `jq` (optional) | `start.sh` prints your tailnet URL; falls back to `tailscale ip -4` | `jq --version` |
+
+No `jq` needed — the client script parses `tailscale status --json` with node,
+which is already required.
 
 ---
 
@@ -127,6 +162,27 @@ this clone (step 3), both land on the clone path — one build, no version drift
 between what pi loads and what the daemon runs. The unit embeds the `node` and
 `PATH` of the shell that ran the install, so run it from a normal shell, not from
 a sparse one.
+
+That command also fetches the standalone `@geohar/un-bien-launcher` package from
+the registry, so it needs network. The unit is written **before** that fetch, so
+a failed fetch does not mean an uninstalled daemon — the check that matters is
+which file the unit runs, and `scripts/setup-from-clone.sh doctor` reads it off
+disk:
+
+```text
+   unit   runs: /Users/YOU/dev/un-bien/extension/dist/bin/launcher.js
+   ok   entry file exists
+   ok   launchd has it loaded
+```
+
+If that path is somewhere other than this clone, the daemon is running a
+different build than Pi loaded — rebuild here and re-run the install step.
+
+Which cuts the other way on a machine that already has a launcher service from
+some other install: running the install step from this clone **moves** that
+service onto the clone. That is the point for a from-source setup, but it is a
+change to a running service, and the clone has to stay at that path (or the unit
+re-generated after a move).
 
 This is the tradeoff, stated: the launcher now depends on this checkout existing
 at this path with its `node_modules` and a current `dist`. After moving the clone,

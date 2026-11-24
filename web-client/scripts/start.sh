@@ -125,7 +125,7 @@ doctor() {
   local -a pm
   say "web-client doctor"
   node --version >/dev/null 2>&1 && ok "node $(node --version)" || { bad "node missing"; exit 1; }
-  pm=($(pnpm_cmd)); ok "pnpm via: ${pm[*]}"
+  read -r -a pm <<<"$(pnpm_cmd)"; ok "pnpm via: ${pm[*]}"
   [[ -d "$WEB/node_modules" ]] && ok "workspace installed" || warn "run: ${pm[*]} install --frozen-lockfile   (from $ROOT)"
 
   if listening "$DEV_PORT"; then
