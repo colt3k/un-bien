@@ -19,13 +19,13 @@ service), the **launcher** daemon (starts sessions on this machine), and the
 `./scripts/setup-from-clone.sh doctor` checks every one of these and names what
 is missing, so you can read this table while it complains.
 
-| Need | Why | Get it | Check |
-| --- | --- | --- | --- |
-| **pi** | the sessions this drives | npm package, not in Homebrew:<br>`npm install -g --ignore-scripts @earendil-works/pi-coding-agent` | `pi list` |
-| **Node 20+** | everything JavaScript | `brew install node` — or [nodejs.org](https://nodejs.org) | `node --version` |
-| **Rust (`cargo`) 1.85+** | the relay is Rust | `brew install rust`, **or** rustup: `brew install rustup` then `rustup default stable` (that formula installs the toolchain *manager* — you still need a toolchain), **or** [rustup.rs](https://rustup.rs) | `cargo --version` |
-| **tmux** | the remote-launch backend | `brew install tmux` (Linux: `sudo apt install tmux`) | `tmux -V` |
-| **Tailscale** (optional) | access from outside your network | `brew install --cask tailscale` — or [tailscale.com](https://tailscale.com) | `tailscale status` |
+| Need                     | Why                              | Get it                                                                                                                                                                                                     | Check              |
+| ------------------------ | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| **pi**                   | the sessions this drives         | npm package, not in Homebrew:<br>`npm install -g --ignore-scripts @earendil-works/pi-coding-agent`                                                                                                         | `pi list`          |
+| **Node 20+**             | everything JavaScript            | `brew install node` — or [nodejs.org](https://nodejs.org)                                                                                                                                                  | `node --version`   |
+| **Rust (`cargo`) 1.85+** | the relay is Rust                | `brew install rust`, **or** rustup: `brew install rustup` then `rustup default stable` (that formula installs the toolchain _manager_ — you still need a toolchain), **or** [rustup.rs](https://rustup.rs) | `cargo --version`  |
+| **tmux**                 | the remote-launch backend        | `brew install tmux` (Linux: `sudo apt install tmux`)                                                                                                                                                       | `tmux -V`          |
+| **Tailscale** (optional) | access from outside your network | `brew install --cask tailscale` — or [tailscale.com](https://tailscale.com)                                                                                                                                | `tailscale status` |
 
 **pnpm: do not `brew install pnpm`.** The workspace pins `pnpm@11.13.1` in
 `package.json`, Homebrew's is a newer major, and a mismatched version rewrites
@@ -35,7 +35,7 @@ PATH yourself, match the pin — `npm install -g pnpm@11.13.1` (or `corepack
 enable`, if your Node still ships corepack).
 
 **tmux** is the one that changes what you can do without noticing: pairing and
-watching sessions work without it, but launching a *new* session from the phone
+watching sessions work without it, but launching a _new_ session from the phone
 will not.
 
 **Tailscale is optional.** The phone can reach this machine by LAN address — a
@@ -181,10 +181,10 @@ old the row looks.
 
 ## Reading further
 
-| Want | Read |
-| --- | --- |
-| What each setup step is for, fixing a step by hand | [`docs/from-clone.md`](docs/from-clone.md) |
-| Using the client day to day | [`web-client/USAGE.md`](web-client/USAGE.md) |
-| Every config key and environment variable | [`docs/env-vars.md`](docs/env-vars.md) |
-| Pairing, privacy and the trust model | [`docs/privacy.md`](docs/privacy.md) |
-| A second machine's relay (federation) | [`docs/relay-peering.md`](docs/relay-peering.md) |
+| Want                                               | Read                                             |
+| -------------------------------------------------- | ------------------------------------------------ |
+| What each setup step is for, fixing a step by hand | [`docs/from-clone.md`](docs/from-clone.md)       |
+| Using the client day to day                        | [`web-client/USAGE.md`](web-client/USAGE.md)     |
+| Every config key and environment variable          | [`docs/env-vars.md`](docs/env-vars.md)           |
+| Pairing, privacy and the trust model               | [`docs/privacy.md`](docs/privacy.md)             |
+| A second machine's relay (federation)              | [`docs/relay-peering.md`](docs/relay-peering.md) |
