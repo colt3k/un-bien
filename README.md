@@ -30,8 +30,12 @@ and the browser client.
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `app/`       | Native SwiftUI client (iOS + macOS). Build/test with `swift build` / `swift test`.                                                                            |
 | `extension/` | The Pi extension (TypeScript). Loaded by pointing `pi` at the repo root (`pi.extensions` → `./extension/dist`). Build with `pnpm -C extension build`.         |
+| `web-client/` | Browser client (TypeScript + Vite, no framework): pair, watch and drive a session from a phone. Serve with `scripts/start.sh preview`.                        |
+| `launcher/`  | The launcher daemon (`unbien-launcher`) — machine presence, not a Pi session: lets a paired device start a Pi session when none is running.                   |
+| `unbien-cli/` | The `unbien` terminal client — attach to a remote session over the relay, rendered with pi's own TUI components.                                              |
 | `relay/`     | The WebSocket relay (Rust, package `un-bien-relay`). A dumb routing pipe — TLS in transit; the operator can see routed plaintext, so self-host one you trust. |
 | `HomebrewFormula/` | Homebrew packaging for the native relay. See the [Homebrew guide](docs/homebrew.md). |
+| `scripts/`   | `setup-from-clone.sh` (clone to running setup), `relay-service.sh` (relay as a user service), `revoke-peer.sh` (audit paired devices), release.               |
 | `docs/`      | Protocol notes and fixtures.                                                                                                                                  |
 
 ## Attribution
