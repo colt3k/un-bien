@@ -17,6 +17,21 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT="$HERE/revoke-peer.sh"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/revoke-peer-test-XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
+# Guard, not decoration: a quoting mistake in this file once turned words from
+# a comment into node's argv, and the fixture happily created a state dir named
+# `lines` in the repo root. Everything it writes must sit under the temp root,
+# resolved for symlinks (/var ↔ /private/var on macOS).
+case "$TMP" in
+  /*) : ;;
+  *) printf 'mktemp gave a relative path: %s\n' "$TMP" >&2; exit 1 ;;
+esac
+want="$(cd "${TMPDIR:-/tmp}" && pwd -P)"
+got="$(cd "$TMP" 2>/dev/null && pwd -P || true)"
+[[ -n "$got" ]] || { printf 'mktemp path vanished: %s\n' "$TMP" >&2; exit 1; }
+case "$got" in
+  "$want"/*) : ;;
+  *) printf 'refusing to write outside the temp root: %s (not under %s)\n' "$got" "$want" >&2; exit 1 ;;
+esac
 
 pass=0
 fail=0
@@ -36,6 +51,10 @@ STATE="$TMP/state"
 node --input-type=module -e '
 import { mkdirSync, writeFileSync } from "node:fs"
 const state = process.argv[1]
+if (!state || !state.startsWith("/")) {
+  console.error(`fixture: state dir must be absolute, got ${JSON.stringify(state)}`)
+  process.exit(1)
+}
 mkdirSync(state, { recursive: true })
 const b64 = (fill) => Buffer.alloc(32, fill).toString("base64")
 const A = b64(0x41) // no keypair, no log mention           → REVOKABLE
