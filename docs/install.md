@@ -59,6 +59,13 @@ that already has the extension, one command does everything: `/unbien install`
 installs the relay + launcher services and the CLI (targets:
 `[relay|launcher|cli|all]`; bare = `all`).
 
+Running **from a clone** rather than the published package — building the relay
+here, loading the extension into Pi from this checkout, driving a browser client:
+see [from-clone.md](from-clone.md). Two steps there are not discoverable from
+this page: registering the local extension (`.pi/settings.json` is gitignored, so
+it cannot ship in the repo), and keeping the OS service pointed at a binary that
+lives outside the clone.
+
 <details>
 <summary>Alternatively — Docker</summary>
 
@@ -215,7 +222,7 @@ your username):
 <dict>
   <key>Label</key><string>com.georgeharker.unbien.relay</string>
   <key>ProgramArguments</key>
-  <array><string>/Users/YOU/.cargo/bin/un-bien-relay</string></array>
+  <array><string>/Users/YOU/.cargo/bin/unbien-relay</string></array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>StandardOutPath</key><string>/Users/YOU/.local/state/un-bien/relay.log</string>
