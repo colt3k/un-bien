@@ -89,13 +89,34 @@ health_ok() {
 # is fetched from the registry, so an offline run exits non-zero with a working
 # daemon already in place.
 LAUNCHER_LABEL="com.georgeharker.unbien.launcher"
+LAUNCHER_UNIT="unbien-launcher.service"
 launcher_state() {
-  local plist="$HOME/Library/LaunchAgents/$LAUNCHER_LABEL.plist" target
-  if [[ ! -f "$plist" ]]; then
-    warn "no launcher unit at $plist"
-    return 1
-  fi
-  target="$(plutil -extract ProgramArguments.1 raw -o - "$plist" 2>/dev/null || true)"
+  local target="" manager=""
+  case "$(uname -s)" in
+    Darwin)
+      local plist="$HOME/Library/LaunchAgents/$LAUNCHER_LABEL.plist"
+      if [[ ! -f "$plist" ]]; then
+        warn "no launcher unit at $plist"
+        return 1
+      fi
+      target="$(plutil -extract ProgramArguments.1 raw -o - "$plist" 2>/dev/null || true)"
+      manager="launchd"
+      ;;
+    Linux)
+      local unit="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/$LAUNCHER_UNIT"
+      if [[ ! -f "$unit" ]]; then
+        warn "no launcher unit at $unit"
+        return 1
+      fi
+      # ExecStart= is `<node> <launcher.js> [args…]`: the entry is token 2.
+      target="$(sed -n 's/^ExecStart=//p' "$unit" | head -1 | awk '{print $2}')"
+      manager="systemd --user"
+      ;;
+    *)
+      warn "launcher state: no check for $(uname -s)"
+      return 1
+      ;;
+  esac
   printf '   unit   runs: %s\n' "${target:-?}"
   if [[ -n "${target:-}" && -f "$target" ]]; then
     ok "entry file exists"
@@ -103,10 +124,18 @@ launcher_state() {
     bad "entry file is MISSING — that is a build problem, not a service problem"
     return 1
   fi
-  if launchctl print "gui/$(id -u)/$LAUNCHER_LABEL" >/dev/null 2>&1; then
-    ok "launchd has it loaded"
+  if [[ "$manager" == "launchd" ]]; then
+    if launchctl print "gui/$(id -u)/$LAUNCHER_LABEL" >/dev/null 2>&1; then
+      ok "launchd has it loaded"
+    else
+      warn "launchd does not have it loaded (start it, or log out/in)"
+    fi
   else
-    warn "launchd does not have it loaded (start it, or log out/in)"
+    if systemctl --user is-active --quiet "$LAUNCHER_UNIT" 2>/dev/null; then
+      ok "systemd --user has it running"
+    else
+      warn "systemd --user is not running it: systemctl --user status $LAUNCHER_UNIT"
+    fi
   fi
 }
 
@@ -247,13 +276,33 @@ preflight() {
     warn "no tmux — pairing and watching work; launching a NEW session from the phone will not"
   fi
 
-  if [[ "$(uname)" == "Darwin" ]]; then
-    ok "macOS — services go through launchd"
-  else
-    warn "not macOS: the launchd steps are skipped. Use the systemd-user flow in docs/install.md (Flow A)"
-    SKIP_RELAY=1
-    SKIP_LAUNCHER=1
-  fi
+  case "$(uname -s)" in
+    Darwin)
+      ok "macOS — services go through launchd"
+      ;;
+    Linux)
+      # systemd --user only answers inside a real user session (a login, or SSH
+      # with lingering). Without it the install steps would fail cryptically.
+      if command -v systemctl >/dev/null 2>&1 &&
+        systemctl --user show-environment >/dev/null 2>&1; then
+        ok "Linux — services go through systemd --user"
+        if [[ "$(loginctl show-user "$(id -un)" --property=Linger --value 2>/dev/null)" != "yes" ]]; then
+          warn "linger is off: the relay/launcher are down at boot and at logout"
+          note "for an always-on box:  sudo loginctl enable-linger $(id -un)"
+        fi
+      else
+        warn "no usable systemd user session (systemctl --user) — service steps skipped"
+        note "log in graphically, or enable lingering, then re-run without --skip-relay"
+        SKIP_RELAY=1
+        SKIP_LAUNCHER=1
+      fi
+      ;;
+    *)
+      warn "neither macOS nor Linux: service steps skipped (see docs/install.md, Flow A)"
+      SKIP_RELAY=1
+      SKIP_LAUNCHER=1
+      ;;
+  esac
 
   if command -v tailscale >/dev/null 2>&1 && tailscale status --json >/dev/null 2>&1; then
     ok "tailscale up — reachable from anywhere on your tailnet"
@@ -358,7 +407,7 @@ fi
 # pointing a service at (cargo clean empties it; moving the clone breaks it).
 step "4/5  relay service"
 if [[ "$SKIP_RELAY" == 1 ]]; then
-  warn "skipped (--skip-relay or non-macOS)"
+  warn "skipped (--skip-relay, or no usable service manager)"
 else
   if [[ -f "$ROOT/relay/target/release/unbien-relay" ]]; then
     run "$ROOT/scripts/relay-service.sh" install

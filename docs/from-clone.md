@@ -127,9 +127,13 @@ registered twice. Keep exactly one entry.
 ```sh
 scripts/relay-service.sh install          # builds nothing; copies relay/target/release/…
 scripts/relay-service.sh install --build  # cargo build --release first
-scripts/relay-service.sh status
+scripts/relay-service.sh status           # what runs, from where, and the hazards
+scripts/relay-service.sh unit             # PRINT the launchd plist / systemd unit it would write
 curl -s localhost:3000/health             # OK
 ```
+
+launchd on macOS, `systemctl --user` on Linux — one script, and `--backend systemd|launchd`
+if you ever need to force it.
 
 Why the binary goes to `~/.cargo/bin/unbien-relay`: that is where the extension's
 `findRelayBinary()` looks (`$PATH`, then `~/.cargo/bin`). Put it anywhere else and
@@ -137,14 +141,29 @@ Why the binary goes to `~/.cargo/bin/unbien-relay`: that is where the extension'
 `cargo install`s the published crate over your build.
 
 Why **not** run it out of `relay/target/`: that path is build output. `cargo clean`
-empties it and moving the clone invalidates the absolute path launchd resolves on
-every restart — the running process survives only until something restarts it.
-`scripts/relay-service.sh repoint` is the one-command repair after a move.
+empties it and moving the clone invalidates the absolute path the service manager
+resolves on every restart — the running process survives only until something
+restarts it. `scripts/relay-service.sh repoint` is the one-command repair after a
+move, and `status` prints a warning when the unit's `ExecStart` (or plist
+`ProgramArguments[0]`) is missing or sits inside the repo.
 
-The unit is written with `RunAtLoad=false` + `KeepAlive={Crashed, SuccessfulExit:false}`:
-launchd supervises and restarts a crash, but a deliberate stop stays stopped, and
-nothing starts it at login until a pi session (`/unbien pair`, `auto_start_relay`)
-asks for it. `install --from-template` switches to always-on-at-login.
+On macOS the unit is written with `RunAtLoad=false` +
+`KeepAlive={Crashed, SuccessfulExit:false}`: launchd supervises and restarts a
+crash, but a deliberate stop stays stopped, and nothing starts it at login until a
+pi session (`/unbien pair`, `auto_start_relay`) asks for it.
+`install --from-template` switches to always-on-at-login.
+
+On Linux the script renders `~/.config/systemd/user/unbien-relay.service` from the
+same repo template and runs `systemctl --user daemon-reload && enable --now`. Two
+Linux-specific things to know:
+
+- **Lingering.** A systemd *user* service only runs while the user has a session,
+  so on a headless hub it is down from boot until you log in, and down again at
+  every logout. Turn it on once: `sudo loginctl enable-linger "$USER"`. `install`
+  says so when lingering is off, and `status` prints its state.
+- **Logs go to the journal**, not `~/.local/state/un-bien/relay.log` (that path is
+  a launchd `StandardOutPath` thing):
+  `journalctl --user -u unbien-relay.service -n 50`.
 
 ---
 
@@ -310,7 +329,7 @@ including troubleshooting: [`../web-client/USAGE.md`](../web-client/USAGE.md).
 pi list                                            # extension resolved into this clone
 curl -s localhost:3000/health                      # relay up
 web-client/scripts/start.sh doctor                 # ports + relay + URLs
-./scripts/relay-service.sh status                  # which binary launchd runs, and its version
+./scripts/relay-service.sh status                  # which binary the service runs, and its version
 ```
 
 In the browser: the relay box fills in, `pair` succeeds on plain `http` (Ed25519

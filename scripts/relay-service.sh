@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
 #
-# relay-service.sh — own the unbien-relay user service (macOS launchd).
+# relay-service.sh — own the unbien-relay user service (macOS launchd,
+# Linux systemd-user).
 #
 # WHY THIS EXISTS
 # The service must not run out of `relay/target/release/`. That directory is
 # build output: `cargo clean` empties it, and moving the repo invalidates the
-# absolute path baked into the plist. launchd resolves that path fresh on every
-# (re)start, so the day you move or clean the repo, the relay silently stops
-# coming back (KeepAlive can't restart what it cannot find, and a reboot makes
-# it permanent). So: copy the binary to a stable path OUTSIDE the repo, and
-# point launchd at that.
+# absolute path baked into the plist/unit. The service manager resolves that
+# path fresh on every (re)start, so the day you move or clean the repo, the
+# relay silently stops coming back (KeepAlive can't restart what it cannot
+# find, and a reboot makes it permanent). So: copy the binary to a stable path
+# OUTSIDE the repo, and point the service at that. `status` flags a unit whose
+# ExecStart / ProgramArguments[0] is missing — or is inside the repo.
 #
 # WHY ~/.cargo/bin BY DEFAULT
 # The extension resolves the relay binary in `findRelayBinary()`
@@ -21,10 +23,19 @@
 # (then make sure ~/.local/bin is on the PATH that pi itself runs with).
 #
 # WHAT IT TOUCHES
-#   plist    ~/Library/LaunchAgents/com.georgeharker.unbien.relay.plist
+#   macOS    ~/Library/LaunchAgents/com.georgeharker.unbien.relay.plist
+#   Linux    ~/.config/systemd/user/unbien-relay.service   (systemd --user)
 #   binary   <bin-dir>/unbien-relay          (default ~/.cargo/bin)
 # It never writes inside the repo, and it never deletes your state
 # (~/.local/state/un-bien: pairing.db, mesh.db, relay.log).
+#
+# LINUX: LINGER, OR THE RELAY IS NOT ALWAYS-ON
+# A systemd USER service only runs while that user has a session. On a headless
+# box that means it is down from boot until someone logs in, and down at every
+# logout — which defeats the point of a home hub. Turn lingering on once:
+#   sudo loginctl enable-linger "$USER"
+# `status` reports the current state and `install` says so when it is off.
+# Logs go to the journal, not relay.log: journalctl --user -u unbien-relay.
 #
 # Note on the extension's own installer: `unbien install relay` regenerates the
 # SAME plist from extension/service-templates/relay-launchd.plist.template and
@@ -34,22 +45,26 @@
 #
 # Usage:
 #   scripts/relay-service.sh status                    # what runs, from where
-#   scripts/relay-service.sh install                   # build? no: copy repo build, write plist, start
+#   scripts/relay-service.sh install                   # copy repo build, write unit, start
 #   scripts/relay-service.sh install --build           # cargo build --release first (needs cargo)
 #   scripts/relay-service.sh update                    # re-copy the repo build + restart
-#   scripts/relay-service.sh repoint                   # plist -> installed binary (after a repo move)
-#   scripts/relay-service.sh repoint --path /abs/path  # plist -> an explicit binary
-#   scripts/relay-service.sh uninstall                 # stop; keep plist as .disabled (restorable)
-#   scripts/relay-service.sh uninstall --purge         # stop; delete plist + installed binary
+#   scripts/relay-service.sh repoint                   # unit -> installed binary (after a repo move)
+#   scripts/relay-service.sh repoint --path /abs/path  # unit -> an explicit binary
+#   scripts/relay-service.sh unit                      # PRINT the service definition it would write
+#   scripts/relay-service.sh uninstall                 # stop; keep unit as .disabled (restorable)
+#   scripts/relay-service.sh uninstall --purge         # stop; delete unit + installed binary
 #
 # Flags:
 #   --bin-dir DIR     where the stable binary lives   (default ~/.cargo/bin)
-#   --path PATH       explicit binary for repoint/install
-#   --port N          UNBIEN_RELAY_PORT for a freshly rendered plist (default 3000)
+#   --path PATH       explicit binary for repoint/install/unit
+#   --port N          UNBIEN_RELAY_PORT for a freshly rendered unit (default 3000)
 #   --build           cargo build --release before copying
 #   --from-template   regenerate the plist from the repo template instead of
 #                     editing the existing one in place (env is re-snapshotted)
-#   --purge           with uninstall: remove plist + installed binary
+#   --backend B       launchd | systemd (default: launchd on macOS, systemd on
+#                     Linux). Use --backend systemd unit to read the Linux unit
+#                     on any machine.
+#   --purge           with uninstall: remove unit + installed binary
 #   --no-verify       skip the /health wait
 #
 set -euo pipefail
@@ -57,10 +72,24 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO_BIN="$REPO_ROOT/relay/target/release/unbien-relay"
 TEMPLATE="$REPO_ROOT/extension/service-templates/relay-launchd.plist.template"
+UNIT_TEMPLATE="$REPO_ROOT/extension/service-templates/relay-systemd.service.template"
 
 LABEL="com.georgeharker.unbien.relay"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 DOMAIN="gui/$(id -u)"
+
+# Linux uses systemd --user; macOS uses launchd. Same policy either way: the
+# unit points at the installed binary, never at the repo build.
+SYSTEMD_UNIT="unbien-relay.service"
+SYSTEMD_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+UNIT_PATH="$SYSTEMD_DIR/$SYSTEMD_UNIT"
+
+case "$(uname -s)" in
+  Darwin) BACKEND_DEFAULT="launchd" ;;
+  Linux) BACKEND_DEFAULT="systemd" ;;
+  *) BACKEND_DEFAULT="" ;;
+esac
+BACKEND="${UNBIEN_SERVICE_BACKEND:-$BACKEND_DEFAULT}"
 
 BIN_DIR="${UNBIEN_RELAY_BIN_DIR:-$HOME/.cargo/bin}"
 INSTALLED_BIN="$BIN_DIR/unbien-relay"
@@ -73,6 +102,23 @@ FROM_TEMPLATE=0
 PURGE=0
 VERIFY=1
 EXPLICIT_BIN=""
+
+usage() { sed -n '3,/^set -euo/p' "${BASH_SOURCE[0]}" | sed '$d'; }
+
+require_backend() {
+  case "$BACKEND" in
+    launchd | systemd) return 0 ;;
+    "")
+      say "!! unsupported OS ($(uname -s)) — this script drives launchd or systemd-user."
+      say "   Pass --backend launchd|systemd if you know better, or see docs/install.md."
+      exit 1
+      ;;
+    *)
+      say "!! --backend must be launchd or systemd (got: $BACKEND)"
+      exit 1
+      ;;
+  esac
+}
 
 # ── helpers ────────────────────────────────────────────────────────────────
 
@@ -87,10 +133,62 @@ plist_binary() {
   /usr/libexec/PlistBuddy -c "Print :ProgramArguments:0" "$PLIST" 2>/dev/null
 }
 
-loaded() { launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; }
+unit_exists() { [[ -f "$UNIT_PATH" ]]; }
+
+have_systemctl() { command -v systemctl >/dev/null 2>&1; }
+
+# ExecStart of the unit file as written (not what systemd has loaded).
+unit_exec() {
+  unit_exists || return 1
+  sed -n 's/^ExecStart=//p' "$UNIT_PATH" | head -1
+}
+
+# systemd-user services die with the user's session unless lingering is on.
+linger_state() {
+  command -v loginctl >/dev/null 2>&1 || { printf '%s' "(no loginctl)"; return; }
+  local v
+  v="$(loginctl show-user "$(id -un)" --property=Linger --value 2>/dev/null || true)"
+  printf '%s' "${v:-unknown}"
+}
+
+linger_note() {
+  [[ "$(linger_state)" == "yes" ]] && {
+    note "linger on — the unit starts at boot and survives logout"
+    return 0
+  }
+  note "linger is OFF: this unit is down from boot until you log in, and down"
+  note "  again at every logout. For an always-on box:"
+  note "    sudo loginctl enable-linger $(id -un)"
+}
+
+# systemctl --user needs a user bus: a login session (graphical, or SSH with
+# lingering) and XDG_RUNTIME_DIR. Worth saying, because the failure message is
+# cryptic and the fix is not a package install.
+systemd_bus_hint() {
+  note "if that mentioned the user bus / D-Bus: systemd --user needs a login"
+  note "  session and XDG_RUNTIME_DIR (usually /run/user/$(id -u))."
+  note "  Check: systemctl --user show-environment; on a headless box enable linger."
+}
+
+loaded() {
+  case "$BACKEND" in
+    systemd) have_systemctl && systemctl --user is-active --quiet "$SYSTEMD_UNIT" 2>/dev/null ;;
+    *) launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1 ;;
+  esac
+}
 
 service_pid() {
-  launchctl print "$DOMAIN/$LABEL" 2>/dev/null | awk '/^[[:space:]]*pid = /{print $3; exit}'
+  case "$BACKEND" in
+    systemd)
+      local p
+      have_systemctl || return 0
+      p="$(systemctl --user show "$SYSTEMD_UNIT" --property=MainPID --value 2>/dev/null || true)"
+      [[ -n "$p" && "$p" != "0" ]] && printf '%s' "$p"
+      ;;
+    *)
+      launchctl print "$DOMAIN/$LABEL" 2>/dev/null | awk '/^[[:space:]]*pid = /{print $3; exit}'
+      ;;
+  esac
 }
 
 version_of() {
@@ -105,8 +203,15 @@ version_of() {
 
 stop_service() {
   if loaded; then
-    say "==> launchctl bootout $DOMAIN/$LABEL"
-    launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || launchctl bootout "$DOMAIN" "$PLIST" 2>/dev/null || true
+    case "$BACKEND" in
+      systemd) say "==> systemctl --user stop $SYSTEMD_UNIT" ;;
+      *) say "==> launchctl bootout $DOMAIN/$LABEL" ;;
+    esac
+    if [[ "$BACKEND" == "systemd" ]]; then
+      systemctl --user stop "$SYSTEMD_UNIT" 2>/dev/null || true
+    else
+      launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || launchctl bootout "$DOMAIN" "$PLIST" 2>/dev/null || true
+    fi
     for _ in 1 2 3 4 5 6 7 8 9 10; do loaded || break; sleep 0.5; done
   else
     say "==> service not loaded (ok)"
@@ -114,15 +219,31 @@ stop_service() {
 }
 
 start_service() {
-  [[ -f "$PLIST" ]] || { say "!! no plist at $PLIST — run install first"; exit 1; }
-  mkdir -p "$(dirname "$LOG_PATH")"
-  say "==> launchctl bootstrap $DOMAIN $(basename "$PLIST")"
-  launchctl bootstrap "$DOMAIN" "$PLIST" 2>/dev/null ||
-    launchctl load "$PLIST" 2>/dev/null ||
-    { say "!! bootstrap failed — inspect with: launchctl print $DOMAIN/$LABEL"; exit 1; }
-  # kickstart -k makes launchd exec the new binary even if a stale instance of
-  # the same label lingers in the domain.
-  launchctl kickstart -k "$DOMAIN/$LABEL" 2>/dev/null || true
+  case "$BACKEND" in
+    systemd)
+      unit_exists || { say "!! no unit at $UNIT_PATH — run install first"; exit 1; }
+      mkdir -p "$STATE_DIR"
+      say "==> systemctl --user daemon-reload && enable --now $SYSTEMD_UNIT"
+      systemctl --user daemon-reload 2>/dev/null || { systemd_bus_hint; exit 1; }
+      systemctl --user enable --now "$SYSTEMD_UNIT" 2>/dev/null ||
+        { systemd_bus_hint; say "!! could not enable/start — inspect with: systemctl --user status $SYSTEMD_UNIT"; exit 1; }
+      # enable --now leaves a RUNNING unit untouched, so after update/repoint the
+      # old binary would still be in memory. restart makes it exec the new one.
+      systemctl --user restart "$SYSTEMD_UNIT" 2>/dev/null || true
+      linger_note
+      ;;
+    *)
+      [[ -f "$PLIST" ]] || { say "!! no plist at $PLIST — run install first"; exit 1; }
+      mkdir -p "$(dirname "$LOG_PATH")"
+      say "==> launchctl bootstrap $DOMAIN $(basename "$PLIST")"
+      launchctl bootstrap "$DOMAIN" "$PLIST" 2>/dev/null ||
+        launchctl load "$PLIST" 2>/dev/null ||
+        { say "!! bootstrap failed — inspect with: launchctl print $DOMAIN/$LABEL"; exit 1; }
+      # kickstart -k makes launchd exec the new binary even if a stale instance of
+      # the same label lingers in the domain.
+      launchctl kickstart -k "$DOMAIN/$LABEL" 2>/dev/null || true
+      ;;
+  esac
 }
 
 verify_running() {
@@ -138,8 +259,13 @@ verify_running() {
     say "==> healthy: GET $url -> $(curl -fsS --max-time 2 "$url")  (pid ${pid:-unknown})"
   else
     say "!! $url did not answer within 5s. pid=${pid:-none}."
-    say "   check: launchctl print $DOMAIN/$LABEL | head -30"
-    say "   and:   tail -40 $LOG_PATH"
+    if [[ "$BACKEND" == "systemd" ]]; then
+      say "   check: systemctl --user status $SYSTEMD_UNIT"
+      say "   and:   journalctl --user -u $SYSTEMD_UNIT -n 40"
+    else
+      say "   check: launchctl print $DOMAIN/$LABEL | head -30"
+      say "   and:   tail -40 $LOG_PATH"
+    fi
     return 1
   fi
 }
@@ -154,7 +280,7 @@ backup_plist() {
 
 render_plist() {
   [[ -f "$TEMPLATE" ]] || { say "!! template missing: $TEMPLATE"; exit 1; }
-  local env_block
+  local env_block out="${2:-$PLIST}"
   env_block=$(printf '    <key>UNBIEN_STATE_DIR</key>\n    <string>%s</string>\n    <key>RUST_LOG</key>\n    <string>info</string>' "$STATE_DIR")
   sed \
     -e "s|{RELAY_BIN}|$1|g" \
@@ -164,12 +290,52 @@ render_plist() {
     -e "s|{PI_AGENT_DIR}|${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}|g" \
     -e "s|{SESSION_DIR}|${PI_CODING_AGENT_SESSION_DIR:-}|g" \
     -e "s|{UNBIEN_ENV_PLIST}|$env_block|g" \
-    "$TEMPLATE" >"$PLIST"
-  note "plist rendered from extension/service-templates/"
+    "$TEMPLATE" >"$out"
+  [[ "$out" == "$PLIST" ]] && note "plist rendered from extension/service-templates/"
+}
+
+# systemd equivalent. Rendered with awk, not sed: the env block is multi-line
+# (a literal newline inside s|a|b| is an error in BSD sed, and splitting a {r
+# file} block across -e arguments only works in GNU sed), and placeholder values
+# are spliced by exact substring so a path containing & or \ cannot corrupt the
+# result the way a sed/awk replacement string would.
+render_unit() {
+  [[ -f "$UNIT_TEMPLATE" ]] || { say "!! template missing: $UNIT_TEMPLATE"; exit 1; }
+  local out="${2:-$UNIT_PATH}"
+  awk \
+    -v bin="$1" -v port="$PORT" -v home="$HOME" \
+    -v agent="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}" \
+    -v session="${PI_CODING_AGENT_SESSION_DIR:-}" \
+    -v state="$STATE_DIR" '
+    function repl(line, tok, val,   i, out) {
+      out = ""
+      while ((i = index(line, tok)) > 0) {
+        out = out substr(line, 1, i - 1) val
+        line = substr(line, i + length(tok))
+      }
+      return out line
+    }
+    {
+      line = $0
+      line = repl(line, "{RELAY_BIN}", bin)
+      line = repl(line, "{PORT}", port)
+      line = repl(line, "{HOME}", home)
+      line = repl(line, "{PI_AGENT_DIR}", agent)
+      line = repl(line, "{SESSION_DIR}", session)
+      if (index(line, "{UNBIEN_ENV_SYSTEMD}") > 0) {
+        printf "Environment=\"UNBIEN_STATE_DIR=%s\"\n", state
+        printf "Environment=\"RUST_LOG=info\"\n"
+        next
+      }
+      print line
+    }' "$UNIT_TEMPLATE" >"$out"
+  [[ "$out" == "$UNIT_PATH" ]] &&
+    note "unit rendered from extension/service-templates/"
 }
 
 # Keep whatever the running unit already runs (env snapshot, KeepAlive shape)
-# and only move the binary. Least-surprise edit.
+# and only move the binary. Least-surprise edit. systemd has no such edit — its
+# unit is generated, so it is re-rendered.
 repoint_plist() {
   local target="$1"
   if ! plist_exists || [[ "$FROM_TEMPLATE" == "1" ]]; then
@@ -179,6 +345,17 @@ repoint_plist() {
   backup_plist
   /usr/libexec/PlistBuddy -c "Set :ProgramArguments:0 $target" "$PLIST"
   note "ProgramArguments[0] -> $target"
+}
+
+repoint_service() {
+  case "$BACKEND" in
+    systemd)
+      mkdir -p "$SYSTEMD_DIR"
+      render_unit "$1"
+      systemctl --user daemon-reload 2>/dev/null || systemd_bus_hint
+      ;;
+    *) repoint_plist "$1" ;;
+  esac
 }
 
 copy_binary() {
@@ -211,26 +388,54 @@ cmd_status() {
   say "repo          $REPO_ROOT"
   say "repo build    $REPO_BIN  ($(version_of "$REPO_BIN"))"
   say "installed     $INSTALLED_BIN  ($(version_of "$INSTALLED_BIN"))"
-  say "plist         $PLIST"
-  if plist_exists; then
-    say "runs          $(plist_binary || echo '(none)')"
-    say "RunAtLoad     $(/usr/libexec/PlistBuddy -c 'Print :RunAtLoad' "$PLIST" 2>/dev/null || echo '(unset)')"
-    say "KeepAlive     $(/usr/libexec/PlistBuddy -c 'Print :KeepAlive' "$PLIST" 2>/dev/null | tr '\n' ' ' || echo '(unset)')"
+  say "backend       $BACKEND"
+  local runs=""
+  if [[ "$BACKEND" == "systemd" ]]; then
+    say "unit          $UNIT_PATH"
+    if unit_exists; then
+      runs="$(unit_exec || true)"
+      say "ExecStart     ${runs:-(none)}"
+      say "Restart       $(sed -n 's/^Restart=//p' "$UNIT_PATH" | head -1)"
+    else
+      say "ExecStart     (no unit installed)"
+    fi
+    say "enabled       $(have_systemctl && systemctl --user is-enabled "$SYSTEMD_UNIT" 2>/dev/null || echo '(no systemctl, or no unit)')"
+    if loaded; then
+      say "systemd       active, pid $(service_pid || true)"
+    else
+      say "systemd       not active"
+    fi
+    say "linger        $(linger_state) — without 'yes' the unit is down at boot and at logout"
+    say "logs          journalctl --user -u $SYSTEMD_UNIT -n 50"
   else
-    say "runs          (no plist installed)"
+    say "plist         $PLIST"
+    if plist_exists; then
+      runs="$(plist_binary || true)"
+      say "runs          ${runs:-(none)}"
+      say "RunAtLoad     $(/usr/libexec/PlistBuddy -c 'Print :RunAtLoad' "$PLIST" 2>/dev/null || echo '(unset)')"
+      say "KeepAlive     $(/usr/libexec/PlistBuddy -c 'Print :KeepAlive' "$PLIST" 2>/dev/null | tr '\n' ' ' || echo '(unset)')"
+    else
+      say "runs          (no plist installed)"
+    fi
+    if loaded; then
+      say "launchd       loaded, pid $(service_pid)"
+    else
+      say "launchd       NOT loaded"
+    fi
   fi
-  if loaded; then
-    say "launchd       loaded, pid $(service_pid)"
-  else
-    say "launchd       NOT loaded"
-  fi
-  local runs
-  runs="$(plist_binary || true)"
   if [[ -n "$runs" && ! -x "$runs" ]]; then
     say ""
-    say "!! the plist points at a binary that does not exist:"
+    say "!! the service points at a binary that does not exist:"
     say "   $runs"
     say "   fix with: scripts/relay-service.sh repoint"
+  elif [[ "$runs" == "$REPO_ROOT/"* ]]; then
+    say ""
+    say "!! the service runs a binary from INSIDE the repo:"
+    say "   $runs"
+    say "   cargo clean empties that directory and moving the repo invalidates it;"
+    say "   the service manager resolves the path on every restart, so the relay"
+    say "   silently stops coming back. Fix with:"
+    say "   scripts/relay-service.sh install      # copies it to $BIN_DIR"
   fi
   if curl -fsS --max-time 2 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then
     say "health        http://127.0.0.1:$PORT/health -> OK"
@@ -240,13 +445,13 @@ cmd_status() {
 }
 
 cmd_install() {
-  say "==> install relay service (bin dir $BIN_DIR)"
+  say "==> install relay service ($BACKEND, bin dir $BIN_DIR)"
   if [[ "$BUILD" == "1" ]]; then build_repo_binary; fi
   local src="$REPO_BIN"
   if [[ -n "$EXPLICIT_BIN" ]]; then src="$EXPLICIT_BIN"; fi
   copy_binary "$src"
   stop_service
-  repoint_plist "$INSTALLED_BIN"
+  repoint_service "$INSTALLED_BIN"
   start_service
   verify_running
   say "==> done. the service no longer depends on the repo path."
@@ -267,7 +472,7 @@ cmd_update() {
     note "$before -> $after"
   fi
   stop_service
-  repoint_plist "$INSTALLED_BIN"
+  repoint_service "$INSTALLED_BIN"
   start_service
   verify_running
 }
@@ -282,15 +487,39 @@ cmd_repoint() {
   fi
   say "==> repoint service -> $target"
   stop_service
-  repoint_plist "$target"
+  repoint_service "$target"
   start_service
   verify_running
+}
+
+# Print what would be written, write nothing. Useful for reviewing the unit
+# (and for reading the Linux unit on a macOS machine).
+cmd_unit() {
+  local target="$INSTALLED_BIN"
+  if [[ -n "$EXPLICIT_BIN" ]]; then target="$EXPLICIT_BIN"; fi
+  if [[ "$BACKEND" == "systemd" ]]; then
+    render_unit "$target" /dev/stdout
+  else
+    render_plist "$target" /dev/stdout
+  fi
 }
 
 cmd_uninstall() {
   say "==> uninstall relay service"
   stop_service
-  if plist_exists; then
+  if [[ "$BACKEND" == "systemd" ]]; then
+    systemctl --user disable "$SYSTEMD_UNIT" 2>/dev/null || true
+    if unit_exists; then
+      if [[ "$PURGE" == "1" ]]; then
+        rm -f "$UNIT_PATH"
+        note "unit deleted"
+      else
+        mv "$UNIT_PATH" "$UNIT_PATH.disabled"
+        note "unit disabled (kept at $(basename "$UNIT_PATH").disabled); restore: mv it back and re-run install"
+      fi
+    fi
+    systemctl --user daemon-reload 2>/dev/null || true
+  elif plist_exists; then
     if [[ "$PURGE" == "1" ]]; then
       rm -f "$PLIST"
       note "plist deleted"
@@ -320,6 +549,7 @@ while [[ $# -gt 0 ]]; do
     --port) PORT="$2"; shift 2 ;;
     --build) BUILD=1; shift ;;
     --from-template) FROM_TEMPLATE=1; shift ;;
+    --backend) BACKEND="$2"; shift 2 ;;
     --purge) PURGE=1; shift ;;
     --no-verify) VERIFY=0; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -327,12 +557,14 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 LOG_PATH="$STATE_DIR/relay.log"
+require_backend
 
 case "$CMD" in
   status) cmd_status ;;
   install) cmd_install ;;
   update) cmd_update ;;
   repoint) cmd_repoint ;;
+  unit) cmd_unit ;;
   uninstall) cmd_uninstall ;;
   *) say "unknown command: $CMD"; usage; exit 2 ;;
 esac

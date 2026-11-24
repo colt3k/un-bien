@@ -187,6 +187,15 @@ curl -s http://localhost:3000/health   # → 200 OK
 On a headless Linux box also run `loginctl enable-linger "$USER"` so the user
 service survives logout.
 
+Running un-bien **from a clone**: `scripts/relay-service.sh install` covers both
+OSes from your own build — it copies the binary to `~/.cargo/bin` before pointing
+the service at it, so `ExecStart` is never `relay/target/release/unbien-relay`
+(which `cargo clean` empties and a repo move invalidates), and it renders the unit
+from the repo's own template. It will not run `sudo` for you, so enabling
+lingering stays your step — `status` reports whether it is on, and
+`scripts/relay-service.sh unit` prints the definition it would write.
+See [docs/from-clone.md](from-clone.md).
+
 <details>
 <summary>Manual unit setup (what <code>/unbien install relay</code> automates)</summary>
 
