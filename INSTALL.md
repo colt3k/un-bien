@@ -177,6 +177,11 @@ see this machine's rooms, with the evidence for whether each key can ever connec
 again. Revoking is a real security action, so it gates on that rather than on how
 old the row looks.
 
+**Who is connected:** `./scripts/revoke-peer.sh status` shows each paired device
+with its last authentication and whether that connection is still live. It
+reports `unknown` rather than `absent` when the evidence runs out — logs rotate,
+socket ports are ephemeral, and NAT collapses several devices onto one address.
+
 ---
 
 ## Reading further
