@@ -19,6 +19,11 @@ sessions (and agents) can talk to each other.
 [Docs](https://docs.georgeharker.com/un-bien) ·
 [Install & setup](https://docs.georgeharker.com/un-bien/install.html)
 
+**Cloned this repo?** Start at [`INSTALL.md`](INSTALL.md): one script,
+`./scripts/setup-from-clone.sh`, builds and runs everything from this checkout —
+the relay as a service, the launcher daemon, this checkout as the Pi extension,
+and the browser client.
+
 ## Monorepo layout
 
 | Path         | What it is                                                                                                                                                    |
