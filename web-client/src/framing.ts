@@ -153,8 +153,8 @@ export function decodeInbound(line: string): Inbound {
  *
  * `crypto.randomUUID` is a SECURE-CONTEXT API. On the plain-`http` tailnet URL
  * this client is meant to be opened from (`USAGE.md`: open
- * `http://<host>.tail5f1ece.ts.net:5173`), it is `undefined` — measured in
- * Chrome on `http://100.118.102.118:5173`: `isSecureContext false`,
+ * `http://<host>.my-tailnet.ts.net:5173`), it is `undefined` — measured in
+ * Chrome on `http://100.64.0.2:5173`: `isSecureContext false`,
  * `randomUUID undefined`, `getRandomValues` fine.
  *
  * That made this one line the loudest silence in the client. It ran inside the

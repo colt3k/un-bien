@@ -55,7 +55,7 @@ const SESSION_ID = "smoke-session-1"
 /** Distinct on purpose: `pair_ok.hostname` is the MACHINE, `session_name` /
  *  `room_meta.name` is the SESSION. Same field names the real extension sends
  *  (`_emitPairOk`) — a double that invents its own field names hides bugs. */
-const HOSTNAME = "m5max-fake"
+const HOSTNAME = "mybox-fake"
 const SESSION_NAME = "un-bien \u00b7 fake session"
 const STATE = "/tmp/unbien-smoke/machine.json"
 // NOT rpc verbs — capabilities. The authoritative list is

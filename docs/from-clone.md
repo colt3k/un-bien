@@ -265,7 +265,7 @@ Verified against a running preview server (Vite 7.3.8), with `allowedHosts:
 ```text
 localhost:4173            -> 200
 192.168.1.86:4173         -> 200   (LAN address, allowed because it is an IP)
-Gils-MacBook-Pro.local    -> 200   (.local — only after that entry was added)
+my-mac.local    -> 200   (.local — only after that entry was added)
 somehost.example.com      -> 403   (still refused — the check is not disabled)
 ```
 

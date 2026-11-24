@@ -26,9 +26,9 @@ const session: TrackedRoom = {
 }
 
 const control: TrackedRoom = {
-  room_id: "HI5OxguNw8Nl",
+  room_id: "ExampleRoom1",
   name: "Gils-MBP.localdomain",
-  cwd: "/Users/gfcollin",
+  cwd: "/Users/you",
   caps: ["remote_launch", "remote_pair", "remote_terminate"],
   misses: 0,
 }
@@ -38,8 +38,8 @@ const control: TrackedRoom = {
 // separates a daemon room from a live session whose cwd allows remote launch.
 const daemon: TrackedRoom = {
   room_id: "_29T25gf-dAop",
-  name: "Gils-MacBook-Pro.local",
-  cwd: "/Users/gfcollin",
+  name: "my-mac.local",
+  cwd: "/Users/you",
   caps: ["remote_launch", "is_daemon", "session_resume"],
   misses: 0,
 }

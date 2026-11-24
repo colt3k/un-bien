@@ -39,7 +39,7 @@ like the client losing the session.
 
 ````
 
-Then open `http://<tailnet-host>:5173` (e.g. `http://m5max.tail5f1ece.ts.net:5173`).
+Then open `http://<tailnet-host>:5173` (e.g. `http://mybox.my-tailnet.ts.net:5173`).
 The drawer's relay box is already filled in with that same host on the relay's
 port (`http://<tailnet-host>:3000`) — `start.sh` runs both on one box, so that is
 the right URL unless you split them. Dev-server-only exposure; a real deployment

@@ -291,7 +291,7 @@ export function nextAutoName(
 /**
  * The name to pre-fill from a chosen folder: its LAST component.
  *
- * `/Users/gfcollin/x/a/b/c` → `c`. The field stays editable — this is a
+ * `/Users/you/x/a/b/c` → `c`. The field stays editable — this is a
  * starting point taken from what the user just picked, not a decision made for
  * them (pi names a session after the project, and the project is the folder).
  */

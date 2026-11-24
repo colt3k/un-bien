@@ -24,16 +24,16 @@ const answer = {
   remote_launch: true,
   roots: [
     {
-      path: "/Users/gfcollin/dev/myai",
+      path: "/Users/you/dev/myai",
       name: "myai",
       exists: true,
       truncated: false,
       children: [
         {
-          path: "/Users/gfcollin/dev/myai/scrape-examples",
+          path: "/Users/you/dev/myai/scrape-examples",
           name: "scrape-examples",
         },
-        { path: "/Users/gfcollin/dev/myai/dotfiles", name: "dotfiles" },
+        { path: "/Users/you/dev/myai/dotfiles", name: "dotfiles" },
       ],
     },
     {
@@ -52,7 +52,7 @@ describe("parseLaunchDirs", () => {
     expect(parsed).not.toBeNull()
     expect(parsed?.ok).toBe(true)
     expect(parsed?.roots.map((r) => r.path)).toEqual([
-      "/Users/gfcollin/dev/myai",
+      "/Users/you/dev/myai",
       "/Volumes/gone",
     ])
     expect(parsed?.roots[0]?.children).toHaveLength(2)
@@ -87,9 +87,9 @@ describe("dirChoices", () => {
   it("offers the roots and one level below, skipping folders that are gone", () => {
     const parsed = parseLaunchDirs(answer)!
     expect(dirChoices(parsed).map((c) => c.path)).toEqual([
-      "/Users/gfcollin/dev/myai",
-      "/Users/gfcollin/dev/myai/dotfiles",
-      "/Users/gfcollin/dev/myai/scrape-examples",
+      "/Users/you/dev/myai",
+      "/Users/you/dev/myai/dotfiles",
+      "/Users/you/dev/myai/scrape-examples",
     ])
   })
 })
@@ -104,7 +104,7 @@ describe("dirRows", () => {
   it("shows every allow-listed root with its folders closed by default", () => {
     const rows = dirRows(parsed, new Set())
     expect(rows.map((r) => [r.path, r.depth])).toEqual([
-      ["/Users/gfcollin/dev/myai", 0],
+      ["/Users/you/dev/myai", 0],
       ["/Volumes/gone", 0],
     ])
     // A closed root still says what is inside it, or it reads as an empty one.
@@ -114,11 +114,11 @@ describe("dirRows", () => {
   })
 
   it("reveals a root's folders, sorted, when it is opened", () => {
-    const rows = dirRows(parsed, new Set(["/Users/gfcollin/dev/myai"]))
+    const rows = dirRows(parsed, new Set(["/Users/you/dev/myai"]))
     expect(rows.map((r) => [r.path, r.depth])).toEqual([
-      ["/Users/gfcollin/dev/myai", 0],
-      ["/Users/gfcollin/dev/myai/dotfiles", 1],
-      ["/Users/gfcollin/dev/myai/scrape-examples", 1],
+      ["/Users/you/dev/myai", 0],
+      ["/Users/you/dev/myai/dotfiles", 1],
+      ["/Users/you/dev/myai/scrape-examples", 1],
       ["/Volumes/gone", 0],
     ])
   })
@@ -136,11 +136,11 @@ describe("dirRows", () => {
       ...answer,
       roots: [
         {
-          path: "/Users/gfcollin/dev/GoLang/src/colt3k",
+          path: "/Users/you/dev/GoLang/src/colt3k",
           exists: true,
           truncated: true,
           children: [
-            { path: "/Users/gfcollin/dev/GoLang/src/colt3k/a", name: "a" },
+            { path: "/Users/you/dev/GoLang/src/colt3k/a", name: "a" },
           ],
         },
       ],
@@ -156,8 +156,8 @@ describe("dirRows", () => {
   it("filters to what typed text matches, keeping the root as a header", () => {
     const rows = dirRows(parsed, new Set(), "myai/dot")
     expect(rows.map((r) => [r.path, r.depth])).toEqual([
-      ["/Users/gfcollin/dev/myai", 0],
-      ["/Users/gfcollin/dev/myai/dotfiles", 1],
+      ["/Users/you/dev/myai", 0],
+      ["/Users/you/dev/myai/dotfiles", 1],
     ])
     expect(rows[0]?.expanded).toBe(true)
   })
@@ -183,17 +183,17 @@ describe("rootsCovering", () => {
   const parsed = parseLaunchDirs(answer)!
 
   it("opens the group a folder already in the field came from", () => {
-    expect(rootsCovering(parsed, "/Users/gfcollin/dev/myai/dotfiles")).toEqual([
-      "/Users/gfcollin/dev/myai",
+    expect(rootsCovering(parsed, "/Users/you/dev/myai/dotfiles")).toEqual([
+      "/Users/you/dev/myai",
     ])
-    expect(rootsCovering(parsed, "/Users/gfcollin/dev/myai")).toEqual([
-      "/Users/gfcollin/dev/myai",
+    expect(rootsCovering(parsed, "/Users/you/dev/myai")).toEqual([
+      "/Users/you/dev/myai",
     ])
   })
 
   it("does not open a group on a half-written path or a lookalike sibling", () => {
     expect(rootsCovering(parsed, "")).toEqual([])
-    expect(rootsCovering(parsed, "/Users/gfcollin/dev/mya")).toEqual([])
+    expect(rootsCovering(parsed, "/Users/you/dev/mya")).toEqual([])
     expect(rootsCovering(parsed, "/Volumes/gone/sub")).toEqual([
       "/Volumes/gone",
     ])
@@ -210,25 +210,25 @@ describe("sortedRoots", () => {
       ok: true,
       roots: [
         {
-          path: "/Users/gfcollin/dev",
+          path: "/Users/you/dev",
           name: "dev",
           exists: true,
           truncated: false,
           children: [],
         },
         {
-          path: "/Users/gfcollin/GoLang",
+          path: "/Users/you/GoLang",
           name: "GoLang",
           exists: true,
           truncated: false,
           children: [
-            { path: "/Users/gfcollin/GoLang/zed", name: "zed" },
-            { path: "/Users/gfcollin/GoLang/Alpha", name: "Alpha" },
-            { path: "/Users/gfcollin/GoLang/beta", name: "beta" },
+            { path: "/Users/you/GoLang/zed", name: "zed" },
+            { path: "/Users/you/GoLang/Alpha", name: "Alpha" },
+            { path: "/Users/you/GoLang/beta", name: "beta" },
           ],
         },
         {
-          path: "/Users/gfcollin/AndroidStudioProjects",
+          path: "/Users/you/AndroidStudioProjects",
           name: "AndroidStudioProjects",
           exists: true,
           truncated: false,
@@ -255,28 +255,28 @@ describe("sortedRoots", () => {
       ok: true,
       roots: [
         {
-          path: "/Users/gfcollin/workdev/zeta",
+          path: "/Users/you/workdev/zeta",
           name: "zeta",
           exists: true,
           truncated: false,
           children: [],
         },
         {
-          path: "/Users/gfcollin/dev/nongo",
+          path: "/Users/you/dev/nongo",
           name: "nongo",
           exists: true,
           truncated: false,
           children: [],
         },
         {
-          path: "/Users/gfcollin/GoLang/Beta",
+          path: "/Users/you/GoLang/Beta",
           name: "Beta",
           exists: true,
           truncated: false,
           children: [],
         },
         {
-          path: "/Users/gfcollin/dev/aaa",
+          path: "/Users/you/dev/aaa",
           name: "aaa",
           exists: true,
           truncated: false,
@@ -285,10 +285,10 @@ describe("sortedRoots", () => {
       ],
     })!
     expect(sortedRoots(parsed).map((r) => r.path)).toEqual([
-      "/Users/gfcollin/dev/aaa",
-      "/Users/gfcollin/dev/nongo",
-      "/Users/gfcollin/GoLang/Beta",
-      "/Users/gfcollin/workdev/zeta",
+      "/Users/you/dev/aaa",
+      "/Users/you/dev/nongo",
+      "/Users/you/GoLang/Beta",
+      "/Users/you/workdev/zeta",
     ])
   })
 
@@ -323,14 +323,14 @@ describe("nextAutoName", () => {
 
 describe("launchNameFor", () => {
   it("takes the last component of the chosen folder", () => {
-    expect(launchNameFor("/Users/gfcollin/x/a/b/c")).toBe("c")
-    expect(launchNameFor("/Users/gfcollin/dev/myai")).toBe("myai")
+    expect(launchNameFor("/Users/you/x/a/b/c")).toBe("c")
+    expect(launchNameFor("/Users/you/dev/myai")).toBe("myai")
     expect(launchNameFor("~/dev/myai")).toBe("myai")
   })
 
   it("ignores a trailing slash, which is typing noise", () => {
-    expect(launchNameFor("/Users/gfcollin/dev/myai/")).toBe("myai")
-    expect(launchNameFor("/Users/gfcollin/dev/myai///")).toBe("myai")
+    expect(launchNameFor("/Users/you/dev/myai/")).toBe("myai")
+    expect(launchNameFor("/Users/you/dev/myai///")).toBe("myai")
   })
 
   it("names nothing when the last component is not a name", () => {
@@ -339,7 +339,7 @@ describe("launchNameFor", () => {
     expect(launchNameFor("~")).toBe("")
     expect(launchNameFor("/")).toBe("")
     expect(launchNameFor("   ")).toBe("")
-    expect(launchNameFor("/Users/gfcollin/")).toBe("gfcollin")
+    expect(launchNameFor("/Users/you/")).toBe("you")
   })
 })
 

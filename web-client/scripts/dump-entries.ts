@@ -10,7 +10,7 @@
  * `message`, an entry that was never written).
  *
  *   npx tsx scripts/dump-entries.ts \
- *     --relay http://m5max.tail5f1ece.ts.net:3000 \
+ *     --relay http://mybox.my-tailnet.ts.net:3000 \
  *     --pair  'unbien://pair?t=…&epk=…&n=…&rm=…' \
  *     --out   /tmp/unbien-fixture.json
  *

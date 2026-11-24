@@ -83,7 +83,7 @@ pnpm -C web-client dev              # http://localhost:5173  (strictPort)
 (`@geohar/un-bien-web`), so that form dies with "No projects matched the filters".
 
 Vite binds every interface and allows `*.ts.net`, so a phone on your tailnet can
-open `http://<your-host>.tail5f1ece.ts.net:5173`. Pairing crypto is Ed25519 from
+open `http://<your-host>.my-tailnet.ts.net:5173`. Pairing crypto is Ed25519 from
 `@noble`, not WebCrypto, so plain `http` does **not** lock you out of pairing — the
 relay transport (`ws://` vs `wss://`) is the thing to think about, not the page.
 
@@ -225,7 +225,7 @@ row matches it (the list is a convenience, not a whitelist — a filter that mat
 says so in words rather than going blank). Typing or pasting a path that IS one of the
 offered folders marks its row and opens its group.
 Picking a folder sets the path **and moves the name to its last component**
-(`/Users/gfcollin/x/a/b/c` → `c`) — picking a different folder means a different project,
+(`/Users/you/x/a/b/c` → `c`) — picking a different folder means a different project,
 so the name follows. A name you typed yourself is never replaced; only the client's own
 previous suggestion is. Pressing Enter names the session the same way.
 What the answer is not, it says out loud: `wildcard` (`launch.dirs: "*"` — type anything),
@@ -236,7 +236,7 @@ working with a typed path).
 Four things about that room are worth knowing, because all four look like a client bug:
 
 - **The control room is a room like any other.** `rooms_check` lists it — measured on a
-  live relay: `HI5OxguNw8Nl`, name `Gils-MacBook-Pro.local`, cwd `/Users/gfcollin`, caps
+  live relay: `ExampleRoom1`, name `my-mac.local`, cwd `/Users/you`, caps
   `["remote_launch", "is_daemon", "session_resume"]` — sitting next to the pi session's
   room.
   It is aged by `MISSING_GRACE` like a session, so when the daemon dies its card (and the
@@ -289,7 +289,7 @@ with the setting that owns it (`launch.dirs` allow-list, `allow_remote_launch`, 
 that does not exist, a missing backend). Success is confirmed twice: the result frame, then
 the launched session's announce, whose `launchReq` echoes the request id — that match is
 what auto-opens the new chat. Verified end to end 2026-11-21 against a real daemon:
-`/Users/gfcollin/Desktop` → `permission_denied` + the allow-list hint; `~/dev/myai` →
+`/Users/you/Desktop` → `permission_denied` + the allow-list hint; `~/dev/myai` →
 pi in a tmux window named `web-smoke`, browser attached to it a second later.
 
 ## 5. Watching a real session (what we actually do here)

@@ -1,7 +1,9 @@
 # Feasibility: an Android client that mirrors the iOS app
 
-> Notes about THIS setup (m5max, Tailscale, my devices) — kept for continuity,
-> not product documentation, and deliberately not in the Quarto site list.
+> Notes about the author's setup (a Tailscale-linked Mac and an Android phone) —
+> kept for continuity, not product documentation, and deliberately not in the
+> Quarto site list. Hostnames, tailnet names, addresses and room ids here are
+> placeholders: `mybox.my-tailnet.ts.net` means "your node, your tailnet".
 
 Addendum to `docs/android-tailscale-plan.md`, same review of `cdee234`.
 Short answer: **yes, feasible for personal use, and cheaper than it looks** — but
@@ -77,7 +79,7 @@ second time. New work is UI (HTML/CSS or a web framework) plus a browser shim:
 
 Delivery: serve it from the Mac over the tailnet, **Add to Home screen** on the
 Pixel (PWA-ish: icon, standalone, offline shell). Tailscale Serve can give you
-`https://m5max.tail5f1ece.ts.net` so `wss://` matches and mixed-content blocking
+`https://mybox.my-tailnet.ts.net` so `wss://` matches and mixed-content blocking
 never bites. Bonus: the same page works in any browser — a laptop, a friend's
 tablet — and it's the same code path you'll later wrap if you want a real APK
 (WebView shell, ≈1 day).

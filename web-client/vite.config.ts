@@ -63,7 +63,7 @@ export default defineConfig({
   //   - same LAN: an address like http://192.168.1.86:5173. Vite allows any IP
   //     host header unconditionally (verified against vite's own isHostAllowed:
   //     ipv4/ipv6 return true before allowedHosts is consulted), so this needs
-  //     no configuration at all. A hostname like `Gils-MacBook-Pro.local` does,
+  //     no configuration at all. A hostname like `my-mac.local` does,
   //     because mDNS names are NOT IPs and would otherwise get 403'd.
   //   - a mesh VPN (Tailscale/Headscale/etc): http://<node>.<tailnet>.ts.net.
   // `host: true` binds every interface either way; allowedHosts stays a list

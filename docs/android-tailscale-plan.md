@@ -1,7 +1,9 @@
-# Running Un Bien on m5max, driven from an Android phone over Tailscale
+# Running Un Bien on mybox, driven from an Android phone over Tailscale
 
-> Notes about THIS setup (m5max, Tailscale, my devices) — kept for continuity,
-> not product documentation, and deliberately not in the Quarto site list.
+> Notes about the author's setup (a Tailscale-linked Mac and an Android phone) —
+> kept for continuity, not product documentation, and deliberately not in the
+> Quarto site list. Hostnames, tailnet names, addresses and room ids here are
+> placeholders: `mybox.my-tailnet.ts.net` means "your node, your tailnet".
 
 Plan written 2026-11-16 after reviewing the repo at `cdee234` and the state of this
 machine. Every "current state" claim below was checked on the box, not assumed.
@@ -20,7 +22,7 @@ Consequences for the phases below:
 
 - The relay is built (`relay/target/release/unbien-relay`, v0.8.9) and runs. The
   web client connected to it from Chrome over `ws://localhost:3000`, and the dev
-  server binds the tailnet (`http://m5max.tail5f1ece.ts.net:5173`).
+  server binds the tailnet (`http://mybox.my-tailnet.ts.net:5173`).
 - **Phase A (Termux CLI) is still the fastest way to get a real session driven
   today**, because the pi extension is not installed on this Mac yet — nothing in
   the repo has been pointed at a live pi in this exercise. The web client was
@@ -58,7 +60,7 @@ phone is just a client of the relay.
 ## 1. Architecture as built (what we're standing up)
 
 ```
-Pixel 8 Pro                          m5max (Mac17,6, this box, 100.118.102.118)
+Pixel 8 Pro                          mybox (Mac17,6, this box, 100.64.0.2)
 ┌────────────────┐   Tailscale/WireGuard   ┌──────────────────────────────────┐
 │ unbien CLI     │ ────── ws ────────────► │ unbien-relay :3000 (Rust)        │
 │ (Termux)       │                         │  dumb router: rooms + presence   │
@@ -89,7 +91,7 @@ Three trust notes that matter for the design (`docs/rpc-envelope.md`,
 | Thing | State |
 | --- | --- |
 | macOS | 26.6.2, arm64 (`Mac17,6` — a MacBook Pro, not a mini) |
-| Tailscale | 1.104.6, GUI app (`/Applications/Tailscale.app`) + CLI, tailnet `tail5f1ece.ts.net`, this node = `m5max` / `100.118.102.118` |
+| Tailscale | 1.104.6, GUI app (`/Applications/Tailscale.app`) + CLI, tailnet `my-tailnet.ts.net`, this node = `mybox` / `100.64.0.2` |
 | Tailnet peers | `m3` (macOS, up), `ipad157` (iOS, **offline 33 d**), `pixel-8-pro` (android, **offline 16 d**) |
 | pi | 1.5.2 at `/opt/homebrew/bin/pi`, providers already working (`strata-local` / `iq3_s`) |
 | un-bien extension | **not installed** (`pi list` shows 4 other packages) |
@@ -115,18 +117,18 @@ route. Keep the clone for reading protocol docs.
 2. **Mac**: confirm the phone can reach it once the phone is online:
    ```bash
    tailscale ping pixel-8-pro          # from the Mac
-   # from Termux: ping -c3 100.118.102.118
+   # from Termux: ping -c3 100.64.0.2
    ```
 3. **ACLs**: default policy allows everything, so probably nothing to do. If you
    have a custom ACL file, make sure a rule allows `pixel-8-pro` →
-   `100.118.102.118:3000`.
+   `100.64.0.2:3000`.
 4. **Pick the relay URL** and use it *everywhere*, verbatim:
    ```
-   http://m5max.tail5f1ece.ts.net:3000
+   http://mybox.my-tailnet.ts.net:3000
    ```
    MagicDNS name beats the IP (survives tailnet-IP reassignment). Fallback if
    MagicDNS resolution of your own name misbehaves locally:
-   `http://100.118.102.118:3000`. Note from `unbien-cli/README.md`: a relay
+   `http://100.64.0.2:3000`. Note from `unbien-cli/README.md`: a relay
    listening on several addresses is still **one** relay with one identity and
    one pairing registry — mixing the two URLs later is harmless, and pairing
    records your device key, not the URL.
@@ -141,7 +143,7 @@ route. Keep the clone for reading protocol docs.
 
 ---
 
-## Phase 1 — Relay on m5max (10–20 min, mostly Rust compile)
+## Phase 1 — Relay on mybox (10–20 min, mostly Rust compile)
 
 `cargo` isn't on PATH here, so wire rustup's shims up first:
 
@@ -163,7 +165,7 @@ supports an explicit bind (`relay/src/main.rs:86`, names resolved once at
 startup):
 
 ```bash
-export UNBIEN_RELAY_BIND="m5max.tail5f1ece.ts.net,localhost"
+export UNBIEN_RELAY_BIND="mybox.my-tailnet.ts.net,localhost"
 export UNBIEN_STATE_DIR="$HOME/.local/state/un-bien"
 export RUST_LOG=info
 ```
@@ -174,7 +176,7 @@ Test in the foreground first:
 ~/.cargo/bin/unbien-relay
 # in another shell:
 curl -s http://127.0.0.1:3000/health
-curl -s http://100.118.102.118:3000/health
+curl -s http://100.64.0.2:3000/health
 lsof -nP -iTCP:3000 -sTCP:LISTEN    # must show 127.0.0.1 + the tailnet IP, NOT 0.0.0.0
 ```
 
@@ -187,7 +189,7 @@ you export the three variables *before* running it:
 /unbien install relay
 # verify what got baked in:
 plutil -p ~/Library/LaunchAgents/com.georgeharker.unbien.relay.plist
-curl -s http://100.118.102.118:3000/health
+curl -s http://100.64.0.2:3000/health
 ```
 
 Two macOS caveats worth knowing now rather than debugging at 23:00:
@@ -211,7 +213,7 @@ every pi process from now on, and it adds mesh tools plus `/unbien`). Then in a
 terminal in a directory you actually want to work in:
 
 ```text
-/unbien set-relay http://m5max.tail5f1ece.ts.net:3000
+/unbien set-relay http://mybox.my-tailnet.ts.net:3000
 /unbien            # first-run wizard: agent name, session, relay on this terminal
 ```
 
@@ -303,7 +305,7 @@ AirDrop/clip the `unbien://pair?t=…&epk=…&n=…&rm=…` string to the phone.
 invite deliberately carries **no relay URL**, so pass it explicitly:
 
 ```bash
-UNBIEN_RELAY=http://m5max.tail5f1ece.ts.net:3000 unbien pair '<pasted-uri>'
+UNBIEN_RELAY=http://mybox.my-tailnet.ts.net:3000 unbien pair '<pasted-uri>'
 unbien                 # session picker → attach
 ```
 
@@ -328,7 +330,7 @@ Sharing → Remote Login (or check whether your Tailscale client supports
 assume, and prefer plain key auth + `tailscale lockdown`). Then from Termux:
 
 ```bash
-ssh -o ProxyCommand=none m5max   # over the tailnet
+ssh -o ProxyCommand=none mybox   # over the tailnet
 unbien pair '<uri>' && unbien    # CLI on the Mac, talking to localhost relay
 ```
 
@@ -343,7 +345,7 @@ terminal-multiplexing layer. Screen width over SSH is fine; do it in landscape.
 | --- | --- | --- |
 | 1 | `curl -s http://127.0.0.1:3000/health` from the Mac | 200 / OK |
 | 2 | `lsof -nP -iTCP:3000 -sTCP:LISTEN` | `127.0.0.1` + tailnet IP only, **not** `*:3000` |
-| 3 | `curl -s http://m5max.tail5f1ece.ts.net:3000/health` **from Termux** | OK → tailnet + ACLs + bind all proven from the phone side |
+| 3 | `curl -s http://mybox.my-tailnet.ts.net:3000/health` **from Termux** | OK → tailnet + ACLs + bind all proven from the phone side |
 | 4 | `/unbien` in a pi session | `🟢 relay`, `📱 <shortid>` once the phone connects |
 | 5 | `unbien --list` on the phone | that session listed |
 | 6 | attach, send a prompt, watch a tool run | live transcript + tool card, `approve/deny` prompt appears |

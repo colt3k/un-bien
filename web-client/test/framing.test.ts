@@ -14,8 +14,8 @@ import { generateEd25519Keypair } from "@geohar/un-bien/client"
 
 describe("relay URL", () => {
   it("turns a configured http(s) relay into a socket URL", () => {
-    expect(toWsUrl("http://m5max.tail5f1ece.ts.net:3000")).toBe(
-      "ws://m5max.tail5f1ece.ts.net:3000",
+    expect(toWsUrl("http://mybox.my-tailnet.ts.net:3000")).toBe(
+      "ws://mybox.my-tailnet.ts.net:3000",
     )
     expect(toWsUrl("https://relay.example.com/")).toBe(
       "wss://relay.example.com",
@@ -187,8 +187,8 @@ describe("default relay URL, from the page the client was opened on", () => {
     // The phone case: the page and the relay are the same tailnet host,
     // started by the same start.sh, differing only by port.
     expect(
-      relayUrlForPage("http://m5max.tail5f1ece.ts.net:5173/?fresh=1"),
-    ).toBe("http://m5max.tail5f1ece.ts.net:3000")
+      relayUrlForPage("http://mybox.my-tailnet.ts.net:5173/?fresh=1"),
+    ).toBe("http://mybox.my-tailnet.ts.net:3000")
     expect(relayUrlForPage("http://localhost:5173/")).toBe(
       "http://localhost:3000",
     )

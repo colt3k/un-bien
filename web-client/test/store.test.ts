@@ -160,10 +160,10 @@ describe("the launch form to put back", () => {
     rememberLaunchDraft({
       epk: "M1",
       roomId: "_29T25gf-dAop",
-      cwd: "/Users/gfcollin/dev/myai/un-bien",
+      cwd: "/Users/you/dev/myai/un-bien",
       name: "un-bien",
     })
-    expect(launchDraft()?.cwd).toBe("/Users/gfcollin/dev/myai/un-bien")
+    expect(launchDraft()?.cwd).toBe("/Users/you/dev/myai/un-bien")
     expect(launchDraft()?.name).toBe("un-bien")
   })
 
@@ -191,11 +191,11 @@ describe("a launch still waiting for its room", () => {
     rememberPendingLaunch({
       id: "rJ3k-2fQaLmX",
       epk: "M1",
-      cwd: "/Users/gfcollin/dev/myai/un-bien",
+      cwd: "/Users/you/dev/myai/un-bien",
       askedAt: Date.now(),
     })
     expect(pendingLaunch()?.id).toBe("rJ3k-2fQaLmX")
-    expect(pendingLaunch()?.cwd).toBe("/Users/gfcollin/dev/myai/un-bien")
+    expect(pendingLaunch()?.cwd).toBe("/Users/you/dev/myai/un-bien")
   })
 
   it("goes stale rather than waiting forever", () => {
