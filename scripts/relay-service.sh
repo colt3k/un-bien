@@ -44,7 +44,7 @@
 # from taking the relay down.
 #
 # Usage:
-#   scripts/relay-service.sh status                    # what runs, from where
+#   scripts/relay-service.sh status                    # running/stopped, and from where
 #   scripts/relay-service.sh install                   # copy repo build, write unit, start
 #   scripts/relay-service.sh install --build           # cargo build --release first (needs cargo)
 #   scripts/relay-service.sh update                    # re-copy the repo build + restart
@@ -188,6 +188,163 @@ service_pid() {
     *)
       launchctl print "$DOMAIN/$LABEL" 2>/dev/null | awk '/^[[:space:]]*pid = /{print $3; exit}'
       ;;
+  esac
+}
+
+# ── service state ─────────────────────────────────────────────────────────
+# `status` should answer "is it running?" on its own line, before the
+# plumbing. Both backends are mapped onto the same words — running / starting
+# / stopping / stopped / failed / not installed — with the backend's own
+# vocabulary printed next to it, because that is what you end up grepping for
+# once you go looking with launchctl print or systemctl status.
+# STATE_IS_RUNNING is set for the port-vs-process cross-check at the end.
+STATE_IS_RUNNING="unknown"
+
+# How long the process has been up (dd-hh:mm:ss). Empty if there is no pid.
+# The `|| true` is load-bearing: the pid can vanish between the service
+# manager's answer and ps's, and under `set -euo pipefail` a failing command
+# substitution would take the whole status command down with it.
+uptime_of() {
+  local pid="${1:-}" out=""
+  [[ -n "$pid" && "$pid" != "0" ]] || return 0
+  out="$(ps -o etime= -p "$pid" 2>/dev/null | tr -d ' ' || true)"
+  printf '%s' "$out"
+}
+
+# launchctl prints the job with one tab per nesting level, and reuses some
+# keys deeper down (`state = active` belongs to the resource coalition, not
+# the job). Anchoring on a single tab is what makes `state` the job's state.
+LAUNCHD_DUMP=""
+launchd_dump() {
+  LAUNCHD_DUMP="$(launchctl print "$DOMAIN/$LABEL" 2>/dev/null || true)"
+}
+lfield() {
+  local t=$'\t'"$1 = "
+  awk -v t="$t" 'substr($0, 1, length(t)) == t { print substr($0, length(t) + 1); exit }' \
+    <<<"$LAUNCHD_DUMP"
+}
+
+plist_keepalive_set() {
+  plist_exists || return 1
+  local v
+  v="$(/usr/libexec/PlistBuddy -c 'Print :KeepAlive' "$PLIST" 2>/dev/null | head -1 || true)"
+  [[ -n "$v" && "$v" != "false" && "$v" != "0" ]]
+}
+
+launchd_state_line() {
+  if ! plist_exists; then
+    STATE_IS_RUNNING="no"
+    say "state         not installed (no plist at $PLIST)"
+    return
+  fi
+  launchd_dump
+  if [[ -z "$LAUNCHD_DUMP" ]]; then
+    STATE_IS_RUNNING="no"
+    say "state         stopped (plist installed, not loaded by launchd)"
+    note "start it: scripts/relay-service.sh install"
+    note "  or:     launchctl bootstrap $DOMAIN \"$PLIST\""
+    return
+  fi
+  local st pid up runs last
+  st="$(lfield state)"
+  pid="$(lfield pid)"
+  runs="$(lfield runs)"
+  last="$(lfield 'last exit code')"
+  case "$st" in
+    running)
+      STATE_IS_RUNNING="yes"
+      up="$(uptime_of "$pid")"
+      say "state         running (pid ${pid:-?}${up:+, up $up})"
+      ;;
+    "not running")
+      STATE_IS_RUNNING="no"
+      say "state         stopped (loaded, no process${runs:+, runs=$runs}${last:+, last exit code=$last})"
+      if plist_keepalive_set; then
+        note "KeepAlive is on, so launchd should bring it back. Still down after a"
+        note "  minute means a crash loop it is throttling: tail -40 $LOG_PATH"
+      fi
+      ;;
+    "spawn scheduled")
+      STATE_IS_RUNNING="no"
+      say "state         starting (launchd has it queued to spawn)"
+      ;;
+    disabled)
+      STATE_IS_RUNNING="no"
+      say "state         disabled (launchd refuses to start this label)"
+      note "launchctl enable $DOMAIN/$LABEL, then re-run install"
+      ;;
+    *)
+      say "state         ${st:-unknown} (launchd's own word — pid ${pid:-none})"
+      ;;
+  esac
+  note "launchd: state=${st:-?}${runs:+, runs=$runs}${last:+, last exit code=$last}"
+}
+
+# `systemctl show` as key=value lines — no --value, so the property names stay
+# attached and a missing property cannot shift every column left by one.
+SYSTEMD_SHOW=""
+sfield() { sed -n "s/^$1=//p" <<<"$SYSTEMD_SHOW" | head -1; }
+
+systemd_state_line() {
+  if ! unit_exists; then
+    STATE_IS_RUNNING="no"
+    say "state         not installed (no unit at $UNIT_PATH)"
+    return
+  fi
+  if ! have_systemctl; then
+    say "state         unknown (no systemctl on PATH)"
+    return
+  fi
+  SYSTEMD_SHOW="$(systemctl --user show "$SYSTEMD_UNIT" \
+    -p ActiveState -p SubState -p MainPID -p Result -p NRestarts \
+    -p ExecMainStartTimestamp 2>/dev/null || true)"
+  local st sub pid result restarts since up
+  st="$(sfield ActiveState)"
+  sub="$(sfield SubState)"
+  pid="$(sfield MainPID)"
+  result="$(sfield Result)"
+  restarts="$(sfield NRestarts)"
+  since="$(sfield ExecMainStartTimestamp)"
+  if [[ -z "$st" ]]; then
+    say "state         unknown (systemctl --user show answered nothing)"
+    systemd_bus_hint
+    return
+  fi
+  case "$st" in
+    active)
+      STATE_IS_RUNNING="yes"
+      up="$(uptime_of "$pid")"
+      say "state         running (pid ${pid:-?}${up:+, up $up})"
+      ;;
+    activating)
+      STATE_IS_RUNNING="no"
+      say "state         starting (systemd: $sub)"
+      ;;
+    deactivating)
+      STATE_IS_RUNNING="no"
+      say "state         stopping (systemd: $sub)"
+      ;;
+    failed)
+      STATE_IS_RUNNING="no"
+      say "state         FAILED (systemd: $sub${result:+, result=$result}) — it is down and"
+      note "  will not be retried until the failure is reset${since:+ (last start $since)}"
+      note "    systemctl --user reset-failed $SYSTEMD_UNIT && systemctl --user restart $SYSTEMD_UNIT"
+      ;;
+    inactive)
+      STATE_IS_RUNNING="no"
+      say "state         stopped (systemd: $sub${restarts:+, restarts=$restarts}${since:+, last start $since})"
+      ;;
+    *)
+      say "state         $st (systemd: $sub)"
+      ;;
+  esac
+  note "systemd: $st${sub:+/$sub}${restarts:+, restarts=$restarts}${result:+, result=$result}"
+}
+
+state_line() {
+  case "$BACKEND" in
+    systemd) systemd_state_line ;;
+    *) launchd_state_line ;;
   esac
 }
 
@@ -385,6 +542,7 @@ build_repo_binary() {
 # ── subcommands ────────────────────────────────────────────────────────────
 
 cmd_status() {
+  state_line
   say "repo          $REPO_ROOT"
   say "repo build    $REPO_BIN  ($(version_of "$REPO_BIN"))"
   say "installed     $INSTALLED_BIN  ($(version_of "$INSTALLED_BIN"))"
@@ -400,11 +558,6 @@ cmd_status() {
       say "ExecStart     (no unit installed)"
     fi
     say "enabled       $(have_systemctl && systemctl --user is-enabled "$SYSTEMD_UNIT" 2>/dev/null || echo '(no systemctl, or no unit)')"
-    if loaded; then
-      say "systemd       active, pid $(service_pid || true)"
-    else
-      say "systemd       not active"
-    fi
     say "linger        $(linger_state) — without 'yes' the unit is down at boot and at logout"
     say "logs          journalctl --user -u $SYSTEMD_UNIT -n 50"
   else
@@ -416,11 +569,6 @@ cmd_status() {
       say "KeepAlive     $(/usr/libexec/PlistBuddy -c 'Print :KeepAlive' "$PLIST" 2>/dev/null | tr '\n' ' ' || echo '(unset)')"
     else
       say "runs          (no plist installed)"
-    fi
-    if loaded; then
-      say "launchd       loaded, pid $(service_pid)"
-    else
-      say "launchd       NOT loaded"
     fi
   fi
   if [[ -n "$runs" && ! -x "$runs" ]]; then
@@ -437,10 +585,35 @@ cmd_status() {
     say "   silently stops coming back. Fix with:"
     say "   scripts/relay-service.sh install      # copies it to $BIN_DIR"
   fi
+  local health_ok=0
   if curl -fsS --max-time 2 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then
+    health_ok=1
     say "health        http://127.0.0.1:$PORT/health -> OK"
   else
     say "health        port $PORT not answering"
+  fi
+  # The two lines above can disagree, and each disagreement is its own bug:
+  # a live port with no service behind it means some other process (a relay
+  # started by hand, a tunnel) is answering, and a running service with a dead
+  # port means the process you are looking at is not the one serving clients.
+  if [[ "$health_ok" == "1" && "$STATE_IS_RUNNING" == "no" ]]; then
+    say ""
+    say "!! port $PORT answers but the service is not running — something else is"
+    say "   serving it (a relay started by hand, or a tunnel to another machine):"
+    case "$BACKEND" in
+      systemd) say "   lsof -nP -iTCP:$PORT -sTCP:LISTEN" ;;
+      *) say "   lsof -nP -iTCP:$PORT -sTCP:LISTEN; launchctl print $DOMAIN/$LABEL | head -30" ;;
+    esac
+  elif [[ "$health_ok" != "1" && "$STATE_IS_RUNNING" == "yes" ]]; then
+    say ""
+    say "!! the service is running but nothing answers on $PORT — the process is up"
+    say "   without serving clients (it is still booting, it died into a restart, or"
+    say "   it bound a different port than this script is asking about):"
+    case "$BACKEND" in
+      systemd) say "   journalctl --user -u $SYSTEMD_UNIT -n 40; ss -ltnp | grep :$PORT" ;;
+      *) say "   tail -40 $LOG_PATH; lsof -nP -iTCP:$PORT -sTCP:LISTEN" ;;
+    esac
+    say "   UNBIEN_RELAY_PORT in the unit and --port here must agree (here: $PORT)"
   fi
 }
 
@@ -535,11 +708,13 @@ cmd_uninstall() {
   say "==> state left intact: $STATE_DIR (pairing.db, mesh.db, relay.log)"
 }
 
-usage() { sed -n '3,45p' "${BASH_SOURCE[0]}"; }
-
 # ── arg parsing ────────────────────────────────────────────────────────────
-
+# One usage(), defined above: a second definition further down silently
+# overrode it with a hardcoded `3,45p` range, which stopped printing exactly
+# at the line before the Usage:/Flags: block — so `--help` printed the prose
+# and never the commands.
 CMD="${1:-status}"
+case "$CMD" in -h | --help | help) usage; exit 0 ;; esac
 shift || true
 
 while [[ $# -gt 0 ]]; do

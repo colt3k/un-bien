@@ -150,7 +150,7 @@ where within that.
 ```sh
 curl -s localhost:3000/health            # relay up
 pi list                                  # extension resolves into this checkout
-./scripts/relay-service.sh status        # which relay binary the service runs
+./scripts/relay-service.sh status        # running/stopped, and which binary it runs
 ./scripts/setup-from-clone.sh doctor     # ports, relay, URLs, what is missing
 ```
 

@@ -127,13 +127,44 @@ registered twice. Keep exactly one entry.
 ```sh
 scripts/relay-service.sh install          # builds nothing; copies relay/target/release/…
 scripts/relay-service.sh install --build  # cargo build --release first
-scripts/relay-service.sh status           # what runs, from where, and the hazards
+scripts/relay-service.sh status           # running/stopped, from where, and the hazards
 scripts/relay-service.sh unit             # PRINT the launchd plist / systemd unit it would write
 curl -s localhost:3000/health             # OK
 ```
 
 launchd on macOS, `systemctl --user` on Linux — one script, and `--backend systemd|launchd`
 if you ever need to force it.
+
+`status` leads with the state in one word, the same word on either backend; the
+rest of the output is the plumbing that explains it:
+
+```text
+state         running (pid 28966, up 3-04:12:33)
+  launchd: state=running, runs=4
+repo          ~/dev/myapps/un-bien
+repo build    ~/dev/myapps/un-bien/relay/target/release/unbien-relay  (unbien-relay 0.8.11)
+installed     ~/.cargo/bin/unbien-relay  (unbien-relay 0.8.11)
+backend       launchd
+plist         ~/Library/LaunchAgents/com.georgeharker.unbien.relay.plist
+runs          ~/.cargo/bin/unbien-relay
+RunAtLoad     false
+KeepAlive     Dict { Crashed = true  SuccessfulExit = false }
+health        http://127.0.0.1:3000/health -> OK
+```
+
+`running` / `starting` / `stopped` / `FAILED` / `not installed` come from launchd's
+`state` or systemd's `ActiveState`. The indented line repeats the manager's own
+words and counters (`runs`, `last exit code`, `restarts`, `result`) — that is what
+you end up grepping for once you go looking with `launchctl print` or
+`systemctl --user status`. A stopped-but-loaded launchd job also says whether
+`KeepAlive` should have brought it back, and a `failed` systemd unit says it will
+not be retried until you `reset-failed` it.
+
+When the state and the health probe disagree — a port answering with no service
+behind it, or a process up but not serving — `status` calls that out and prints
+the command to check. The two are different failures: the first is some other
+process (a hand-started relay, a tunnel) holding the port; the second is your
+service running against a port other than the one you are probing.
 
 Why the binary goes to `~/.cargo/bin/unbien-relay`: that is where the extension's
 `findRelayBinary()` looks (`$PATH`, then `~/.cargo/bin`). Put it anywhere else and
@@ -329,7 +360,7 @@ including troubleshooting: [`../web-client/USAGE.md`](../web-client/USAGE.md).
 pi list                                            # extension resolved into this clone
 curl -s localhost:3000/health                      # relay up
 web-client/scripts/start.sh doctor                 # ports + relay + URLs
-./scripts/relay-service.sh status                  # which binary the service runs, and its version
+./scripts/relay-service.sh status                  # state, which binary it runs, and its version
 ```
 
 In the browser: the relay box fills in, `pair` succeeds on plain `http` (Ed25519
