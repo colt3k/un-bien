@@ -80,6 +80,15 @@ import {
   type VirtualKeyboardLike,
 } from "./keyboard-inset.js"
 import { relayUrlForPage } from "./framing.js"
+import {
+  MAX_ATTACHMENTS,
+  attachmentCaption,
+  attachmentRoom,
+  attachFailureMessage,
+  isAttachableFile,
+  sendGate,
+} from "./image-attach.js"
+import { type Attachment, prepareAttachment } from "./image-send.js"
 import { tokenize } from "./highlight.js"
 import {
   dirChoices,
@@ -526,9 +535,24 @@ export class App {
    *  reader who is not following needs to know the stream did not stop. */
   private readonly jumpToEnd = $<HTMLButtonElement>("jumpToEnd")
   private readonly sendBtn = $<HTMLButtonElement>("sendBtn")
+  /** Attach an image to the next message. A button rather than a visible file
+   *  input because the OS picker is what does the work (photos AND camera from
+   *  one tap); see the comment on `#attachFile` in index.html. */
+  private readonly attachBtn = $<HTMLButtonElement>("attachBtn")
+  private readonly attachFile = $<HTMLInputElement>("attachFile")
+  /** The strip of staged images above the input. */
+  private readonly attachStrip = $<HTMLElement>("attachStrip")
   /** Queue a message for after the running turn. A field rather than a `$()` at
    *  each use, because the ended view hides it alongside the other controls. */
   private readonly queueBtn = $<HTMLButtonElement>("queueBtn")
+  /** Images staged for the next message. Kept OUT of the reducer on purpose:
+   *  they are the composer's own state, not part of the transcript, and the
+   *  fold has no idea what to do with a message that has not been sent. */
+  private attachments: Attachment[] = []
+  /** Picks still being decoded and resized. A phone camera hands over a
+   *  multi-megabyte photo and the read is async, so the strip has to say
+   *  "reading" — otherwise a tap looks like a dead button. */
+  private attaching = 0
   /** End the session (the remote `/quit`). `endSentFor` holds the request id we
    *  put on the wire — the machine answers by ENDING THE ROOM, never with a
    *  result frame, so a request that is not followed by `room_ended` inside the
@@ -1157,6 +1181,17 @@ export class App {
     this.launchName.addEventListener("input", () => this.scheduleDraftSave())
     this.sendBtn.addEventListener("click", () => this.send("auto"))
     this.queueBtn.addEventListener("click", () => this.send("queue"))
+    // The button opens the picker; the input stays hidden because a styled
+    // button is what fits the composer row. This only works because the click
+    // is a real user gesture — a `click()` from anywhere else is blocked.
+    this.attachBtn.addEventListener("click", () => this.attachFile.click())
+    this.attachFile.addEventListener("change", () => {
+      const picked = Array.from(this.attachFile.files ?? [])
+      // Reset it so picking the SAME file twice is a pick, not a no-op — the
+      // usual case when the first attempt failed to decode.
+      this.attachFile.value = ""
+      void this.stageImages(picked)
+    })
     this.stopBtn.addEventListener("click", () => this.client?.abort())
     this.endBtn.addEventListener("click", () => this.onEndSessionClick())
     this.refreshBtn.addEventListener("click", () => void this.refreshHistory())
@@ -2147,6 +2182,7 @@ export class App {
     // that says `not attached` is the same trap the ended bar above replaced: it
     // looks drivable, and the send has nowhere to go. `attach` puts it back.
     this.composer.hidden = true
+    this.clearAttachments()
     this.syncHistoryNotice()
     $("loadEarlier").hidden = true
     this.compactionJump.hidden = true
@@ -2496,6 +2532,15 @@ export class App {
   ): Promise<void> {
     const client = this.client
     if (!client) return
+    // Staged images belong to the conversation they were picked for. Moving to
+    // a different room drops them — sending a photo meant for one session into
+    // another is the kind of mistake you only notice after the model has
+    // described it. A resume of the SAME room keeps them: a reconnect is not the
+    // reader changing their mind.
+    const previous = this.active
+    if (previous && (previous.epk !== epk || previous.roomId !== roomId)) {
+      this.clearAttachments()
+    }
     client.setRoutingPeer(epk)
     client.setRoom(roomId)
     // Seeded from the room's own record when the listing already has it. Only a
@@ -3099,6 +3144,11 @@ export class App {
     this.queueBtn.hidden = ended
     this.stopBtn.hidden = ended || !this.busy
     this.endedNote.hidden = !ended
+    // An attachment for a conversation that can no longer take a message is
+    // worse than a hidden button: it is a thumbnail promising a send that
+    // cannot happen. Whatever was staged goes with the input.
+    this.attachBtn.hidden = ended
+    if (ended) this.clearAttachments()
     this.refreshSessionControls()
   }
 
@@ -3721,9 +3771,127 @@ export class App {
 
   // ── composer ──────────────────────────────────────────────────────────────
 
+  /** Stage picked files as attachments: decode, resize, keep the copy that
+   *  fits. Sequential on purpose — two 12 MP photos decoded at once is how a
+   *  phone tab gets killed, and the strip showing one thumbnail appear after
+   *  another is better feedback than a batch landing together. */
+  private async stageImages(files: File[]): Promise<void> {
+    if (files.length === 0) return
+    const usable = files.filter(isAttachableFile)
+    if (usable.length < files.length) {
+      // Naming the type is the actionable part: an iPhone camera set to High
+      // Efficiency hands over HEIC, which this (and the machine) cannot use.
+      const skipped = files
+        .filter((f) => !isAttachableFile(f))
+        .map((f) => f.type || f.name)
+        .filter(Boolean)
+      this.toast(
+        `cannot send that image${skipped.length ? ` (${skipped.join(", ")})` : ""} — png, jpg, webp or gif`,
+      )
+    }
+    const room = attachmentRoom(this.attachments.length)
+    if (room === 0) {
+      this.toast(`${MAX_ATTACHMENTS} images per message — remove one first`)
+      return
+    }
+    const batch = usable.slice(0, room)
+    if (batch.length < usable.length) {
+      this.toast(
+        `only ${room} more image${room === 1 ? "" : "s"} fit — the rest were skipped`,
+      )
+    }
+    this.attaching += batch.length
+    this.renderAttachStrip()
+    for (const file of batch) {
+      try {
+        this.attachments.push(await prepareAttachment(file))
+      } catch (err) {
+        this.toast(attachFailureMessage(err, file.type || file.name))
+      } finally {
+        this.attaching -= 1
+        this.renderAttachStrip()
+      }
+    }
+  }
+
+  /** Paint the strip: one chip per staged image, each removable, plus a
+   *  "reading" chip while a decode is in flight. */
+  private renderAttachStrip(): void {
+    const strip = this.attachStrip
+    strip.replaceChildren()
+    this.attachments.forEach((att, index) => {
+      const chip = el("div", "attach-chip")
+      if (att.thumb) {
+        const thumb = el("img", "attach-thumb")
+        thumb.src = att.thumb
+        thumb.alt = ""
+        chip.append(thumb)
+      }
+      chip.append(
+        el(
+          "span",
+          "attach-meta",
+          attachmentCaption({
+            mime: att.wire.mime,
+            bytes: att.bytes,
+            width: att.width,
+            height: att.height,
+            ...(att.from ? { from: att.from } : {}),
+          }),
+        ),
+      )
+      const remove = el("button", "attach-remove")
+      remove.type = "button"
+      remove.textContent = "×"
+      remove.title = "remove this image"
+      remove.setAttribute("aria-label", "remove this image")
+      remove.addEventListener("click", () => {
+        this.attachments.splice(index, 1)
+        this.renderAttachStrip()
+      })
+      chip.append(remove)
+      strip.append(chip)
+    })
+    if (this.attaching > 0) {
+      const busy = el("div", "attach-chip reading")
+      busy.append(
+        el(
+          "span",
+          "attach-meta",
+          this.attaching === 1
+            ? "reading image…"
+            : `reading ${this.attaching} images…`,
+        ),
+      )
+      strip.append(busy)
+    }
+    strip.hidden = this.attachments.length === 0 && this.attaching === 0
+  }
+
+  /** Put the staged images down — the room changed, or the message went out. */
+  private clearAttachments(): void {
+    this.attachments = []
+    this.attaching = 0
+    this.renderAttachStrip()
+  }
+
   private send(mode: "auto" | "queue"): void {
     const text = this.input.value.trim()
-    if (!text || !this.client || !this.active) {
+    const gate = sendGate(
+      text,
+      this.attachments.map((a) => a.wire),
+    )
+    if (gate.kind === "slash-with-image") {
+      // Sent anyway, the machine would run the command and lose the photo: the
+      // extension intercepts pi's built-in slashes before any image is handed
+      // over, and pi executes a registered command and returns without the
+      // content blocks. Say so instead of eating the attachment.
+      this.toast(
+        `${gate.command} runs on the machine and cannot carry an image — send the command on its own`,
+      )
+      return
+    }
+    if (gate.kind === "empty" || !this.client || !this.active) {
       if (!this.active)
         this.toast("no session attached — pick one from the machines panel")
       return
@@ -3732,15 +3900,27 @@ export class App {
     // working STEERS it; otherwise it is a fresh prompt. Slash text is sent as
     // an ordinary prompt — pi expands it on the machine (the iOS app's richer
     // command registry + refusal toasts are not implemented here yet).
-    if (mode === "queue") this.client.queue(text)
-    else if (this.busy) this.client.steer(text)
-    else this.client.prompt(text)
+    //
+    // An image changes which verb is used, and that is not cosmetic: pi's bare
+    // `steer`/`follow_up` verbs are separate rpc commands, and the path that
+    // carries image blocks is `prompt` with `streamingBehavior`. The native app
+    // has always sent every message that way; matching it here means the photo
+    // arrives instead of being dropped.
+    const images = gate.images
+    if (images.length > 0) {
+      const behavior =
+        mode === "queue" ? "followUp" : this.busy ? "steer" : undefined
+      this.client.prompt(gate.text, images, behavior)
+    } else if (mode === "queue") this.client.queue(gate.text)
+    else if (this.busy) this.client.steer(gate.text)
+    else this.client.prompt(gate.text)
     // Sending is the clearest possible "show me the newest": a reader who had
     // scrolled up to read history does not want their own message — and the
     // answer to it — happening below the fold. The iOS app arms its pin on
     // submit for the same reason.
     this.shouldPin = true
     this.input.value = ""
+    this.clearAttachments()
     this.autogrow()
   }
 

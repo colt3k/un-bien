@@ -275,7 +275,8 @@ Un Bien must do **at least** what the reference app (`remote_pi` Flutter,
 | Sessions / peer list (mesh — all machines, one view)               | ✔ aggregated across **multiple relays**                                           |
 | Live chat streaming                                                | ✔ + proper Markdown + syntax highlight + themes                                   |
 | Interactive prompts (`extension_ui_request`: select/confirm/input) | ✔ (dedicated approve/reject `approve_tool` cards were dropped)                    |
-| Image **render** of session-produced images                        | ✔ (inbound `user_message.images` ingest exists on the wire; no app attach UI yet) |
+| Image **render** of session-produced images                        | ✔ (inbound `user_message.images` ingest exists on the wire)                       |
+| Image **attach** from the client                                   | web client ✔ (picker + browser-side resize); native app **not yet**               |
 | Settings                                                           | ✔ + theme picker                                                                  |
 | Update prompt                                                      | native App Store (skip in-app)                                                    |
 | Voice / two-way audio (`data/voice`)                               | **deferred** (post-parity; not in the store pitch)                                |

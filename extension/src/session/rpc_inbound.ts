@@ -193,8 +193,11 @@ export interface RpcCommandHandlers {
    *  createRpcHandlers via pi.getCommands(). Absent => unknown tokens PASS
    *  to pi (status-quo behavior, no refusal). */
   isKnownSlash?(token: string): boolean
-  steer(message: string, opts: { images?: unknown }): Promise<void>
-  followUp(message: string, opts: { images?: unknown }): Promise<void>
+  steer(message: string, opts: { images?: unknown; id?: string }): Promise<void>
+  followUp(
+    message: string,
+    opts: { images?: unknown; id?: string },
+  ): Promise<void>
   abort(): Promise<void>
   /** Switch the live model; resolves to the wire Model object for the response. */
   setModel(provider: string, modelId: string): Promise<unknown>
@@ -460,11 +463,13 @@ export async function dispatchRpcCommand(
       case "steer":
         await handlers.steer(str(frame.message), {
           images: frame.images,
+          id,
         })
         return rpcResponse("steer", id, { success: true })
       case "follow_up":
         await handlers.followUp(str(frame.message), {
           images: frame.images,
+          id,
         })
         return rpcResponse("follow_up", id, { success: true })
       case "abort":

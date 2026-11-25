@@ -14,6 +14,7 @@ import {
   toWsUrl,
 } from "./framing.js"
 import { nextAllowVersion } from "./store.js"
+import type { WireImage } from "./image-attach.js"
 
 /**
  * The owner end of an un-bien session channel, for a browser.
@@ -629,22 +630,55 @@ export class SessionClient {
     })
   }
 
-  /** Drive the agent. `prompt`/`steer`/`abort` are pi's own rpc verbs. */
-  prompt(message: string): void {
-    this.sendEnvelope({ rpc: { type: "prompt", id: correlationId(), message } })
-  }
-
-  steer(message: string): void {
-    this.sendEnvelope({ rpc: { type: "steer", id: correlationId(), message } })
-  }
-
-  /** Queue for after the current turn ends. */
-  queue(message: string): void {
+  /** Drive the agent. `prompt`/`steer`/`abort` are pi's own rpc verbs.
+   *
+   *  `images` rides as pi's own field (`prompt.images`), a list of
+   *  `{data: base64, mime}` blocks — the extension hands them to pi as
+   *  multimodal content (`session/rpc_handlers.ts`) and replays them in history,
+   *  so every device sees the same bubble. Omitted entirely when empty: an
+   *  `images: []` on the wire is a field the machine has to reason about for no
+   *  reason.
+   *
+   *  `behavior` is pi's `streamingBehavior` — what to do when a turn is already
+   *  running. It matters for images specifically: pi's bare `steer`/`follow_up`
+   *  verbs are separate commands, and the one that carries image blocks is
+   *  `prompt`. A message with a photo therefore steers or queues THROUGH this
+   *  verb rather than calling `steer()`/`queue()`. */
+  prompt(
+    message: string,
+    images?: WireImage[],
+    behavior?: "steer" | "followUp",
+  ): void {
     this.sendEnvelope({
       rpc: {
         type: "prompt",
         id: correlationId(),
         message,
+        ...(images && images.length > 0 ? { images } : {}),
+        ...(behavior ? { streamingBehavior: behavior } : {}),
+      },
+    })
+  }
+
+  steer(message: string, images?: WireImage[]): void {
+    this.sendEnvelope({
+      rpc: {
+        type: "steer",
+        id: correlationId(),
+        message,
+        ...(images && images.length > 0 ? { images } : {}),
+      },
+    })
+  }
+
+  /** Queue for after the current turn ends. */
+  queue(message: string, images?: WireImage[]): void {
+    this.sendEnvelope({
+      rpc: {
+        type: "prompt",
+        id: correlationId(),
+        message,
+        ...(images && images.length > 0 ? { images } : {}),
         streamingBehavior: "followUp",
       },
     })

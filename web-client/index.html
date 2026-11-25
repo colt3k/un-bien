@@ -330,11 +330,30 @@
            **detach** — a "message the session…" box looks drivable and has
            nowhere to send. `attach` in app.ts is the one place that shows it. -->
       <footer id="composer" class="composer" hidden>
+        <!-- Images staged for the NEXT message, above the input row. Its own
+             line rather than a share of it: a phone cannot fit thumbnails, the
+             field and three buttons across one row (styles.css gives the strip
+             `flex-basis: 100%`). -->
+        <div id="attachStrip" class="attach-strip" hidden></div>
         <textarea
           id="input"
           rows="1"
           placeholder="message the session…"
         ></textarea>
+        <!-- NO `capture` attribute, unlike the pairing scanner's `scanFile`.
+             `capture` pins the picker to the camera; without it the OS offers
+             BOTH photos and camera from one tap, which is what an attachment
+             needs. `getUserMedia` is not an option here — it needs a secure
+             context, and this page is routinely plain http on a tailnet host
+             (see src/qr-scan.ts). -->
+        <button
+          id="attachBtn"
+          class="icon"
+          title="attach an image — from your photos or the camera"
+        >
+          📎
+        </button>
+        <input id="attachFile" type="file" accept="image/*" multiple hidden />
         <button id="queueBtn" class="icon" title="queue for after this turn">
           ⏱
         </button>

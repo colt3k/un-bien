@@ -186,7 +186,24 @@ page` means the browser unloaded the page while the camera was open (iOS does
 
 - **Composer** (bottom): type and press **send**. Idle → `prompt`. Mid-turn →
   **send** _steers_ the running turn.
-- **⏱** queues the message as a follow-up for after the current turn.
+- **📎** attaches an image (up to four per message). The OS picker offers photos
+  AND the camera from one tap — there is no `capture` attribute on the input, and
+  no `getUserMedia`, because a camera stream needs a secure context and this page
+  is routinely plain http on a tailnet host (`src/qr-scan.ts` keeps the full
+  argument). The copy is resized in the browser before it is sent: longest side
+  1568px, under 1.5 MB of base64. That is not a browser limitation — the bytes
+  land in pi's session log and come back to every device on every reload, so the
+  size is paid for again for the life of the session. A file already small enough
+  goes across untouched (which is also what keeps a GIF animated).
+  - A message can be **images only** — no text needed.
+  - A **slash command cannot carry an image**: the machine runs the command and
+    the photo would be dropped, so the client refuses and says so.
+  - HEIC (an iPhone camera set to High Efficiency) is refused at the picker with
+    the setting to change; png / jpg / webp / gif are what the machine accepts.
+- **⏱** queues the message as a follow-up for after the current turn. It carries
+  attachments too — and an image send always rides pi's `prompt` verb with
+  `streamingBehavior`, never the bare `steer`/`follow_up` commands, because
+  `prompt` is the one whose handler hands image blocks to the agent.
 - **■** (appears during a turn) aborts it.
 - **Asks / panels**: when pi asks a question (`select`, `confirm`), it renders as an
   overlay; answering sends the response and clears it. Plan/panel state renders in the

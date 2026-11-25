@@ -49,6 +49,24 @@ type ClientUserMessage = Extract<ClientMessage, { type: "user_message" }>
 type WakeAgentResult = SubmitResult
 
 /**
+ * The `user_message` shape the image pipeline takes, built from a bare
+ * `steer`/`follow_up` frame (which carries text + images but no id).
+ */
+function imageMessage(
+  text: string,
+  images: NonNullable<ClientUserMessage["images"]>,
+  id: string | undefined,
+  deps: RpcHandlersDeps,
+): ClientUserMessage {
+  return {
+    type: "user_message",
+    id: id ?? deps.rootState().turnId ?? String(Date.now()),
+    text,
+    images,
+  }
+}
+
+/**
  * The seam between index.ts (composition root) and the rpc-inbound handlers.
  *
  * Same shape as `CommandDeps` / `RelayLifecycleDeps`: accessor closures /
@@ -131,8 +149,16 @@ export function createRpcHandlers(
         images: opts.images as ClientUserMessage["images"],
       }
       // Image path mirrors the stock handler (SDK handoff WITH images + echo).
+      // The client's verb is passed through: a `followUp` image message must
+      // QUEUE behind the turn, not interrupt it.
       if (msg.images && msg.images.length > 0) {
-        await _deliverImageUserMessage(deps.imageDeps, sender, msg, shouldSteer)
+        await _deliverImageUserMessage(
+          deps.imageDeps,
+          sender,
+          msg,
+          shouldSteer,
+          opts.streamingBehavior as SubmitDelivery | undefined,
+        )
         return
       }
       const previousTurnId = deps.rootState().turnId
@@ -158,11 +184,41 @@ export function createRpcHandlers(
         throw new Error(wake.detail)
       }
     },
-    steer: async (message) => {
+    steer: async (message, opts) => {
+      // Images on a bare `steer` go through the SAME pipeline as a `prompt`
+      // with images (TUI preview, SDK handoff as multimodal content, the error
+      // frame when the agent refuses). Dropping them here would be a silent
+      // loss: the dispatcher already forwards `frame.images` to this handler.
+      const images = opts.images as ClientUserMessage["images"]
+      if (images && images.length > 0) {
+        await _deliverImageUserMessage(
+          deps.imageDeps,
+          sender,
+          imageMessage(message, images, opts.id, deps),
+          true,
+          "steer",
+        )
+        return
+      }
       const wake = deps.wakeAgent(message, "app rpc steer", "steer")
       if (!wake.ok) throw new Error(wake.detail)
     },
-    followUp: async (message) => {
+    followUp: async (message, opts) => {
+      const images = opts.images as ClientUserMessage["images"]
+      if (images && images.length > 0) {
+        // `shouldSteer` mirrors the prompt handler's rule (requested steer OR a
+        // busy room): a follow-up sent while a turn runs belongs to THAT turn,
+        // so it must not seed the turn id — the id that seeds is what the
+        // agent's chunks and `agent_done` are answered against.
+        await _deliverImageUserMessage(
+          deps.imageDeps,
+          sender,
+          imageMessage(message, images, opts.id, deps),
+          deps.session?.streaming === true,
+          "followUp",
+        )
+        return
+      }
       const wake = deps.wakeAgent(message, "app rpc follow_up", "followUp")
       if (!wake.ok) throw new Error(wake.detail)
     },

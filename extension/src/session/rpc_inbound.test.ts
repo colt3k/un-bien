@@ -86,7 +86,13 @@ describe("dispatchRpcCommand", () => {
     ).toEqual({
       rpc: { type: "response", command: "steer", success: true, id: "s" },
     })
-    expect(h.steer).toHaveBeenCalledWith("go", { images: undefined })
+    // `id` rides along now: an image-bearing steer/follow-up goes through the
+    // image pipeline, which needs the frame's id to correlate its TUI preview
+    // and to answer a refused handoff with `in_reply_to`.
+    expect(h.steer).toHaveBeenCalledWith("go", {
+      images: undefined,
+      id: "s",
+    })
     expect(
       await dispatchRpcCommand({ type: "follow_up", message: "later" }, h),
     ).toEqual({

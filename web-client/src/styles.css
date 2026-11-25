@@ -1093,6 +1093,10 @@ details[open] > .collapsed {
 }
 .composer {
   display: flex;
+  /* Wrap is for the attachment strip: it takes a line of its own above the
+     input (see `.attach-strip`), and without wrap it would squeeze the field
+     and the buttons off a phone's width. */
+  flex-wrap: wrap;
   gap: 8px;
   align-items: flex-end;
   /* The bottom padding is the whole reason the keyboard inset needs no margin:
@@ -1111,6 +1115,72 @@ details[open] > .collapsed {
   font-family: inherit;
   font-size: 15px;
 }
+/* Images staged for the next message. `flex-basis: 100%` puts the strip on its
+   own line ABOVE the input row (`order: -1` keeps it above even though it is
+   first in the DOM anyway); horizontal scroll rather than wrap, because four
+   thumbnails stacking vertically would push the composer — and the keyboard —
+   off the screen. */
+.attach-strip {
+  flex: 1 0 100%;
+  order: -1;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px 0 4px;
+}
+.attach-chip {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+}
+/* The decode is the slow part on a phone, so the chip that says so has to look
+   like a chip and not like an error. */
+.attach-chip.reading {
+  min-width: 96px;
+  justify-content: center;
+  color: var(--muted);
+}
+.attach-thumb {
+  display: block;
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 6px;
+}
+/* What is actually being sent — type, size, and the copy's shape. Small and
+   muted on purpose: it is the receipt, not the headline, but it is what makes
+   "why is my photo blurry" answerable without a debug panel. */
+.attach-meta {
+  font-size: 11px;
+  line-height: 1.25;
+  color: var(--muted);
+  max-width: 96px;
+}
+.attach-remove {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  width: 26px;
+  height: 26px;
+  min-width: 0;
+  padding: 0;
+  border-radius: 50%;
+  line-height: 1;
+  font-size: 16px;
+  background: var(--panel);
+  border-color: var(--line-strong);
+  color: var(--fg);
+}
+/* The tap target is 26px, under the 40px floor used elsewhere — acceptable
+   because it overlaps a thumbnail that is itself 72px, and the strip's whole
+   job is a small remove affordance. The `aria-label` on the button carries the
+   meaning the × glyph cannot. */
 /* The bar that replaces the composer once the conversation has ended on the
    machine (#endedNote, index.html). It occupies the input's place on purpose:
    that is where the reader's attention — and their thumb — already is, and a

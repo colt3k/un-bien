@@ -360,6 +360,11 @@ export async function _deliverImageUserMessage(
   sender: PlainPeerChannel,
   msg: ClientUserMessage,
   shouldSteer: boolean,
+  /** The delivery verb the CLIENT asked for. Hardcoding "steer" here meant a
+   *  queued (`streamingBehavior:"followUp"`) image message INTERRUPTED the
+   *  running turn instead of waiting for it — the text path honours the verb,
+   *  so the image path has to as well. Absent = the busy-room default. */
+  requestedBehavior?: SubmitDelivery,
 ): Promise<void> {
   const previewDelivery: ReceivedImagePreviewDelivery =
     shouldSteer ||
@@ -393,7 +398,11 @@ export async function _deliverImageUserMessage(
   const wake = deps.wakeAgent(
     _contentFromUserMessage(msg),
     `app user_message id=${msg.id} (+${msg.images?.length ?? 0} image)`,
-    "steer",
+    requestedBehavior === "followUp"
+      ? "followUp"
+      : requestedBehavior === "steer" || shouldSteer
+        ? "steer"
+        : undefined,
   )
   if (!wake.ok) {
     if (seededTurnId) deps.rootState().turnId = previousTurnId

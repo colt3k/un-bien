@@ -298,10 +298,23 @@ async function runTurn(
   peer: string,
   prompt: string,
   callId: string,
+  /** The `prompt.images` blocks the client sent. Echoed back into the user
+   *  entry in pi's shape (image blocks, then the text) because that is what a
+   *  real session stores and replays — a double that dropped them would hide
+   *  the one bug worth catching here: an attachment that reaches the machine
+   *  but never comes back to the transcript. */
+  images: { data: string; mime: string }[] = [],
 ): Promise<void> {
   const user = addEntry({
     role: "user",
-    content: [{ type: "text", text: prompt }],
+    content: [
+      ...images.map((image) => ({
+        type: "image",
+        data: image.data,
+        mimeType: image.mime,
+      })),
+      { type: "text", text: prompt },
+    ],
   })
   rpc(peer, { type: "agent_start" })
   rpc(peer, { type: "turn_start" })
@@ -624,6 +637,14 @@ relay.on("message", async (line: string) => {
     case "prompt":
     case "steer": {
       const message = String(frame.message ?? "")
+      const images = Array.isArray(frame.images)
+        ? (frame.images as { data?: unknown; mime?: unknown }[])
+            .filter((image) => typeof image?.data === "string")
+            .map((image) => ({
+              data: String(image.data),
+              mime: String(image.mime ?? "image/png"),
+            }))
+        : []
       rpc(sender, {
         type: "response",
         id,
@@ -631,10 +652,17 @@ relay.on("message", async (line: string) => {
         success: true,
         data: { ok: true },
       })
+      // The base64 LENGTH is printed, never the base64: this log is how a smoke
+      // run proves the bytes crossed the relay, and a 1.5 MB blob in the log
+      // would bury every other line.
       log(
-        `${frame.type}${frame.streamingBehavior === "followUp" ? " (queued followUp)" : ""}: ${JSON.stringify(message.slice(0, 60))}`,
+        `${frame.type}${frame.streamingBehavior === "followUp" ? " (queued followUp)" : ""}: ${JSON.stringify(message.slice(0, 60))}${
+          images.length
+            ? ` +${images.length} image ${images.map((i) => `${i.mime}(${Math.round(i.data.length / 1024)} KB b64)`).join(", ")}`
+            : ""
+        }`,
       )
-      void runTurn(sender, message, `call_${Date.now().toString(36)}`)
+      void runTurn(sender, message, `call_${Date.now().toString(36)}`, images)
       return
     }
     case "abort":
