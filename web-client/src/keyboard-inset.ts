@@ -170,6 +170,19 @@ export function liftForPokePx(input: {
 export const ANDROID_KEYBOARD_SLACK_PX = 20
 
 /**
+ * How the keyboard probe draws its ladder: `KEYBOARD_PROBE_RUNGS` lines, the
+ * solid red one at the limit the code computed and dashed amber ones above it,
+ * each `KEYBOARD_PROBE_RUNG_PX` apart and labelled with its offset.
+ *
+ * The keyboard covers everything below its real top edge, so the highest rung
+ * still visible bounds that edge to within one rung. Six rungs at 24px covers
+ * 144px of understatement, which is more than Android has ever been seen to
+ * reach here.
+ */
+export const KEYBOARD_PROBE_RUNG_PX = 24
+export const KEYBOARD_PROBE_RUNGS = 6
+
+/**
  * The layout's own bottom breathing room, as declared in CSS (`--bottom-gap`).
  *
  * The gap between a field and the keyboard IS the gap the field keeps from the

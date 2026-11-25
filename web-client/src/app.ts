@@ -70,6 +70,8 @@ import {
   insetForLimitPx,
   isAndroidUserAgent,
   keyboardInsetPx,
+  KEYBOARD_PROBE_RUNG_PX,
+  KEYBOARD_PROBE_RUNGS,
   keyboardProbeLines,
   keyboardSlackPx,
   keyboardTopFromRectPx,
@@ -755,20 +757,34 @@ export class App {
       "position:fixed;height:0;padding-bottom:env(safe-area-inset-bottom);visibility:hidden;pointer-events:none"
     const panel = document.createElement("div")
     panel.className = "kb-debug"
-    // Two drawn lines, because the readout and the phone disagreed and a number
-    // cannot settle that. Red is where the code believes the keyboard starts;
-    // green is where the field's box ends. If red sits BELOW the keyboard's
-    // visible top edge, the browser's rectangle is lying. If both lines are
-    // where they should be and the field is still covered, the layout is lying.
-    // One screenshot says which, with no arithmetic and no scale factor.
-    const limitMark = document.createElement("div")
-    limitMark.style.cssText =
-      "position:fixed;left:0;width:100%;height:2px;background:#e5484d;z-index:2147483647;pointer-events:none"
-    const fieldMark = document.createElement("div")
-    fieldMark.style.cssText =
-      "position:fixed;left:0;width:100%;height:2px;background:#46a758;z-index:2147483647;pointer-events:none"
-    document.body.append(ruler, insetProbe, limitMark, fieldMark, panel)
-    this.keyboardProbe = { panel, ruler, insetProbe, limitMark, fieldMark }
+    // A ladder of lines above the limit the code computed, each labelled with
+    // the CSS y it sits at. Two single lines were asked for last round and they
+    // answered — by vanishing. Both were drawn at or below the keyboard's real
+    // top edge, which is the only way a `position:fixed` line can disappear: the
+    // keyboard is an OS surface painted over the page. So the rectangle is
+    // understating the keyboard's height by at least the gap between the limit
+    // and the field's bottom, and the open question is by how much.
+    //
+    // A ladder answers that in one screenshot without needing to be visible in
+    // full: the highest line still showing bounds the keyboard's real top edge
+    // to within one rung.
+    const rungs: HTMLElement[] = []
+    for (let i = 0; i < KEYBOARD_PROBE_RUNGS; i++) {
+      const rung = document.createElement("div")
+      const step = i * KEYBOARD_PROBE_RUNG_PX
+      rung.style.cssText =
+        `position:fixed;left:0;width:100%;height:0;border-top:2px ${i === 0 ? "solid" : "dashed"};` +
+        `z-index:2147483647;pointer-events:none;color:${i === 0 ? "#e5484d" : "#cd9a22"};` +
+        `background:${i === 0 ? "#e5484d" : "#cd9a22"}`
+      const tag = document.createElement("span")
+      tag.textContent = `-${step}`
+      tag.style.cssText =
+        "position:absolute;left:2px;top:-14px;font:10px/1 var(--mono);color:inherit"
+      rung.append(tag)
+      rungs.push(rung)
+    }
+    document.body.append(ruler, insetProbe, ...rungs, panel)
+    this.keyboardProbe = { panel, ruler, insetProbe, rungs }
   }
 
   private paintKeyboardProbe(facts: {
@@ -784,8 +800,9 @@ export class App {
     const box = this.composer.getBoundingClientRect()
     const field = this.input.getBoundingClientRect()
     const focused = document.activeElement
-    probe.limitMark.style.top = `${Math.round(facts.bottomLimit) - 1}px`
-    probe.fieldMark.style.top = `${Math.round(field.bottom)}px`
+    for (const [i, rung] of probe.rungs.entries()) {
+      rung.style.top = `${Math.round(facts.bottomLimit - i * KEYBOARD_PROBE_RUNG_PX)}px`
+    }
     probe.panel.textContent = keyboardProbeLines({
       innerHeight: window.innerHeight,
       visualHeight: vv.height,
@@ -927,8 +944,7 @@ export class App {
     panel: HTMLElement
     ruler: HTMLElement
     insetProbe: HTMLElement
-    limitMark: HTMLElement
-    fieldMark: HTMLElement
+    rungs: HTMLElement[]
   } | null = null
 
   /** A text field holds focus, so a keyboard is wanted even if no viewport
