@@ -38,8 +38,8 @@ name: App CI
 #
 #   (cd web-client && pnpm test)      # 127 tests, incl. the 25-scenario corpus
 #   (cd app && swift test)            # 178 tests
-#   pnpm test:scripts                 # bash tooling in scripts/ (setup-from-clone,
-#                                     # relay-service, revoke-peer)
+#   pnpm test:scripts                 # bash tooling in scripts/ (guard-upstream,
+#                                     # https, relay-service, revoke-peer)
 #
 # A green local run is not "CI passed" — there is no CI here to pass. `workflow_dispatch`
 # below exists so that if this decision ever flips, "did it start?" is one click.

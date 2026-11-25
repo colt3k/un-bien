@@ -1,5 +1,6 @@
 // defineConfig from vitest/config so the `test` block below type-checks.
 import { defineConfig } from "vitest/config"
+import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 
 /**
@@ -25,6 +26,25 @@ import { fileURLToPath } from "node:url"
  */
 const shim = (name: string): string =>
   fileURLToPath(new URL(`./src/shims/${name}`, import.meta.url))
+
+/**
+ * Opt-in TLS, for the fallback path only (`scripts/https.sh mkcert`).
+ *
+ * The default https deployment does NOT need this: `tailscale serve`
+ * terminates TLS at the edge with the node's `.ts.net` certificate and proxies
+ * plain http to this port, so the browser sees https and Vite never holds a
+ * key. Serving TLS here is the off-tailnet fallback, where something has to
+ * hold the cert.
+ *
+ * Both variables or neither. A cert without a key would otherwise produce a
+ * server that starts, looks fine, and is refused by every browser.
+ */
+const tlsKey = process.env.UNBIEN_TLS_KEY
+const tlsCert = process.env.UNBIEN_TLS_CERT
+const https =
+  tlsKey && tlsCert
+    ? { key: readFileSync(tlsKey), cert: readFileSync(tlsCert) }
+    : undefined
 
 export default defineConfig({
   resolve: {
@@ -82,11 +102,13 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     allowedHosts: [".ts.net", ".local", "localhost"],
+    https,
   },
   preview: {
     host: true,
     port: 4173,
     strictPort: true,
     allowedHosts: [".ts.net", ".local", "localhost"],
+    https,
   },
 })

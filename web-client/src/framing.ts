@@ -48,6 +48,18 @@ export function toWsUrl(url: string): string {
 export const RELAY_PORT = 3000
 
 /**
+ * Where the relay's TLS front listens, for an `https` page: `:3443`.
+ *
+ * The relay itself never speaks TLS — `relay/src/peering.rs:74` says
+ * termination is the public edge's job — so an `https` deployment puts
+ * something in front of `:3000`: `tailscale serve --https=3443 3000`, or the
+ * socat front in the `scripts/https.sh mkcert` fallback. The number lives here
+ * because the client and that script have to agree, and a mismatch is a
+ * connection failure with nothing in the message to explain it.
+ */
+export const RELAY_TLS_PORT = 3443
+
+/**
  * The relay URL to DEFAULT to, from the page the client was opened on.
  *
  * A phone on the tailnet opens `http://<host>:5173` and needs the relay on the
@@ -58,16 +70,14 @@ export const RELAY_PORT = 3000
  * Only the port changes. The scheme is kept deliberately: an `https` page
  * cannot open an insecure `ws://` socket at all (mixed content), so defaulting
  * such a page to `http://host:3000` would produce a connection that is
- * guaranteed to fail with a browser error no client code can explain. If the
- * relay really is plain `ws` behind an `https` page, that URL has to be typed.
+ * guaranteed to fail with a browser error no client code can explain. An
+ * `https` page therefore defaults to the relay's TLS front (`:3443`), not to
+ * the plain port — the plain one is unreachable from there by definition.
  *
  * Returns "" for anything that is not an http(s) origin — there is no host to
  * take a relay port from.
  */
-export function relayUrlForPage(
-  pageUrl: string,
-  port: number = RELAY_PORT,
-): string {
+export function relayUrlForPage(pageUrl: string, port?: number): string {
   let page: URL
   try {
     page = new URL(pageUrl)
@@ -78,7 +88,8 @@ export function relayUrlForPage(
   if (!page.hostname) return ""
   // `host` keeps the brackets an IPv6 literal needs (`[::1]`), and drops the
   // port, which is the whole point. Path/query/hash are not part of an origin.
-  page.port = String(port)
+  const secure = page.protocol === "https:"
+  page.port = String(port ?? (secure ? RELAY_TLS_PORT : RELAY_PORT))
   page.pathname = ""
   page.search = ""
   page.hash = ""

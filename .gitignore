@@ -45,3 +45,7 @@ __pycache__/
 # Scratch target for remote-session edit turns (conformance fixtures). Never
 # committed: it exists so an edit tool call has something disposable to change.
 web-client/tmp-fixture-*
+
+# Local TLS material from `scripts/https.sh mkcert` — a key, so never committed,
+# and disposable: the script re-mints it.
+.tls/

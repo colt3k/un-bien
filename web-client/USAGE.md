@@ -147,18 +147,28 @@ Things worth knowing, because they explain the failures you'll otherwise chase:
 - **Scanning takes a photo; it is not a live viewfinder.** **scan QR** opens the
   phone's camera through a file input, takes one shot, decodes it, and pairs. That
   is deliberate: the camera API (`getUserMedia`) is blocked on a non-`https`
-  origin, and this client runs on `http://<host>:5173` — see _Pairing by QR scan_
-  in `README.md`. Get the whole code in frame: the terminal's QR is small, and
+  origin, and this client normally runs on `http://<host>:5173` — see _Pairing by
+  QR scan_ in `README.md`, and _https_ below if you want the real viewfinder. Get the whole code in frame: the terminal's QR is small, and
   _no QR code recognised_ is nearly always distance or blur rather than a bad
   code. A **screenshot of the terminal pasted into the code box** goes through the
   same decoder, which is the easier door when the phone cannot focus on a monitor.
 - **The form remembers the last scan.** Under the code box you'll see e.g. `last
-  scan: image/jpeg 2051 KB → 3024x4032 → no QR code found (3 passes, 410 ms)`. If a
+scan: image/jpeg 2051 KB → 3024x4032 → no QR code found (3 passes, 410 ms)`. If a
   scan does nothing, that line is the diagnosis — it says what the camera actually
   handed over and whether the decoder ran. `… — the photo never came back to the
-  page` means the browser unloaded the page while the camera was open (iOS does
+page` means the browser unloaded the page while the camera was open (iOS does
   this); `image/heic` means the browser was handed a format it cannot decode
   (`Settings → Camera → Formats → Most Compatible` fixes it).
+- **https is one command, on a tailnet box.** `scripts/https.sh on` puts
+  `tailscale serve` in front of both ends: the client at
+  `https://<node>.<tailnet>.ts.net` and the relay at `wss://…:3443`. The
+  certificate is Tailscale's own, so no device shows a warning and there is no CA
+  to install on the phone. The client notices: an `https` page defaults the relay
+  box to `:3443` instead of `:3000`, because an `https` page cannot open a plain
+  `ws://` socket at all. `scripts/https.sh status` prints both URLs; `off` removes
+  them. `scripts/https.sh mkcert` is the fallback when you are off the tailnet —
+  it works, but every other device has to be made to trust the CA, which on iOS
+  means a profile install plus the Certificate Trust Settings toggle.
 - **A device that is already paired stays paired.** The machine re-ACKs an owner it
   already trusts without spending a token (`relay_lifecycle.ts:1052`), so the verdict
   says _already paired … re-confirmed_ and no new card appears. That is a success, not

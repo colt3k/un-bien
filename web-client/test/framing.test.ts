@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   RELAY_PORT,
+  RELAY_TLS_PORT,
   correlationId,
   decodeInbound,
   encodeOuter,
@@ -205,8 +206,23 @@ describe("default relay URL, from the page the client was opened on", () => {
 
   it("keeps the scheme — an https page cannot open an insecure ws:// socket", () => {
     const https = relayUrlForPage("https://host.example:8443/p?q=1#h")
-    expect(https).toBe("https://host.example:3000")
-    expect(toWsUrl(https)).toBe("wss://host.example:3000")
+    expect(https).toBe("https://host.example:3443")
+    expect(toWsUrl(https)).toBe("wss://host.example:3443")
+  })
+
+  it("defaults an https page to the relay's TLS front, not the plain port", () => {
+    // The tailscale-serve deployment: page on 443, relay front on 3443. The
+    // plain :3000 is not merely unfashionable from an https page, it is
+    // unreachable — the browser refuses the ws:// socket before any of our code
+    // runs, so defaulting to it would only produce a confusing failure.
+    expect(relayUrlForPage("https://m5max.tail5f1ece.ts.net/")).toBe(
+      "https://m5max.tail5f1ece.ts.net:3443",
+    )
+    expect(RELAY_TLS_PORT).toBe(3443)
+    // An explicit port still wins.
+    expect(relayUrlForPage("https://host.example/", 3000)).toBe(
+      "https://host.example:3000",
+    )
   })
 
   it("keeps an IPv6 literal bracketed", () => {

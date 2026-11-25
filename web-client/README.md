@@ -44,7 +44,8 @@ The drawer's relay box is already filled in with that same host on the relay's
 port (`http://<tailnet-host>:3000`) — `start.sh` runs both on one box, so that is
 the right URL unless you split them. Dev-server-only exposure; a real deployment
 wants TLS (`https://` page and a `wss://` relay — an `https` page cannot open an
-insecure `ws://` socket) and a static host.
+insecure `ws://` socket) and a static host. On a tailnet box that is one command:
+`scripts/https.sh on` (see **Serving over https**).
 
 Pairing crypto is **not** the reason for that: Ed25519 comes from `@noble`, which
 uses `crypto.subtle` for SHA-512 when it is there and a pure-JS implementation
@@ -88,6 +89,60 @@ fresh code — the machine's code is single-use), lists rooms, walks `get_entrie
 to its leaf, and writes the entries verbatim. The output file IS your session —
 prompts, tool output, paths — so it goes in `/tmp`, never in the repo.
 
+## Serving over https
+
+**Why anyone would.** A browser exposes the camera (`getUserMedia`) only to a
+secure context. On plain `http` the API is not denied, it is _absent_ — which is
+the entire reason pairing-by-QR is a photo upload rather than a viewfinder
+(**Pairing by QR scan**). An `https` page is a secure context, so the live
+viewfinder needs this before it needs any client code.
+
+**It comes as a pair.** An `https` page also cannot open a plain `ws://` socket
+(mixed content, blocked before any of our code runs), so the relay has to be
+reachable over `wss` too. The relay itself never speaks TLS —
+`relay/src/peering.rs:74` says termination is the public edge's job — so both
+fronts are set up together, by one script:
+
+```sh
+scripts/https.sh on        # tailscale serve: 443 -> 4173 (preview), 3443 -> 3000 (relay)
+scripts/https.sh status    # what is served, and the two URLs to open
+scripts/https.sh off       # remove exactly what `on` added (never `serve reset`)
+scripts/https.sh mkcert    # fallback off the tailnet: local CA cert + socat relay front
+```
+
+**Why `tailscale serve` and not a self-signed cert.** serve terminates TLS with
+the node's own `.ts.net` certificate, which every device already on the tailnet
+trusts: no warning page, no CA to install and then _fully trust_ on each phone.
+The `mkcert` mode exists for the case where serve is not available, and it says
+out loud what that costs (iOS: profile install **plus** Settings → General →
+About → Certificate Trust Settings; Android: install a CA certificate, and get a
+permanent "network may be monitored" notice).
+
+**The port is a contract.** `RELAY_TLS_PORT` in `src/framing.ts` (3443) is what
+an `https` page defaults the relay box to, and it must match what
+`scripts/https.sh` fronts. `scripts/https.test.sh` asserts the two numbers agree,
+because a mismatch is a phone reporting "connection failed" with nothing in the
+message that says why. An `http` page still defaults to `:3000`.
+
+**Measured on this box** (`m5max.tail5f1ece.ts.net`, tailscale 1.104.7):
+
+```
+curl https://m5max.tail5f1ece.ts.net/          -> HTTP 200, ssl_verify_result 0 (no -k)
+curl https://m5max.tail5f1ece.ts.net:3443/     -> HTTP 400 (the relay wants an upgrade)
+client on the https page                       -> isSecureContext true,
+                                                  getUserMedia present,
+                                                  BarcodeDetector present (Chrome 158)
+websocket                                      -> GET 101, then hello -> challenge
+                                                  -> auth -> pairing_set, over wss
+```
+
+So serve does proxy WebSocket upgrades, which was the thing most likely to make
+this approach useless. One wrinkle left: the relay's `hello_ok` advertises
+`endpoints: ["http://127.0.0.1:3000", "http://localhost:3000"]` — loopback URLs
+that mean nothing to a phone. Harmless today (the client stays on the socket it
+has), but the advertised endpoints should learn the public front before anything
+tries to fail over using them.
+
 ## Pairing by QR scan
 
 The drawer's pairing form has two doors into the same code: **scan QR**, or
@@ -109,15 +164,15 @@ TLS to set up first.
 The pieces:
 
 - `src/qr-scan.ts` — the decisions, with no DOM: did anything decode, is what
-decoded a pairing code (parse it, don't prefix-match it), what does each
-failure mean in a sentence. `test/qr-scan.test.ts`.
+  decoded a pairing code (parse it, don't prefix-match it), what does each
+  failure mean in a sentence. `test/qr-scan.test.ts`.
 - `src/qr-decode.ts` — pixels in, strings out. Runs under vitest with no camera
-and no canvas; `test/qr-decode.test.ts` draws the QR from `qrcode`'s module
-matrix rather than committing a PNG, so the fixture proves the contract rather
-than that one file once decoded. It includes the **light-on-dark** case: the
-code being scanned is drawn by `qrcode-terminal` in a terminal, which to a
-camera is an INVERTED QR, and a decoder pinned to dark-on-light returns null on
-precisely the screen the user is standing in front of.
+  and no canvas; `test/qr-decode.test.ts` draws the QR from `qrcode`'s module
+  matrix rather than committing a PNG, so the fixture proves the contract rather
+  than that one file once decoded. It includes the **light-on-dark** case: the
+  code being scanned is drawn by `qrcode-terminal` in a terminal, which to a
+  camera is an INVERTED QR, and a decoder pinned to dark-on-light returns null on
+  precisely the screen the user is standing in front of.
 - `src/qr-image.ts` — the only module that touches a canvas. `File` → pixels.
 
 **A photo is decoded at several scales, cheapest first**

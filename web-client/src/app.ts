@@ -74,7 +74,7 @@ import {
   liftForPokePx,
   type VirtualKeyboardLike,
 } from "./keyboard-inset.js"
-import { RELAY_PORT, relayUrlForPage } from "./framing.js"
+import { relayUrlForPage } from "./framing.js"
 import { tokenize } from "./highlight.js"
 import {
   dirChoices,
@@ -677,7 +677,10 @@ export class App {
     // brings up both, and a phone reaches them through the same tailnet host.
     // So the URL you connected to, with the relay's port, is the honest
     // default: shown in the box before you type, and used if you don't.
-    const guess = relayUrlForPage(location.href, RELAY_PORT)
+    // No port is passed: which port is right depends on the page's scheme, and
+    // `relayUrlForPage` is the one place that knows (plain :3000 for an http
+    // page, the TLS front :3443 for an https one, which cannot open ws://).
+    const guess = relayUrlForPage(location.href)
     if (guess) relayInput.placeholder = guess
     if (remembered) {
       relayInput.value = remembered.url
