@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   ANDROID_KEYBOARD_SLACK_PX,
+  ANDROID_RECT_SLACK_PX,
   bottomGapPx,
   bottomLimitPx,
   browserLabel,
@@ -177,6 +178,7 @@ describe("bottomLimitPx", () => {
         visualHeight: 891,
         visualOffsetTop: 0,
         slack: 0,
+        rectSlack: 0,
       }),
     ).toBe(510)
     expect(
@@ -187,6 +189,7 @@ describe("bottomLimitPx", () => {
           visualHeight: 891,
           visualOffsetTop: 0,
           slack: 0,
+          rectSlack: 0,
         }),
       }),
     ).toBe(381)
@@ -201,6 +204,7 @@ describe("bottomLimitPx", () => {
         visualHeight: 509,
         visualOffsetTop: 0,
         slack: ANDROID_KEYBOARD_SLACK_PX,
+        rectSlack: 0,
       }),
     ).toBe(509 - ANDROID_KEYBOARD_SLACK_PX)
   })
@@ -212,6 +216,7 @@ describe("bottomLimitPx", () => {
         visualHeight: 509,
         visualOffsetTop: 0,
         slack: 0,
+        rectSlack: 0,
       }),
     ).toBe(509)
     expect(
@@ -220,6 +225,7 @@ describe("bottomLimitPx", () => {
         visualHeight: 509,
         visualOffsetTop: 0,
         slack: 0,
+        rectSlack: 0,
       }),
     ).toBe(400)
   })
@@ -231,8 +237,28 @@ describe("bottomLimitPx", () => {
         visualHeight: Number.NaN,
         visualOffsetTop: 0,
         slack: 0,
+        rectSlack: 0,
       }),
     ).toBe(Number.POSITIVE_INFINITY)
+  })
+})
+
+describe("ANDROID_RECT_SLACK_PX", () => {
+  it("clears the measured understatement of the keyboard rectangle", () => {
+    // The ladder on a real phone: the rung at -48px is visible, the one at -24px
+    // is covered, and the keyboard's own top edge — a full-width colour change,
+    // present even in the left margin where the page draws nothing — sits 25.5
+    // CSS px above `boundingRect.top`. The floor has to clear that.
+    expect(ANDROID_RECT_SLACK_PX).toBeGreaterThan(26)
+    expect(
+      bottomLimitPx({
+        keyboardTop: 510,
+        visualHeight: 891,
+        visualOffsetTop: 0,
+        slack: 0,
+        rectSlack: ANDROID_RECT_SLACK_PX,
+      }),
+    ).toBe(510 - ANDROID_RECT_SLACK_PX)
   })
 })
 
@@ -359,6 +385,7 @@ describe("keyboardProbeLines", () => {
         "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
       ),
       slack: ANDROID_KEYBOARD_SLACK_PX,
+      rectSlack: 0,
       bottomLimit: 489,
       inset: 402,
       composerBottom: 489,
@@ -397,6 +424,7 @@ describe("keyboardProbeLines", () => {
         "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/158.0.0.0 Mobile Safari/537.36",
       ),
       slack: 0,
+      rectSlack: ANDROID_RECT_SLACK_PX,
       bottomLimit: 510,
       inset: 381,
       composerBottom: 509,

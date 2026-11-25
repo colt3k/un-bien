@@ -76,6 +76,7 @@ import {
   keyboardSlackPx,
   keyboardTopFromRectPx,
   liftForPokePx,
+  ANDROID_RECT_SLACK_PX,
   type VirtualKeyboardLike,
 } from "./keyboard-inset.js"
 import { relayUrlForPage } from "./framing.js"
@@ -791,6 +792,7 @@ export class App {
     inset: number
     bottomLimit: number
     slack: number
+    rectSlack: number
     keyboardTop: number | null
     vk: VirtualKeyboardLike | null
   }): void {
@@ -817,6 +819,7 @@ export class App {
       secureContext: window.isSecureContext,
       browser: browserLabel(navigator.userAgent),
       slack: facts.slack,
+      rectSlack: facts.rectSlack,
       bottomLimit: facts.bottomLimit,
       inset: facts.inset,
       composerBottom: box.bottom,
@@ -862,11 +865,15 @@ export class App {
       // off on exactly the path that most needs to know a keyboard exists.
       keyboardReported: keyboardTop !== null || claim > 0,
     })
+    const rectSlack = isAndroidUserAgent(navigator.userAgent)
+      ? ANDROID_RECT_SLACK_PX
+      : 0
     const bottomLimit = bottomLimitPx({
       keyboardTop,
       visualHeight: vv.height,
       visualOffsetTop: vv.offsetTop,
       slack,
+      rectSlack,
     })
     let inset = Math.max(
       claim,
@@ -897,6 +904,7 @@ export class App {
         inset,
         bottomLimit,
         slack,
+        rectSlack,
         keyboardTop,
         vk,
       })

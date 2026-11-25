@@ -170,6 +170,27 @@ export function liftForPokePx(input: {
 export const ANDROID_KEYBOARD_SLACK_PX = 20
 
 /**
+ * The same correction on the other source — and it is larger, which is the
+ * finding worth keeping.
+ *
+ * Measured with the probe's ladder on the https origin (Chrome/158, Android,
+ * Gboard): the rungs at -48px and -72px are visible, the one at -24px is
+ * covered, and the keyboard's own top edge — a colour change that runs the full
+ * width of the screen, including the left margin where the page draws nothing —
+ * sits 25.5 CSS px above where `boundingRect.top` put it. The ladder bounds the
+ * error to between 24 and 48px; the pixel measurement puts it at ~26.
+ *
+ * So the rectangle is not the trustworthy line either. It reports the keyboard's
+ * key area and leaves out the strip of toolbar Gboard paints above it. The
+ * rectangle path needs its own floor, and 32px is the measured 26 with room for
+ * the measurement's own error and for a taller toolbar.
+ *
+ * Android only, for the same reason as the viewport slack: there is no capability
+ * signal for "this keyboard hides its own toolbar".
+ */
+export const ANDROID_RECT_SLACK_PX = 32
+
+/**
  * How the keyboard probe draws its ladder: `KEYBOARD_PROBE_RUNGS` lines, the
  * solid red one at the limit the code computed and dashed amber ones above it,
  * each `KEYBOARD_PROBE_RUNG_PX` apart and labelled with its offset.
@@ -205,7 +226,8 @@ export function bottomGapPx(declared: string | null | undefined): number {
  *
  *   - the viewport's bottom, minus `ANDROID_KEYBOARD_SLACK_PX` when Android's
  *     arithmetic is the only thing we have;
- *   - the keyboard's own top, exactly, when the browser admitted where it is.
+ *   - the keyboard's own top, minus `ANDROID_RECT_SLACK_PX` on Android, where
+ *     the rectangle reports the keys and not the toolbar above them.
  *
  * With `overlaysContent` on, the first candidate is the whole viewport — the
  * browser was told not to resize it — so the rectangle is the only thing that
@@ -213,29 +235,29 @@ export function bottomGapPx(declared: string | null | undefined): number {
  * viewport carries the whole answer. `Infinity` when neither is known, which
  * means "do not move the bottom of the app".
  *
- * **No margin is added to the rectangle, deliberately.** The rectangle is
- * accurate — measured on the https origin (Chrome/158, Android, `innerHeight
- * 891`): it reported the keyboard at `y 510 height 381`, and Gboard's toolbar
- * strip lands on the pixel that arithmetic predicts. What looked wrong was not
- * the measurement but the layout: the app's bottom edge parked one pixel above
- * the keys, and a text field flush against any edge reads as a covered one.
+ * **The rectangle is not trusted on Android, and the claim that it was accurate
+ * is retracted.** An earlier version of this file said the rectangle was
+ * accurate to the pixel and that the field only looked covered because it was
+ * flush. That was wrong, and the probe's ladder proved it: the keyboard's real
+ * top edge is ~26px above `boundingRect.top`. The field was genuinely covered.
  *
- * Breathing room is a property of the layout, not of the keyboard, so it lives
- * in the stylesheet as `--bottom-gap` — the same padding that lifts the composer
- * off the bottom of the screen when no keyboard is up. One number, visible on a
- * desktop with no phone in sight. A constant here could only be tuned by loading
- * the page on a device, which is how it became a number we kept adjusting;
- * `?kbdebug` prints the resulting `gap to keyboard` so the next adjustment
- * starts from a measurement rather than a screenshot.
+ * Breathing room is still a property of the layout, not of the keyboard, and
+ * still lives in the stylesheet as `--bottom-gap`. That padding moves the field
+ * inside the composer; it cannot fix a bottom edge sitting on a line the browser
+ * drew in the wrong place. Two different jobs, two different places.
  */
 export function bottomLimitPx(f: {
   keyboardTop: number | null
   visualHeight: number
   visualOffsetTop: number
   slack: number
+  rectSlack: number
 }): number {
   const fromViewport = f.visualHeight + f.visualOffsetTop - f.slack
-  const fromRect = f.keyboardTop ?? Number.POSITIVE_INFINITY
+  const fromRect =
+    f.keyboardTop === null
+      ? Number.POSITIVE_INFINITY
+      : f.keyboardTop - f.rectSlack
   const limit = Math.min(fromViewport, fromRect)
   return Number.isFinite(limit) ? limit : Number.POSITIVE_INFINITY
 }
@@ -311,6 +333,7 @@ export function keyboardProbeLines(facts: {
   secureContext: boolean
   browser: string
   slack: number
+  rectSlack: number
   bottomLimit: number
   inset: number
   composerBottom: number
@@ -346,7 +369,7 @@ export function keyboardProbeLines(facts: {
     // width and the value being read (`clearance 20px`) fell off the edge — the
     // one number the screenshot was taken to show. Each line here has to survive
     // a 360px-wide screen.
-    `android slack ${px(facts.slack)}`,
+    `android slack ${px(facts.slack)}  rect slack ${px(facts.rectSlack)}`,
     `bottom limit ${px(facts.bottomLimit)}   viewport claim ${px(claimed)}   painted ${px(facts.inset)}`,
     // The number that answers "is it too tight?" without a phone in the room.
     `gap to keyboard ${
