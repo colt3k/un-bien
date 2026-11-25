@@ -119,8 +119,11 @@ Open the drawer with **☰** (top left). Everything happens there.
    ```
    /unbien pair
    ```
-   Copy the pairing **code** it prints (`unbien://pair?t=…&epk=…&n=…&rm=…`), give the
-   device a name (e.g. `pixel-8-pro`), paste the code, press **pair**.
+   Then either press **scan QR** and point the phone at the terminal, or copy the
+   pairing **code** it prints (`unbien://pair?t=…&epk=…&n=…&rm=…`) and paste it.
+   Give the device a name (e.g. `pixel-8-pro`) first if you want one. **pair** is
+   only needed for the paste: a scan that finds a pairing code pairs straight
+   away, because that code expires 60 seconds after it was printed.
    The line under the code box is the verdict: _pairing…_ → green (paired, or
    already paired) or red (refused, with the machine's reason). It is in the sheet
    on purpose — while the sheet is open nothing outside it can be painted above
@@ -141,6 +144,21 @@ Things worth knowing, because they explain the failures you'll otherwise chase:
 - **Codes are single-use** and **expire 60 seconds** after `/unbien pair` prints
   them (`TOKEN_TTL_MS` in `extension/src/pairing/qr.ts`). A code pasted from a
   terminal five minutes later is dead. This is the usual cause of a red verdict.
+- **Scanning takes a photo; it is not a live viewfinder.** **scan QR** opens the
+  phone's camera through a file input, takes one shot, decodes it, and pairs. That
+  is deliberate: the camera API (`getUserMedia`) is blocked on a non-`https`
+  origin, and this client runs on `http://<host>:5173` — see _Pairing by QR scan_
+  in `README.md`. Get the whole code in frame: the terminal's QR is small, and
+  _no QR code recognised_ is nearly always distance or blur rather than a bad
+  code. A **screenshot of the terminal pasted into the code box** goes through the
+  same decoder, which is the easier door when the phone cannot focus on a monitor.
+- **The form remembers the last scan.** Under the code box you'll see e.g. `last
+  scan: image/jpeg 2051 KB → 3024x4032 → no QR code found (3 passes, 410 ms)`. If a
+  scan does nothing, that line is the diagnosis — it says what the camera actually
+  handed over and whether the decoder ran. `… — the photo never came back to the
+  page` means the browser unloaded the page while the camera was open (iOS does
+  this); `image/heic` means the browser was handed a format it cannot decode
+  (`Settings → Camera → Formats → Most Compatible` fixes it).
 - **A device that is already paired stays paired.** The machine re-ACKs an owner it
   already trusts without spending a token (`relay_lifecycle.ts:1052`), so the verdict
   says _already paired … re-confirmed_ and no new card appears. That is a success, not

@@ -99,6 +99,15 @@ import {
   pairSectionBadge,
   pairSectionOpens,
 } from "./pair-status.js"
+import { decoderLoaded, warmDecoder } from "./qr-decode.js"
+import { readBarcodesFromFile } from "./qr-image.js"
+import {
+  classifyScan,
+  isImageLike,
+  scanAttemptLine,
+  scanFailureMessage,
+  scanProbeLines,
+} from "./qr-scan.js"
 import {
   forgetPeer,
   forgetLastRoom,
@@ -107,6 +116,7 @@ import {
   forgetPendingLaunch,
   forgetRelay,
   hideReasoning,
+  lastScanAttempt,
   launchDraft,
   lastRoom,
   lastView,
@@ -122,10 +132,12 @@ import {
   rememberLaunchDraft,
   rememberPendingLaunch,
   rememberRelay,
+  rememberScanAttempt,
   relayPinFor,
   setHideReasoning,
   setMonoProse,
   type PairedPeer,
+  type ScanAttempt,
 } from "./store.js"
 import { restoredWindow, type SavedView } from "./view-state.js"
 
@@ -202,6 +214,11 @@ interface ActiveSession {
 }
 
 let toastTimer: ReturnType<typeof setTimeout> | undefined
+
+/** How long the "last scan" line stays on the pairing form. Long enough that the
+ *  next attempt starts with the previous one still visible; short enough that a
+ *  week-old failure cannot haunt the sheet. */
+const SCAN_NOTE_TTL_MS = 15 * 60_000
 
 const $ = <T extends HTMLElement>(id: string): T => {
   const node = document.getElementById(id)
@@ -481,6 +498,18 @@ export class App {
   private readonly pairForm = $<HTMLElement>("pairForm")
   private readonly pairState = $<HTMLElement>("pairState")
   private pairFormOpen = true
+  private readonly pairCodeEl = $<HTMLTextAreaElement>("pairCode")
+  /**
+   * The pairing QR scanner: a file input with `capture`, opened through a
+   * label. Not `getUserMedia` — that is gated behind a secure context, which
+   * the plain-http tailnet deployment is not. See `qr-scan.ts`.
+   */
+  private readonly scanBtn = $<HTMLElement>("scanBtn")
+  private readonly scanFile = $<HTMLInputElement>("scanFile")
+  private readonly scanNoteEl = $<HTMLElement>("scanNote")
+  /** One photo at a time; a second tap while decoding queues nothing and only
+   *  makes the sheet look stuck. */
+  private scanBusy = false
   /** The notice stack while the sheet is open. See `renderNotices`. */
   private readonly noticeEl = $<HTMLElement>("noticeBar")
   private readonly input = $<HTMLTextAreaElement>("input")
@@ -910,6 +939,26 @@ export class App {
       if (url) void this.connect(url)
     })
     $("pairBtn").addEventListener("click", () => void this.pair())
+    this.scanFile.addEventListener("change", () => void this.onScanFile())
+    // The label is the visible control and the input is `hidden`, so the input
+    // is out of the tab order and `role="button"` has to be honoured by hand.
+    // A keydown is a real user activation, so `.click()` opens the picker here
+    // too — it is only the pointer path that needs the label itself.
+    this.scanBtn.addEventListener("keydown", (event: KeyboardEvent) => {
+      if (event.key !== "Enter" && event.key !== " ") return
+      event.preventDefault()
+      this.scanFile.click()
+    })
+    // A screenshot of the terminal pasted into the code field is the same photo
+    // through a different door, and on a desktop (or when the phone cannot focus
+    // on a monitor) it is the easier one. Text pastes must keep working, so the
+    // event is only taken when an image is actually in it.
+    this.pairCodeEl.addEventListener("paste", (event: ClipboardEvent) => {
+      const file = event.clipboardData?.files[0]
+      if (!file || !isImageLike({ type: file.type, name: file.name })) return
+      event.preventDefault()
+      void this.scanAndPair(file, "paste")
+    })
     this.closeEndedBtn.addEventListener("click", () => this.closeEnded())
     $("showControlRooms").addEventListener("change", () =>
       this.renderPeerList(),
@@ -1159,11 +1208,227 @@ export class App {
     }
   }
 
+  /**
+   * The file input fired. A cancelled picker fires `change` with nothing in it
+   * on some browsers, which must not overwrite the verdict already on screen.
+   */
+  private async onScanFile(): Promise<void> {
+    const file = this.scanFile.files?.[0]
+    if (!file) {
+      // The picker closed without handing a file over. This used to be silent,
+      // which is exactly how "I took the photo and nothing happened" ends up
+      // with no evidence anywhere: on Android, BACK from the camera's review
+      // screen DISCARDS the shot, and the page cannot tell that from a scan
+      // that never started. Now it can, and says so.
+      rememberScanAttempt({
+        at: Date.now(),
+        stage: "done",
+        fileType: "",
+        fileSize: 0,
+        ms: 0,
+        outcome: "cancelled",
+      })
+      this.paintScanNote()
+      this.setPairStatus(
+        "no photo was attached — after the shot, press the button that USES it (✓ / Use photo); back discards it",
+        "error",
+      )
+      return
+    }
+    if (!isImageLike({ type: file.type, name: file.name })) {
+      rememberScanAttempt({
+        at: Date.now(),
+        stage: "done",
+        fileType: file.type,
+        fileSize: file.size,
+        fileName: file.name,
+        ms: 0,
+        outcome: "not-an-image",
+      })
+      this.paintScanNote()
+      this.setPairStatus(
+        `the picker handed over ${file.name || "a file"}, which is not an image`,
+        "error",
+      )
+      this.scanFile.value = ""
+      return
+    }
+    await this.scanAndPair(file, "camera")
+    // Reset AFTER the decode, not before. It must be cleared so picking the SAME
+    // photo twice fires `change` again, but clearing it first hands the photo
+    // back to the platform while it is still being read — which is exactly the
+    // kind of thing a mobile browser is entitled to make unreadable.
+    this.scanFile.value = ""
+  }
+
+  /**
+   * Decode a photo of the terminal's QR, then pair with what it says.
+   *
+   * The scan does not introduce a second pairing path: the decoded string goes
+   * into the same textarea a paste would have filled, and `pair()` parses it
+   * through the same `parseInvite` (which canonicalises the base64url `epk`) and
+   * the same single-use-token round trip. A mis-scan therefore fails exactly the
+   * way a half-copied paste does, in one place.
+   */
+  private async scanAndPair(
+    file: File,
+    from: "camera" | "paste",
+  ): Promise<void> {
+    if (this.scanBusy) return
+    if (this.pairBusy) {
+      // Say it rather than dropping the photo: the scan button is not the pair
+      // button, so nothing on screen tells you a pairing is already in flight.
+      this.setPairStatus(
+        "a pairing is already in flight — wait for its verdict",
+        "pending",
+      )
+      return
+    }
+    this.scanBusy = true
+    this.scanBtn.classList.add("busy")
+    this.setPairStatus(
+      from === "camera" ? "reading the photo…" : "reading the pasted image…",
+      "pending",
+    )
+    // Written BEFORE the decode. If the page does not come back — iOS Safari is
+    // free to unload it while the camera UI owns the screen — this is the only
+    // evidence that a photo was ever handed over at all.
+    const startedAt = Date.now()
+    const record = (
+      stage: "started" | "done",
+      outcome: ScanAttempt["outcome"],
+      extra: Partial<ScanAttempt> = {},
+    ): void =>
+      rememberScanAttempt({
+        at: startedAt,
+        stage,
+        fileType: file.type,
+        fileSize: file.size,
+        outcome,
+        ...extra,
+      })
+    record("started", "in-flight")
+    let outcome: Awaited<ReturnType<typeof readBarcodesFromFile>>
+    try {
+      outcome = await readBarcodesFromFile(file)
+    } catch (err) {
+      const message = scanFailureMessage(err, file.type)
+      this.setPairStatus(message, "error")
+      this.toast(message)
+      this.paintQrProbe(file, null, message)
+      record("done", "error", { error: message })
+      this.paintScanNote()
+      return
+    } finally {
+      this.scanBusy = false
+      this.scanBtn.classList.remove("busy")
+    }
+    const shape = {
+      width: outcome.width,
+      height: outcome.height,
+      passes: outcome.passes,
+      ms: outcome.ms,
+      decoded: outcome.values.length,
+    }
+    const verdict = classifyScan(outcome.values)
+    if (verdict.kind === "empty") {
+      // The photo is usually the problem, not the code: a terminal QR is small,
+      // and a phone held at arm's length puts it under 200px in a 4000px frame.
+      const message =
+        "no QR code recognised — get the whole code in frame, close enough to read the blocks"
+      this.setPairStatus(message, "error")
+      this.toast(message)
+      this.paintQrProbe(file, outcome, message)
+      record("done", "no-code", shape)
+      this.paintScanNote()
+      return
+    }
+    if (verdict.kind === "other") {
+      const message = `that is not a pairing code — it decodes to “${verdict.sample}”`
+      this.setPairStatus(message, "error")
+      // Toasted as well as painted in the sheet: on a phone the small line under
+      // the box is easy to miss, and a scan that silently does nothing reads as
+      // a broken button.
+      this.toast(message)
+      this.paintQrProbe(file, outcome, message)
+      record("done", "foreign-code", shape)
+      this.paintScanNote()
+      return
+    }
+    this.paintQrProbe(
+      file,
+      outcome,
+      `pairing code, ${verdict.uri.length} chars`,
+    )
+    record("done", "pairing-code", shape)
+    this.paintScanNote()
+    this.pairCodeEl.value = verdict.uri
+    // Straight into `pair()`: the token lives 60 seconds and a successful scan
+    // means the user is standing at the terminal with a phone in their hand.
+    // A second tap to spend it is a second chance to miss the window.
+    await this.pair()
+  }
+
+  /**
+   * The "last scan" line, from storage rather than from memory.
+   *
+   * Kept for a quarter of an hour: long enough that the next attempt starts
+   * with the previous one still on screen, short enough that it cannot haunt
+   * the form the next day. The pairing URI is never part of it.
+   */
+  private paintScanNote(): void {
+    const attempt = lastScanAttempt()
+    if (!attempt || Date.now() - attempt.at > SCAN_NOTE_TTL_MS) {
+      this.scanNoteEl.hidden = true
+      this.scanNoteEl.textContent = ""
+      return
+    }
+    this.scanNoteEl.textContent = scanAttemptLine(attempt)
+    this.scanNoteEl.hidden = false
+  }
+
+  /**
+   * The `?qrdebug` readout, painted after every scan attempt.
+   *
+   * Same reason as `?kbdebug`: the facts that explain a scan live on the phone,
+   * and one screenshot of them beats a round of guessing here. It shows the file
+   * the picker actually handed over (an iOS camera set to High Efficiency hands
+   * over HEIC, which not every browser can open), the size it decoded at, which
+   * passes ran, and whether the decoder chunk ever arrived at all.
+   */
+  private paintQrProbe(
+    file: File,
+    outcome: Awaited<ReturnType<typeof readBarcodesFromFile>> | null,
+    verdict: string,
+  ): void {
+    if (!location.search.toLowerCase().includes("qrdebug")) return
+    let panel = document.getElementById("qrProbe")
+    if (!panel) {
+      panel = document.createElement("div")
+      panel.id = "qrProbe"
+      panel.className = "kb-debug"
+      document.body.append(panel)
+    }
+    panel.textContent = scanProbeLines({
+      fileType: file.type,
+      fileSize: file.size,
+      width: outcome?.width ?? 0,
+      height: outcome?.height ?? 0,
+      passes: outcome?.passes ?? [],
+      decoded: outcome?.values.length ?? 0,
+      ms: outcome?.ms ?? 0,
+      verdict,
+      secureContext: window.isSecureContext,
+      decoderLoaded: decoderLoaded(),
+      userAgent: navigator.userAgent,
+    }).join("\n")
+  }
+
   async pair(): Promise<void> {
     // One attempt at a time: the button stays pressed for up to 15s, and a
     // second click only re-sends the same request and starts a second listener.
     if (this.pairBusy) return
-    const code = $<HTMLTextAreaElement>("pairCode").value.trim()
+    const code = this.pairCodeEl.value.trim()
     const deviceName =
       $<HTMLInputElement>("deviceName").value.trim() || "unbien-web"
     // Every outcome says so in the sheet. Before, the only trace of a refused
@@ -1235,7 +1500,7 @@ export class App {
     if (verdict.relayPubkey) recordRelayPin(this.relayUrl, verdict.relayPubkey)
     // Spent. A single-use token left in the box comes back as `token_expired`
     // on the next click, which reads as a broken button rather than an old code.
-    $<HTMLTextAreaElement>("pairCode").value = ""
+    this.pairCodeEl.value = ""
     this.client.subscribeRooms([...this.peers.keys()])
     await this.refreshRooms()
     this.renderPeerList()
@@ -1255,8 +1520,17 @@ export class App {
   private setPairFormOpen(open: boolean): void {
     this.pairFormOpen = open
     this.pairToggle.setAttribute("aria-expanded", String(open))
-    if (open) this.pairForm.removeAttribute("hidden")
-    else this.pairForm.setAttribute("hidden", "until-found")
+    if (open) {
+      this.pairForm.removeAttribute("hidden")
+      this.paintScanNote()
+      // The decoder is a separate ~47 KB gzipped chunk. Fetching it when the
+      // form opens hides the download behind reading the hint and running
+      // `/unbien pair`, which is minutes of human time. A failed prefetch is not
+      // a failure — the decode path imports again.
+      void warmDecoder().catch(() => {})
+    } else {
+      this.pairForm.setAttribute("hidden", "until-found")
+    }
   }
 
   /**

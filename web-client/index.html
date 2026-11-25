@@ -127,10 +127,44 @@
           </h2>
           <div id="pairForm">
             <p class="hint">
-              Run <code>/unbien pair</code> in a Pi session, then paste the
-              <em>pairing code</em> it prints. A code is single-use and expires
-              60 seconds after it is printed — run the command again for a fresh
-              one.
+              Run <code>/unbien pair</code> in a Pi session, then scan the QR it
+              prints or paste the <em>pairing code</em> under it. A code is
+              single-use and expires 60 seconds after it is printed — run the
+              command again for a fresh one.
+            </p>
+            <!-- A file input with `capture`, not a camera stream. `getUserMedia`
+                 is restricted to secure contexts and this client runs on plain
+                 `http://<host>:5173` over a LAN or tailnet, where
+                 `navigator.mediaDevices` does not exist. The OS camera UI is not
+                 gated, so scanning works on the deployment as it stands; on a
+                 desktop the same control picks an image file. The label is the
+                 control (not a button calling `input.click()`) because a label's
+                 activation is a real user gesture, which is what iOS Safari
+                 insists on for a file picker. -->
+            <div class="row">
+              <label
+                id="scanBtn"
+                class="file-btn"
+                for="scanFile"
+                role="button"
+                tabindex="0"
+              >
+                scan QR
+              </label>
+              <input
+                id="scanFile"
+                type="file"
+                accept="image/*"
+                capture="environment"
+                hidden
+              />
+            </div>
+            <!-- The camera's review screen is where this flow is lost: on
+                 Android BACK from it DISCARDS the shot, and the page gets an
+                 empty result it cannot tell from a scan that never started. -->
+            <p class="hint">
+              After the shot, press the button that <em>uses</em> the photo (✓ /
+              Use photo). Back throws it away.
             </p>
             <div class="row">
               <input
@@ -145,6 +179,12 @@
               rows="3"
               placeholder="unbien://pair?t=…&epk=…&n=…&rm=…"
             ></textarea>
+            <!-- What the LAST scan actually did, kept in localStorage so it
+                 survives the reload that is one of the things being diagnosed.
+                 "The camera opened and nothing happened" has several causes and
+                 they are indistinguishable from the UI; this line is the one
+                 place the difference is visible without opening a debug URL. -->
+            <p id="scanNote" class="hint" hidden></p>
             <!-- The verdict goes HERE, not only in the header and the toast: a
                  modal <dialog> and its ::backdrop live in the top layer, so a
                  toast centred on the page behind the sheet is reliably invisible

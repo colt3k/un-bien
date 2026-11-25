@@ -88,6 +88,113 @@ fresh code — the machine's code is single-use), lists rooms, walks `get_entrie
 to its leaf, and writes the entries verbatim. The output file IS your session —
 prompts, tool output, paths — so it goes in `/tmp`, never in the repo.
 
+## Pairing by QR scan
+
+The drawer's pairing form has two doors into the same code: **scan QR**, or
+paste. Both end with a string in `#pairCode` and the same `parseInvite` →
+`pairAwaited` round trip, so a mis-scan fails exactly where a half-copied paste
+fails — in one place, with the same message.
+
+**It is a file input with `capture="environment"`, not a camera stream, and
+that is the load-bearing decision.** `getUserMedia` is restricted to secure
+contexts, and this client is routinely served over plain `http` on a LAN or
+tailnet host (`http://box.my-tailnet.ts.net:5173`), where
+`navigator.mediaDevices` is simply absent. Same wall this client has already hit
+twice — `crypto.randomUUID` (why `src/framing.ts` exists as it does) and
+`navigator.virtualKeyboard` (see the keyboard notes below). A file input is NOT
+gated: the OS camera UI opens on a phone, and on a desktop the same control
+picks an image file. So scanning works on the deployment as it stands, with no
+TLS to set up first.
+
+The pieces:
+
+- `src/qr-scan.ts` — the decisions, with no DOM: did anything decode, is what
+decoded a pairing code (parse it, don't prefix-match it), what does each
+failure mean in a sentence. `test/qr-scan.test.ts`.
+- `src/qr-decode.ts` — pixels in, strings out. Runs under vitest with no camera
+and no canvas; `test/qr-decode.test.ts` draws the QR from `qrcode`'s module
+matrix rather than committing a PNG, so the fixture proves the contract rather
+than that one file once decoded. It includes the **light-on-dark** case: the
+code being scanned is drawn by `qrcode-terminal` in a terminal, which to a
+camera is an INVERTED QR, and a decoder pinned to dark-on-light returns null on
+precisely the screen the user is standing in front of.
+- `src/qr-image.ts` — the only module that touches a canvas. `File` → pixels.
+
+**A photo is decoded at several scales, cheapest first**
+(`scalePlanFor`): a phone photo is 4000×3000 and the terminal's code sits in it
+at ~300px. One pass at full size is slow and binarizes badly; one pass at a
+small size misses the code when the phone was far away. So 1024 → 1792 → 2600
+(2600 caps the last pass — a 12 MP photo is never decoded at native size), and
+an image smaller than every pass is decoded at its own size, because upscaling
+invents pixels the binarizer then works around. The first pass that finds
+something wins; the expensive passes only run on a photo that beat the cheap
+one.
+
+**`jsQR` is a separate chunk, not part of the bundle.** 130.8 kB / 47.3 kB
+gzipped against a client whose whole bundle is 172.8 kB / 56.8 kB — a static
+import would nearly double what every visitor pays for a feature used once per
+machine. It is `import()`ed, and warmed when the pairing form OPENS, so the
+download hides behind reading the hint and running `/unbien pair`. Verified in
+the built output: `jsQR-*.js` is its own asset, and the main chunk moved from
+167.7 kB to 172.8 kB.
+
+**Pasting an image into the code box is the same path.** A screenshot of the
+terminal, or a photo sent to yourself, decodes the same way; the `paste` event
+is only taken when an image is actually in it, so text pastes keep working.
+
+Verified in Chrome against the real relay and the scripted double — a
+light-on-dark QR PNG pasted into `#pairCode` decoded and paired in ~100 ms
+(`paired with mybox-fake`), the same code through the file input re-confirmed
+(`mybox-fake is already paired with this browser`), a QR encoding a plain URL
+answered `that is not a pairing code — it decodes to "https://…"`, and a blank
+frame answered `no QR code recognised`. Console clean throughout.
+
+**Not verified: a real camera on a real phone.** The decode, the wiring and the
+verdicts are proven; the thing that cannot be proven from a desktop is whether a
+phone camera resolves `qrcode-terminal`'s half-block QR (`█ ▀ ▄`) reliably at
+arm's length. It usually does, but the terminal's font, line height and any
+wrapping all bear on it, and if it turns out flaky the fix is on the machine
+side (a real QR image, or a wider quiet zone), not in the scanner.
+
+**The pairing form shows what the last scan did.** `last scan: image/jpeg 2051 KB
+→ 3024x4032 → no QR code found (3 passes, 410 ms)`, kept in
+`unbien.web.scanAttempt.v1` for 15 minutes and re-painted when the form opens.
+This exists because "the camera opened and nothing happened" has several
+unrelated causes that look identical from the UI, and the answer is the file the
+picker handed over plus whether the decoder ever ran — which has to be where the
+person is already looking, not behind a debug URL they have to remember.
+
+The record is written **before** the decode, which is what catches the nastiest
+case: iOS Safari may unload the page while the camera UI owns the screen, the
+`change` handler never runs, and the failure leaves no trace anywhere. A record
+stuck at `started` says exactly that: `the photo never came back to the page`.
+The pairing URI itself is never stored — it is a single-use credential, and a
+diagnostic that outlives it is a liability.
+
+**`?qrdebug` prints the same facts in more detail.** Same reason as `?kbdebug`:
+one screenshot of it answers what a laptop can only guess at — secure context,
+decoder loaded, file type/size, decoded pixel size, which passes ran, timing.
+And the failure line names the file TYPE (`could not read the image
+(image/heic): …`), because an iPhone camera set to High Efficiency hands over
+HEIC/HEIF and several browsers will not decode it.
+
+**In dev, `jsqr` is in `optimizeDeps.include`.** It is CJS and only reached
+through a dynamic import, so Vite does not see it until someone scans — and
+discovering a dep mid-session makes the dev server re-optimize and FULL-RELOAD,
+which lands right after the camera closes and throws the photo away. Naming it
+pre-bundles it at startup. Production is unaffected: the build splits it into
+its own chunk either way.
+
+**The live viewfinder (route B) is a deployment change before it is a client
+change.** It needs `getUserMedia`, so: an `https` page, and since an `https`
+page cannot open a `ws://` socket, a `wss://` relay — the Caddy/`tailscale
+serve` reverse proxy sketched in `docs/android-tailscale-plan.md`. Then
+`BarcodeDetector` where it exists (Chrome Android 83+; NOT Safari, NOT Firefox,
+so the jsQR loop is needed regardless) fed frame by frame, auto-submitting on
+the first hit — the token lives 60 seconds (`TOKEN_TTL_MS` in
+`extension/src/pairing/qr.ts`), which is a scan-in-the-room timeout, not a
+paste-off-a-screen one.
+
 ## What was verified end to end (Chrome + real relay + the double)
 
 - Connect: Ed25519 challenge/response over the browser's native `WebSocket`

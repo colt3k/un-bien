@@ -51,6 +51,13 @@ export default defineConfig({
   },
   // `buffer` (and the core's Buffer use) assumes the node global exists.
   define: { global: "globalThis" },
+  // The QR decoder is CJS and is only reached through a dynamic import, so the
+  // dev server does not see it until someone scans — and discovering a new dep
+  // mid-session makes Vite re-optimize and FULL-RELOAD the page, which lands
+  // after the camera closed and throws the photo away. Naming it here pre-
+  // bundles it at startup. Production does not care: the build splits it into
+  // its own chunk either way.
+  optimizeDeps: { include: ["jsqr"] },
   build: {
     target: "es2022",
     sourcemap: true,

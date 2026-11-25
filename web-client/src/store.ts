@@ -25,6 +25,59 @@ const PENDING_LAUNCH_KEY = "unbien.web.pendingLaunch.v1"
  *  means the same thing on both devices. */
 const PREFS_KEY = "unbien.web.prefs.v1"
 const ALLOW_VERSION_KEY = "unbien.web.allow-version"
+/** The last QR scan attempt. See `ScanAttempt` below for why it is stored. */
+const SCAN_ATTEMPT_KEY = "unbien.web.scanAttempt.v1"
+
+/**
+ * The last QR scan, as it happened.
+ *
+ * Stored because the interesting part of a scan is what the phone did, and a
+ * phone can lose that: iOS Safari is free to unload the page while the camera
+ * UI owns the screen, and then the `change` handler never runs and the failure
+ * leaves no trace anywhere. Writing the attempt BEFORE the decode means the one
+ * case that explains "the camera opened and nothing happened" is the one case
+ * that still gets reported.
+ *
+ * Deliberately NOT stored: the pairing URI itself. It is a single-use
+ * credential, and a diagnostic that outlives it is a liability.
+ */
+export interface ScanAttempt {
+  at: number
+  /** `started` is written before the decode and never updated if the page dies
+   *  during it. `done` means the decode returned and the verdict is real. */
+  stage: "started" | "done"
+  fileType: string
+  fileSize: number
+  width?: number
+  height?: number
+  passes?: number[]
+  ms?: number
+  decoded?: number
+  outcome:
+    | "in-flight"
+    | "pairing-code"
+    | "no-code"
+    | "foreign-code"
+    | "error"
+    /** The picker closed without handing a file over. On Android that is what
+     *  pressing BACK from the camera's review screen means — the shot was
+     *  taken, and never attached. */
+    | "cancelled"
+    /** A file arrived that the client will not try to decode. */
+    | "not-an-image"
+  /** The failure's own words. Never a pairing URI. */
+  error?: string
+  /** What the picker called the file, when one arrived. */
+  fileName?: string
+}
+
+export function lastScanAttempt(): ScanAttempt | null {
+  return readJson<ScanAttempt>(SCAN_ATTEMPT_KEY) ?? null
+}
+
+export function rememberScanAttempt(attempt: ScanAttempt): void {
+  writeJson(SCAN_ATTEMPT_KEY, attempt)
+}
 
 export interface RememberedRelay {
   url: string
