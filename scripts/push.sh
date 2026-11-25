@@ -10,12 +10,27 @@
 #
 # The release script has always pushed this way; this wrapper makes the
 # manual case one command instead of re-deriving the recipe.
+#
+# FORKS: the target is named literally, so running this from a fork pushes the
+# fork's commits into upstream. The guard below stops that. On a fork the right
+# command is the boring one — `git push origin <ref>`.
 
 set -eu
 
-REPO_URL="https://github.com/georgeharker/un-bien"
+SCRIPT_DIR=$( # shellcheck disable=SC1007
+  CDPATH= cd -- "$(dirname -- "$0")" && pwd
+)
+ROOT="$SCRIPT_DIR/.."
+. "$SCRIPT_DIR/guard-upstream.sh"
+
+guard_not_a_fork "$ROOT" || exit 1
+REPO_URL="https://github.com/$UPSTREAM_REPO"
 
 if [ "${1:-}" = "--fetch" ]; then
+  # Note what this actually does: it writes the upstream main into THIS
+  # checkout's `origin/main` tracking ref. Correct in an upstream clone, where
+  # origin is upstream; wrong anywhere else, because it silently redefines what
+  # "ahead/behind origin" means. The guard above is what keeps it honest.
   exec env -u GH_TOKEN git -c credential.helper='!gh auth git-credential' \
     fetch "$REPO_URL" +refs/heads/main:refs/remotes/origin/main
 fi

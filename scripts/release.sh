@@ -30,6 +30,9 @@
 #
 # - Pushes via the gh-credential URL recipe (plain `git push origin` fails
 #   under this repo's gh-auth setup).
+# - Refuses to run from a fork. The tags this cuts are what publish the npm
+#   packages, the crate and the Homebrew formula, so a fork cutting a release
+#   would be publishing into upstream's names. See guard-upstream.sh.
 # - ASCII-only on purpose: /bin/sh is bash 3.2 (see build-iphone.sh).
 # - Run from anywhere — paths resolve from the repo root.
 
@@ -39,7 +42,8 @@ SCRIPT_DIR=$( # shellcheck disable=SC1007
   CDPATH= cd -- "$(dirname -- "$0")" && pwd
 )
 ROOT="$SCRIPT_DIR/.."
-REPO_URL="https://github.com/georgeharker/un-bien"
+. "$SCRIPT_DIR/guard-upstream.sh"
+REPO_URL="https://github.com/$UPSTREAM_REPO"
 
 # ── args ────────────────────────────────────────────────────────────────────
 
@@ -172,6 +176,11 @@ if [ "$DRY_RUN" = 1 ]; then
   echo "dry run — no changes made."
   exit 0
 fi
+
+# Placed after the checks and after --dry-run, before anything is committed or
+# tagged: a release cut pushes main AND the publish tags to upstream, so on a
+# fork it must stop here rather than half-cut a release locally and then fail.
+guard_not_a_fork || exit 1
 
 if [ "$ASSUME_YES" != 1 ]; then
   printf "Proceed? [y/N] "
