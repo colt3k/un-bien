@@ -365,13 +365,44 @@ describe("keyboardProbeLines", () => {
       focused: "input",
     })
     expect(lines.join("\n")).toContain("virtualKeyboard overlays=n/a")
-    expect(lines.join("\n")).toContain("android slack 20px  clearance 0px")
     expect(lines.join("\n")).toContain("secure context false")
     expect(lines.join("\n")).toContain("Chrome/131.0.0.0")
-    expect(lines.join("\n")).toContain("android slack 20px")
+    expect(lines.join("\n")).toContain("android slack 20px  clearance 0px")
     expect(lines.join("\n")).toContain(
       "bottom limit 489px   viewport claim 382px   painted 402px",
     )
+  })
+
+  it("keeps every line short enough to read on a phone", () => {
+    // The panel's whole job is to be legible in one screenshot. A line that
+    // wraps past the panel's width loses the value someone opened the URL to
+    // read — which is exactly what `clearance 20px` did on a real phone.
+    const lines = keyboardProbeLines({
+      innerHeight: 891,
+      visualHeight: 891,
+      visualOffsetTop: 0,
+      visualScale: 1,
+      dynamicViewportHeight: 891,
+      safeAreaBottom: 0,
+      keyboardRect: { top: 510, height: 381 },
+      overlaysContent: true,
+      secureContext: true,
+      browser: browserLabel(
+        "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/158.0.0.0 Mobile Safari/537.36",
+      ),
+      slack: 0,
+      clearance: KEYBOARD_CLEARANCE_PX,
+      bottomLimit: 490,
+      inset: 402,
+      composerBottom: 489,
+      composerHeight: 58,
+      focused: "input",
+    })
+    for (const line of lines) {
+      expect(line.length).toBeLessThanOrEqual(56)
+    }
+    expect(lines.join("\n")).toContain("secure context true")
+    expect(lines.join("\n")).toContain("clearance 20px")
   })
 })
 

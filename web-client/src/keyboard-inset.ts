@@ -314,7 +314,12 @@ export function keyboardProbeLines(facts: {
     `innerHeight ${px(facts.innerHeight)}   dvh ${px(facts.dynamicViewportHeight)}`,
     `visualViewport ${px(facts.visualHeight)}  scale ${facts.visualScale}  offsetTop ${px(facts.visualOffsetTop)}`,
     `virtualKeyboard overlays=${facts.overlaysContent === null ? "n/a" : facts.overlaysContent}  ${keyboard}`,
-    `secure context ${facts.secureContext}  ${facts.browser}  android slack ${px(facts.slack)}  clearance ${px(facts.clearance)}`,
+    `secure context ${facts.secureContext}  ${facts.browser}`,
+    // Two lines, not one: on a phone the combined line wrapped past the panel's
+    // width and the value being read (`clearance 20px`) fell off the edge — the
+    // one number the screenshot was taken to show. Each line here has to survive
+    // a 360px-wide screen.
+    `android slack ${px(facts.slack)}  clearance ${px(facts.clearance)}`,
     `bottom limit ${px(facts.bottomLimit)}   viewport claim ${px(claimed)}   painted ${px(facts.inset)}`,
     `env safe-area-inset-bottom ${px(facts.safeAreaBottom)}`,
     `composer top ${px(facts.composerBottom - facts.composerHeight)}  bottom ${px(facts.composerBottom)}`,
