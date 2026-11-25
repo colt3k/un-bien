@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest"
 import {
   ANDROID_KEYBOARD_SLACK_PX,
+  bottomGapPx,
   bottomLimitPx,
   browserLabel,
   insetForLimitPx,
+  DEFAULT_BOTTOM_GAP_PX,
   isAndroidUserAgent,
-  KEYBOARD_CLEARANCE_PX,
   keyboardInsetPx,
   keyboardProbeLines,
   keyboardSlackPx,
@@ -164,25 +165,31 @@ describe("insetForLimitPx", () => {
 describe("bottomLimitPx", () => {
   // The numbers off a real phone on the https origin (Chrome/158, Android,
   // `?kbdebug`): innerHeight 891, visualViewport 891 (not resized, because
-  // overlaysContent is on), keyboard rect y 510 height 381, composer bottom 509.
-  const httpsPhone = {
-    keyboardTop: 510,
-    visualHeight: 891,
-    visualOffsetTop: 0,
-    slack: 0,
-    clearance: KEYBOARD_CLEARANCE_PX,
-  }
-
-  it("pulls the line off the keyboard's own edge, not onto it", () => {
-    // The old arithmetic took 510 literally, which parked the composer at 509
-    // with one pixel of clearance against Gboard's toolbar — accurate, and it
-    // reads as a covered field. The clearance is the air that made it look fine.
-    expect(bottomLimitPx(httpsPhone)).toBe(510 - KEYBOARD_CLEARANCE_PX)
-    const inset = insetForLimitPx({
-      layoutHeight: 891,
-      bottomLimit: bottomLimitPx(httpsPhone),
-    })
-    expect(891 - inset).toBe(510 - KEYBOARD_CLEARANCE_PX)
+  // overlaysContent is on), keyboard rect y 510 height 381.
+  it("uses the keyboard's own top exactly", () => {
+    // No margin here on purpose. The rectangle is accurate; the air a field
+    // needs is the composer's own bottom padding (`--bottom-gap`), which is
+    // visible without a phone. A constant in this file could only be tuned on a
+    // device, and that is the loop this breaks.
+    expect(
+      bottomLimitPx({
+        keyboardTop: 510,
+        visualHeight: 891,
+        visualOffsetTop: 0,
+        slack: 0,
+      }),
+    ).toBe(510)
+    expect(
+      insetForLimitPx({
+        layoutHeight: 891,
+        bottomLimit: bottomLimitPx({
+          keyboardTop: 510,
+          visualHeight: 891,
+          visualOffsetTop: 0,
+          slack: 0,
+        }),
+      }),
+    ).toBe(381)
   })
 
   it("takes the viewport's line when the keyboard will not say", () => {
@@ -194,34 +201,17 @@ describe("bottomLimitPx", () => {
         visualHeight: 509,
         visualOffsetTop: 0,
         slack: ANDROID_KEYBOARD_SLACK_PX,
-        clearance: KEYBOARD_CLEARANCE_PX,
       }),
     ).toBe(509 - ANDROID_KEYBOARD_SLACK_PX)
   })
 
-  it("does not stack clearance on top of slack", () => {
-    // Two sources, one correction each. Stacking them would lift the composer
-    // 40px off a keyboard that was already accounted for.
-    const noRect = bottomLimitPx({
-      keyboardTop: null,
-      visualHeight: 509,
-      visualOffsetTop: 0,
-      slack: ANDROID_KEYBOARD_SLACK_PX,
-      clearance: KEYBOARD_CLEARANCE_PX,
-    })
-    expect(noRect).toBe(509 - ANDROID_KEYBOARD_SLACK_PX)
-  })
-
   it("takes whichever line is higher when both are known", () => {
-    // A browser that shrinks its viewport AND reports a rect: the smaller number
-    // is the one that keeps the app out of the keys.
     expect(
       bottomLimitPx({
         keyboardTop: 700,
         visualHeight: 509,
         visualOffsetTop: 0,
         slack: 0,
-        clearance: 0,
       }),
     ).toBe(509)
     expect(
@@ -230,7 +220,6 @@ describe("bottomLimitPx", () => {
         visualHeight: 509,
         visualOffsetTop: 0,
         slack: 0,
-        clearance: 0,
       }),
     ).toBe(400)
   })
@@ -242,9 +231,24 @@ describe("bottomLimitPx", () => {
         visualHeight: Number.NaN,
         visualOffsetTop: 0,
         slack: 0,
-        clearance: 0,
       }),
     ).toBe(Number.POSITIVE_INFINITY)
+  })
+})
+
+describe("bottomGapPx", () => {
+  it("reads the stylesheet's number", () => {
+    expect(bottomGapPx(" 16px ")).toBe(16)
+    expect(bottomGapPx("24")).toBe(24)
+  })
+
+  it("falls back to the default, never to zero", () => {
+    // Zero is the flush layout the gap exists to prevent, so an unreadable
+    // declaration must not quietly produce it.
+    expect(bottomGapPx("")).toBe(DEFAULT_BOTTOM_GAP_PX)
+    expect(bottomGapPx(null)).toBe(DEFAULT_BOTTOM_GAP_PX)
+    expect(bottomGapPx("auto")).toBe(DEFAULT_BOTTOM_GAP_PX)
+    expect(bottomGapPx("-8")).toBe(DEFAULT_BOTTOM_GAP_PX)
   })
 })
 
@@ -355,19 +359,19 @@ describe("keyboardProbeLines", () => {
         "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
       ),
       slack: ANDROID_KEYBOARD_SLACK_PX,
-      // No rectangle on this path, so no clearance was spent — the panel shows
-      // both numbers because which one moved the line is the whole question.
-      clearance: 0,
       bottomLimit: 489,
       inset: 402,
       composerBottom: 489,
       composerHeight: 58,
+      fieldBottom: 473,
+      keyboardTop: null,
       focused: "input",
     })
     expect(lines.join("\n")).toContain("virtualKeyboard overlays=n/a")
     expect(lines.join("\n")).toContain("secure context false")
     expect(lines.join("\n")).toContain("Chrome/131.0.0.0")
-    expect(lines.join("\n")).toContain("android slack 20px  clearance 0px")
+    expect(lines.join("\n")).toContain("android slack 20px")
+    expect(lines.join("\n")).toContain("gap to keyboard (no keyboard)")
     expect(lines.join("\n")).toContain(
       "bottom limit 489px   viewport claim 382px   painted 402px",
     )
@@ -391,18 +395,20 @@ describe("keyboardProbeLines", () => {
         "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/158.0.0.0 Mobile Safari/537.36",
       ),
       slack: 0,
-      clearance: KEYBOARD_CLEARANCE_PX,
-      bottomLimit: 490,
-      inset: 402,
-      composerBottom: 489,
+      bottomLimit: 510,
+      inset: 381,
+      composerBottom: 509,
       composerHeight: 58,
+      fieldBottom: 493,
+      keyboardTop: 510,
       focused: "input",
     })
     for (const line of lines) {
       expect(line.length).toBeLessThanOrEqual(56)
     }
     expect(lines.join("\n")).toContain("secure context true")
-    expect(lines.join("\n")).toContain("clearance 20px")
+    // The number that makes "it looks tight" answerable without a phone.
+    expect(lines.join("\n")).toContain("gap to keyboard 17px")
   })
 })
 

@@ -170,25 +170,20 @@ export function liftForPokePx(input: {
 export const ANDROID_KEYBOARD_SLACK_PX = 20
 
 /**
- * Air between the composer and a keyboard whose position the browser told us.
+ * The layout's own bottom breathing room, as declared in CSS (`--bottom-gap`).
  *
- * The VirtualKeyboard rectangle is accurate — measured on the https origin
- * (Chrome/158, Android, `innerHeight 891`): it reported the keyboard at
- * `y 510 height 381`, and the toolbar strip in the screenshot lands at the
- * pixel that arithmetic predicts. Accurate is not the same as usable. The inset
- * it produces puts the composer's bottom at 509 against a keyboard starting at
- * 510 — one pixel of clearance, flush against Gboard's toolbar, and a text
- * field flush with the keyboard reads as a covered one: the field's bottom
- * border and the buttons beside it merge into the strip's top edge.
- *
- * The viewport path already had this air by accident: `ANDROID_KEYBOARD_SLACK_PX`
- * overpaid it by 20px, which is what the field looked like before. So the same
- * number is spent deliberately here, on the path that stopped getting it.
- *
- * It is NOT added on top of the slack — `bottomLimitPx` applies slack to the
- * viewport's line and clearance to the rectangle's, never both.
+ * The gap between a field and the keyboard IS the gap the field keeps from the
+ * bottom of the screen, so it is read from the stylesheet instead of duplicated
+ * here: one number, defined where its effect is visible without a phone in
+ * sight. A missing or unparseable value falls back to the stylesheet's default
+ * rather than to 0 — 0 is exactly the flush layout this exists to prevent.
  */
-export const KEYBOARD_CLEARANCE_PX = 20
+export const DEFAULT_BOTTOM_GAP_PX = 16
+
+export function bottomGapPx(declared: string | null | undefined): number {
+  const n = Number.parseFloat(declared ?? "")
+  return Number.isFinite(n) && n >= 0 ? n : DEFAULT_BOTTOM_GAP_PX
+}
 
 /**
  * The line the app's bottom edge must not cross.
@@ -197,27 +192,37 @@ export const KEYBOARD_CLEARANCE_PX = 20
  *
  *   - the viewport's bottom, minus `ANDROID_KEYBOARD_SLACK_PX` when Android's
  *     arithmetic is the only thing we have;
- *   - the keyboard's own top, minus `KEYBOARD_CLEARANCE_PX`, when the browser
- *     admitted where it is.
+ *   - the keyboard's own top, exactly, when the browser admitted where it is.
  *
  * With `overlaysContent` on, the first candidate is the whole viewport — the
  * browser was told not to resize it — so the rectangle is the only thing that
  * pulls the line up. With the API absent, the rectangle is absent and the
  * viewport carries the whole answer. `Infinity` when neither is known, which
  * means "do not move the bottom of the app".
+ *
+ * **No margin is added to the rectangle, deliberately.** The rectangle is
+ * accurate — measured on the https origin (Chrome/158, Android, `innerHeight
+ * 891`): it reported the keyboard at `y 510 height 381`, and Gboard's toolbar
+ * strip lands on the pixel that arithmetic predicts. What looked wrong was not
+ * the measurement but the layout: the app's bottom edge parked one pixel above
+ * the keys, and a text field flush against any edge reads as a covered one.
+ *
+ * Breathing room is a property of the layout, not of the keyboard, so it lives
+ * in the stylesheet as `--bottom-gap` — the same padding that lifts the composer
+ * off the bottom of the screen when no keyboard is up. One number, visible on a
+ * desktop with no phone in sight. A constant here could only be tuned by loading
+ * the page on a device, which is how it became a number we kept adjusting;
+ * `?kbdebug` prints the resulting `gap to keyboard` so the next adjustment
+ * starts from a measurement rather than a screenshot.
  */
 export function bottomLimitPx(f: {
   keyboardTop: number | null
   visualHeight: number
   visualOffsetTop: number
   slack: number
-  clearance: number
 }): number {
   const fromViewport = f.visualHeight + f.visualOffsetTop - f.slack
-  const fromRect =
-    f.keyboardTop === null
-      ? Number.POSITIVE_INFINITY
-      : f.keyboardTop - f.clearance
+  const fromRect = f.keyboardTop ?? Number.POSITIVE_INFINITY
   const limit = Math.min(fromViewport, fromRect)
   return Number.isFinite(limit) ? limit : Number.POSITIVE_INFINITY
 }
@@ -293,11 +298,14 @@ export function keyboardProbeLines(facts: {
   secureContext: boolean
   browser: string
   slack: number
-  clearance: number
   bottomLimit: number
   inset: number
   composerBottom: number
   composerHeight: number
+  /** Bottom of the field the person is looking at (`#input`). The gap has to be
+   *  measured to that, not to the composer's box, which sits lower. */
+  fieldBottom: number
+  keyboardTop: number | null
   focused: string
 }): string[] {
   const px = (n: number) => `${Math.round(n)}px`
@@ -319,8 +327,14 @@ export function keyboardProbeLines(facts: {
     // width and the value being read (`clearance 20px`) fell off the edge — the
     // one number the screenshot was taken to show. Each line here has to survive
     // a 360px-wide screen.
-    `android slack ${px(facts.slack)}  clearance ${px(facts.clearance)}`,
+    `android slack ${px(facts.slack)}`,
     `bottom limit ${px(facts.bottomLimit)}   viewport claim ${px(claimed)}   painted ${px(facts.inset)}`,
+    // The number that answers "is it too tight?" without a phone in the room.
+    `gap to keyboard ${
+      facts.keyboardTop === null
+        ? "(no keyboard)"
+        : px(facts.keyboardTop - facts.fieldBottom)
+    }`,
     `env safe-area-inset-bottom ${px(facts.safeAreaBottom)}`,
     `composer top ${px(facts.composerBottom - facts.composerHeight)}  bottom ${px(facts.composerBottom)}`,
     `focused ${facts.focused}`,

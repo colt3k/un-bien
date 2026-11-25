@@ -64,11 +64,11 @@ import {
 } from "./history-status.js"
 import { parseInvite, type PairingInvite } from "./invite.js"
 import {
-  browserLabel,
+  bottomGapPx,
   bottomLimitPx,
+  browserLabel,
   insetForLimitPx,
   isAndroidUserAgent,
-  KEYBOARD_CLEARANCE_PX,
   keyboardInsetPx,
   keyboardProbeLines,
   keyboardSlackPx,
@@ -763,7 +763,7 @@ export class App {
     inset: number
     bottomLimit: number
     slack: number
-    clearance: number
+    keyboardTop: number | null
     vk: VirtualKeyboardLike | null
   }): void {
     const probe = this.keyboardProbe
@@ -785,11 +785,12 @@ export class App {
       secureContext: window.isSecureContext,
       browser: browserLabel(navigator.userAgent),
       slack: facts.slack,
-      clearance: facts.clearance,
       bottomLimit: facts.bottomLimit,
       inset: facts.inset,
       composerBottom: box.bottom,
       composerHeight: box.height,
+      fieldBottom: this.input.getBoundingClientRect().bottom,
+      keyboardTop: facts.keyboardTop,
       focused: focused?.id || focused?.tagName || "(none)",
     }).join("\n")
   }
@@ -831,7 +832,6 @@ export class App {
       visualHeight: vv.height,
       visualOffsetTop: vv.offsetTop,
       slack,
-      clearance: KEYBOARD_CLEARANCE_PX,
     })
     let inset = Math.max(
       claim,
@@ -862,7 +862,7 @@ export class App {
         inset,
         bottomLimit,
         slack,
-        clearance: KEYBOARD_CLEARANCE_PX,
+        keyboardTop,
         vk,
       })
     }
@@ -879,12 +879,25 @@ export class App {
     const el = document.activeElement
     if (!(el instanceof Element)) return
     const box = el.getBoundingClientRect()
-    if (box.height === 0 || box.bottom <= bottomLimit) return
+    const gap = this.bottomGapPx()
+    if (box.height === 0 || box.bottom <= bottomLimit - gap) return
     for (let node = el.parentElement; node; node = node.parentElement) {
       if (node.scrollHeight <= node.clientHeight + 1) continue
-      node.scrollTop += box.bottom - bottomLimit
+      // The gap is part of the debt, not a garnish: scrolling the field to the
+      // keyboard's exact top is the flush layout the composer already avoids by
+      // its own padding.
+      node.scrollTop += box.bottom - bottomLimit + gap
       return
     }
+  }
+
+  /** The stylesheet's bottom breathing room (`--bottom-gap`), in px. */
+  private bottomGapPx(): number {
+    return bottomGapPx(
+      getComputedStyle(document.documentElement).getPropertyValue(
+        "--bottom-gap",
+      ),
+    )
   }
 
   private setKeyboardInset(px: number): void {
