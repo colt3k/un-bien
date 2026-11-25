@@ -755,8 +755,20 @@ export class App {
       "position:fixed;height:0;padding-bottom:env(safe-area-inset-bottom);visibility:hidden;pointer-events:none"
     const panel = document.createElement("div")
     panel.className = "kb-debug"
-    document.body.append(ruler, insetProbe, panel)
-    this.keyboardProbe = { panel, ruler, insetProbe }
+    // Two drawn lines, because the readout and the phone disagreed and a number
+    // cannot settle that. Red is where the code believes the keyboard starts;
+    // green is where the field's box ends. If red sits BELOW the keyboard's
+    // visible top edge, the browser's rectangle is lying. If both lines are
+    // where they should be and the field is still covered, the layout is lying.
+    // One screenshot says which, with no arithmetic and no scale factor.
+    const limitMark = document.createElement("div")
+    limitMark.style.cssText =
+      "position:fixed;left:0;width:100%;height:2px;background:#e5484d;z-index:2147483647;pointer-events:none"
+    const fieldMark = document.createElement("div")
+    fieldMark.style.cssText =
+      "position:fixed;left:0;width:100%;height:2px;background:#46a758;z-index:2147483647;pointer-events:none"
+    document.body.append(ruler, insetProbe, limitMark, fieldMark, panel)
+    this.keyboardProbe = { panel, ruler, insetProbe, limitMark, fieldMark }
   }
 
   private paintKeyboardProbe(facts: {
@@ -770,7 +782,10 @@ export class App {
     const vv = window.visualViewport
     if (!probe || !vv) return
     const box = this.composer.getBoundingClientRect()
+    const field = this.input.getBoundingClientRect()
     const focused = document.activeElement
+    probe.limitMark.style.top = `${Math.round(facts.bottomLimit) - 1}px`
+    probe.fieldMark.style.top = `${Math.round(field.bottom)}px`
     probe.panel.textContent = keyboardProbeLines({
       innerHeight: window.innerHeight,
       visualHeight: vv.height,
@@ -789,7 +804,10 @@ export class App {
       inset: facts.inset,
       composerBottom: box.bottom,
       composerHeight: box.height,
-      fieldBottom: this.input.getBoundingClientRect().bottom,
+      composerPadBottom:
+        Number.parseFloat(getComputedStyle(this.composer).paddingBottom) || 0,
+      fieldBottom: field.bottom,
+      fieldHeight: field.height,
       keyboardTop: facts.keyboardTop,
       focused: focused?.id || focused?.tagName || "(none)",
     }).join("\n")
@@ -909,6 +927,8 @@ export class App {
     panel: HTMLElement
     ruler: HTMLElement
     insetProbe: HTMLElement
+    limitMark: HTMLElement
+    fieldMark: HTMLElement
   } | null = null
 
   /** A text field holds focus, so a keyboard is wanted even if no viewport

@@ -302,9 +302,15 @@ export function keyboardProbeLines(facts: {
   inset: number
   composerBottom: number
   composerHeight: number
+  /** The padding the stylesheet actually applied. That padding is the whole
+   *  mechanism for keeping the field off the keyboard, so print it: a screenshot
+   *  where the field is flush means this number is a lie somewhere between the
+   *  stylesheet and the painted pixel. */
+  composerPadBottom: number
   /** Bottom of the field the person is looking at (`#input`). The gap has to be
    *  measured to that, not to the composer's box, which sits lower. */
   fieldBottom: number
+  fieldHeight: number
   keyboardTop: number | null
   focused: string
 }): string[] {
@@ -336,7 +342,8 @@ export function keyboardProbeLines(facts: {
         : px(facts.keyboardTop - facts.fieldBottom)
     }`,
     `env safe-area-inset-bottom ${px(facts.safeAreaBottom)}`,
-    `composer top ${px(facts.composerBottom - facts.composerHeight)}  bottom ${px(facts.composerBottom)}`,
+    `composer top ${px(facts.composerBottom - facts.composerHeight)}  bottom ${px(facts.composerBottom)}  pad ${px(facts.composerPadBottom)}`,
+    `field h ${px(facts.fieldHeight)}  bottom ${px(facts.fieldBottom)}`,
     `focused ${facts.focused}`,
   ]
 }
