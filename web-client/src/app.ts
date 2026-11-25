@@ -65,8 +65,10 @@ import {
 import { parseInvite, type PairingInvite } from "./invite.js"
 import {
   browserLabel,
+  bottomLimitPx,
   insetForLimitPx,
   isAndroidUserAgent,
+  KEYBOARD_CLEARANCE_PX,
   keyboardInsetPx,
   keyboardProbeLines,
   keyboardSlackPx,
@@ -761,6 +763,7 @@ export class App {
     inset: number
     bottomLimit: number
     slack: number
+    clearance: number
     vk: VirtualKeyboardLike | null
   }): void {
     const probe = this.keyboardProbe
@@ -782,6 +785,7 @@ export class App {
       secureContext: window.isSecureContext,
       browser: browserLabel(navigator.userAgent),
       slack: facts.slack,
+      clearance: facts.clearance,
       bottomLimit: facts.bottomLimit,
       inset: facts.inset,
       composerBottom: box.bottom,
@@ -816,12 +820,19 @@ export class App {
     const slack = keyboardSlackPx({
       isAndroid: isAndroidUserAgent(navigator.userAgent),
       limitFromViewport: keyboardTop === null,
-      keyboardReported: claim > 0,
+      // NOT `claim > 0`: with `overlaysContent` on the viewport is deliberately
+      // not resized, so the claim is structurally zero and a keyboard that is
+      // plainly up would read as "none" — which used to switch the Android floor
+      // off on exactly the path that most needs to know a keyboard exists.
+      keyboardReported: keyboardTop !== null || claim > 0,
     })
-    const bottomLimit = Math.min(
-      keyboardTop ?? Number.POSITIVE_INFINITY,
-      vv.height + vv.offsetTop - slack,
-    )
+    const bottomLimit = bottomLimitPx({
+      keyboardTop,
+      visualHeight: vv.height,
+      visualOffsetTop: vv.offsetTop,
+      slack,
+      clearance: KEYBOARD_CLEARANCE_PX,
+    })
     let inset = Math.max(
       claim,
       insetForLimitPx({
@@ -847,7 +858,13 @@ export class App {
       }
       this.revealFocusedAbove(bottomLimit)
     } finally {
-      this.paintKeyboardProbe({ inset, bottomLimit, slack, vk })
+      this.paintKeyboardProbe({
+        inset,
+        bottomLimit,
+        slack,
+        clearance: KEYBOARD_CLEARANCE_PX,
+        vk,
+      })
     }
   }
 

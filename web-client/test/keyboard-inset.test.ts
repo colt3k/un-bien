@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest"
 import {
   ANDROID_KEYBOARD_SLACK_PX,
+  bottomLimitPx,
   browserLabel,
   insetForLimitPx,
   isAndroidUserAgent,
+  KEYBOARD_CLEARANCE_PX,
   keyboardInsetPx,
   keyboardProbeLines,
   keyboardSlackPx,
@@ -159,6 +161,93 @@ describe("insetForLimitPx", () => {
   })
 })
 
+describe("bottomLimitPx", () => {
+  // The numbers off a real phone on the https origin (Chrome/158, Android,
+  // `?kbdebug`): innerHeight 891, visualViewport 891 (not resized, because
+  // overlaysContent is on), keyboard rect y 510 height 381, composer bottom 509.
+  const httpsPhone = {
+    keyboardTop: 510,
+    visualHeight: 891,
+    visualOffsetTop: 0,
+    slack: 0,
+    clearance: KEYBOARD_CLEARANCE_PX,
+  }
+
+  it("pulls the line off the keyboard's own edge, not onto it", () => {
+    // The old arithmetic took 510 literally, which parked the composer at 509
+    // with one pixel of clearance against Gboard's toolbar — accurate, and it
+    // reads as a covered field. The clearance is the air that made it look fine.
+    expect(bottomLimitPx(httpsPhone)).toBe(510 - KEYBOARD_CLEARANCE_PX)
+    const inset = insetForLimitPx({
+      layoutHeight: 891,
+      bottomLimit: bottomLimitPx(httpsPhone),
+    })
+    expect(891 - inset).toBe(510 - KEYBOARD_CLEARANCE_PX)
+  })
+
+  it("takes the viewport's line when the keyboard will not say", () => {
+    // The http path: no API, so the viewport arithmetic carries it, and the
+    // Android slack is what pays for Android's under-count.
+    expect(
+      bottomLimitPx({
+        keyboardTop: null,
+        visualHeight: 509,
+        visualOffsetTop: 0,
+        slack: ANDROID_KEYBOARD_SLACK_PX,
+        clearance: KEYBOARD_CLEARANCE_PX,
+      }),
+    ).toBe(509 - ANDROID_KEYBOARD_SLACK_PX)
+  })
+
+  it("does not stack clearance on top of slack", () => {
+    // Two sources, one correction each. Stacking them would lift the composer
+    // 40px off a keyboard that was already accounted for.
+    const noRect = bottomLimitPx({
+      keyboardTop: null,
+      visualHeight: 509,
+      visualOffsetTop: 0,
+      slack: ANDROID_KEYBOARD_SLACK_PX,
+      clearance: KEYBOARD_CLEARANCE_PX,
+    })
+    expect(noRect).toBe(509 - ANDROID_KEYBOARD_SLACK_PX)
+  })
+
+  it("takes whichever line is higher when both are known", () => {
+    // A browser that shrinks its viewport AND reports a rect: the smaller number
+    // is the one that keeps the app out of the keys.
+    expect(
+      bottomLimitPx({
+        keyboardTop: 700,
+        visualHeight: 509,
+        visualOffsetTop: 0,
+        slack: 0,
+        clearance: 0,
+      }),
+    ).toBe(509)
+    expect(
+      bottomLimitPx({
+        keyboardTop: 400,
+        visualHeight: 509,
+        visualOffsetTop: 0,
+        slack: 0,
+        clearance: 0,
+      }),
+    ).toBe(400)
+  })
+
+  it("moves nothing when neither source is known", () => {
+    expect(
+      bottomLimitPx({
+        keyboardTop: null,
+        visualHeight: Number.NaN,
+        visualOffsetTop: 0,
+        slack: 0,
+        clearance: 0,
+      }),
+    ).toBe(Number.POSITIVE_INFINITY)
+  })
+})
+
 describe("isAndroidUserAgent", () => {
   it("recognises the platform the short keyboard happens on", () => {
     expect(
@@ -266,6 +355,9 @@ describe("keyboardProbeLines", () => {
         "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
       ),
       slack: ANDROID_KEYBOARD_SLACK_PX,
+      // No rectangle on this path, so no clearance was spent — the panel shows
+      // both numbers because which one moved the line is the whole question.
+      clearance: 0,
       bottomLimit: 489,
       inset: 402,
       composerBottom: 489,
@@ -273,6 +365,7 @@ describe("keyboardProbeLines", () => {
       focused: "input",
     })
     expect(lines.join("\n")).toContain("virtualKeyboard overlays=n/a")
+    expect(lines.join("\n")).toContain("android slack 20px  clearance 0px")
     expect(lines.join("\n")).toContain("secure context false")
     expect(lines.join("\n")).toContain("Chrome/131.0.0.0")
     expect(lines.join("\n")).toContain("android slack 20px")

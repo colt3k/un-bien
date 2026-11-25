@@ -31,13 +31,17 @@
  *    arithmetic disagreements — `100dvh` not matching `innerHeight`, fractional
  *    scale factors, a pan the browser made.
  *
- * The API is not always there to ask — and one phone that reported this bug had
- * no `navigator.virtualKeyboard` at all, for a reason that is still not settled:
- * the API has been in Chromium since 94, so it is not a version gap, and the
- * leading candidate is the secure-context restriction, which `?kbdebug` prints as
- * `secure context …` precisely so it can be checked rather than assumed. When the
- * API is absent the viewport arithmetic is all that is left, and that is what
- * `keyboardSlackPx` pays for: a small measured floor, on Android only, used only
+ * The API is not always there to ask. One phone that reported this bug had no
+ * `navigator.virtualKeyboard` at all, and the reason is now settled rather than
+ * suspected: the API is gated to secure contexts. Measured on the same browser,
+ * two origins — `http://192.168.1.86:4173` reports `isSecureContext false` and
+ * `virtualKeyboard undefined`; `https://<node>.tailnet.ts.net` reports `true` and
+ * `object`. Serving the client over https therefore SWITCHES which source the
+ * inset comes from, and the two sources disagree by about 20px of clearance —
+ * which is how a fixed bug came back without the fix being touched. `?kbdebug`
+ * prints `secure context …` precisely so this is checked rather than assumed.
+ * When the API is absent the viewport arithmetic is all that is left, and that is
+ * what `keyboardSlackPx` pays for: a small measured floor, on Android only, used
  * when the line came from the viewport rather than from the keyboard itself.
  *
  * `interactive-widget=resizes-content` (the viewport-meta switch for this) is
@@ -166,6 +170,59 @@ export function liftForPokePx(input: {
 export const ANDROID_KEYBOARD_SLACK_PX = 20
 
 /**
+ * Air between the composer and a keyboard whose position the browser told us.
+ *
+ * The VirtualKeyboard rectangle is accurate — measured on the https origin
+ * (Chrome/158, Android, `innerHeight 891`): it reported the keyboard at
+ * `y 510 height 381`, and the toolbar strip in the screenshot lands at the
+ * pixel that arithmetic predicts. Accurate is not the same as usable. The inset
+ * it produces puts the composer's bottom at 509 against a keyboard starting at
+ * 510 — one pixel of clearance, flush against Gboard's toolbar, and a text
+ * field flush with the keyboard reads as a covered one: the field's bottom
+ * border and the buttons beside it merge into the strip's top edge.
+ *
+ * The viewport path already had this air by accident: `ANDROID_KEYBOARD_SLACK_PX`
+ * overpaid it by 20px, which is what the field looked like before. So the same
+ * number is spent deliberately here, on the path that stopped getting it.
+ *
+ * It is NOT added on top of the slack — `bottomLimitPx` applies slack to the
+ * viewport's line and clearance to the rectangle's, never both.
+ */
+export const KEYBOARD_CLEARANCE_PX = 20
+
+/**
+ * The line the app's bottom edge must not cross.
+ *
+ * Two candidates, one per source, and the higher (smaller) wins:
+ *
+ *   - the viewport's bottom, minus `ANDROID_KEYBOARD_SLACK_PX` when Android's
+ *     arithmetic is the only thing we have;
+ *   - the keyboard's own top, minus `KEYBOARD_CLEARANCE_PX`, when the browser
+ *     admitted where it is.
+ *
+ * With `overlaysContent` on, the first candidate is the whole viewport — the
+ * browser was told not to resize it — so the rectangle is the only thing that
+ * pulls the line up. With the API absent, the rectangle is absent and the
+ * viewport carries the whole answer. `Infinity` when neither is known, which
+ * means "do not move the bottom of the app".
+ */
+export function bottomLimitPx(f: {
+  keyboardTop: number | null
+  visualHeight: number
+  visualOffsetTop: number
+  slack: number
+  clearance: number
+}): number {
+  const fromViewport = f.visualHeight + f.visualOffsetTop - f.slack
+  const fromRect =
+    f.keyboardTop === null
+      ? Number.POSITIVE_INFINITY
+      : f.keyboardTop - f.clearance
+  const limit = Math.min(fromViewport, fromRect)
+  return Number.isFinite(limit) ? limit : Number.POSITIVE_INFINITY
+}
+
+/**
  * Whether this is an Android browser — the platform Android's keyboard
  * under-counting happens on. Used for that and nothing else; there is no
  * capability signal for "the reported keyboard is short".
@@ -177,11 +234,15 @@ export function isAndroidUserAgent(userAgent: string): boolean {
 /**
  * Whether that floor is owed right now.
  *
- * `limitFromViewport` is the important condition, not "the API exists": the API
- * can be present and its rectangle absent, and then the line we are using is the
- * arithmetic, arithmetic which Android is known to be short on. And it only makes
- * sense when a keyboard is actually reported — with none, nothing is covering
- * anything.
+ * `limitFromViewport` is the important condition: the API can be present and its
+ * rectangle absent, and then the line we are using is the arithmetic, arithmetic
+ * which Android is known to be short on.
+ *
+ * `keyboardReported` must NOT be derived from the viewport's claim. With
+ * `overlaysContent` on — which is exactly when the rectangle is the source — the
+ * browser was told not to resize the viewport, so that claim is structurally 0
+ * and a keyboard that is plainly up reads as "none". Either source saying
+ * "keyboard" is enough.
  *
  * `isAndroid` is a user-agent test. There is no capability signal for "this
  * browser under-counts its keyboard", which is what a workaround for a browser
@@ -232,6 +293,7 @@ export function keyboardProbeLines(facts: {
   secureContext: boolean
   browser: string
   slack: number
+  clearance: number
   bottomLimit: number
   inset: number
   composerBottom: number
@@ -252,7 +314,7 @@ export function keyboardProbeLines(facts: {
     `innerHeight ${px(facts.innerHeight)}   dvh ${px(facts.dynamicViewportHeight)}`,
     `visualViewport ${px(facts.visualHeight)}  scale ${facts.visualScale}  offsetTop ${px(facts.visualOffsetTop)}`,
     `virtualKeyboard overlays=${facts.overlaysContent === null ? "n/a" : facts.overlaysContent}  ${keyboard}`,
-    `secure context ${facts.secureContext}  ${facts.browser}  android slack ${px(facts.slack)}`,
+    `secure context ${facts.secureContext}  ${facts.browser}  android slack ${px(facts.slack)}  clearance ${px(facts.clearance)}`,
     `bottom limit ${px(facts.bottomLimit)}   viewport claim ${px(claimed)}   painted ${px(facts.inset)}`,
     `env safe-area-inset-bottom ${px(facts.safeAreaBottom)}`,
     `composer top ${px(facts.composerBottom - facts.composerHeight)}  bottom ${px(facts.composerBottom)}`,
