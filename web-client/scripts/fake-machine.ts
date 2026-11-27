@@ -41,6 +41,9 @@ const ENTRIES_ERROR_MS = Number(arg("--entries-error-ms") ?? 0)
  *  to survive a reader who is looking at an empty transcript for a while.
  *      node web-client/scripts/fake-machine.ts --entries-delay-ms 400 */
 const ENTRIES_DELAY_MS = Number(arg("--entries-delay-ms") ?? 0)
+/** Stream this string ONE CHARACTER AT A TIME as its own assistant message.
+ *  A canary for the live fold, not for the durable one. See `streamCanary`. */
+const CANARY = arg("--canary") ?? null
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms))
 /** When the FIRST `session_sync` arrived. Set once, like the real machine: it
@@ -468,6 +471,7 @@ async function runTurn(
   })
   rpc(peer, { type: "message_end", message: final.message })
   rpc(peer, { type: "entry_appended", entry: final })
+  await streamCanary(peer)
   // An actionable dialog, so the ask overlay gets exercised too.
   rpc(peer, {
     type: "extension_ui_request",
@@ -479,6 +483,47 @@ async function runTurn(
   rpc(peer, { type: "turn_end", message: final.message })
   rpc(peer, { type: "agent_end", messages: [] })
   rpc(peer, { type: "agent_settled" })
+}
+
+// ── inbound ──────────────────────────────────────────────────────────────
+
+/**
+ * The canary turn. Why one character at a time: the bug this catches ate
+ * repeated characters out of LIVE replies — "Port 443" rendered "Port 43",
+ * "HTTP 200" rendered "HTP 20" — because a `text_delta` frame carries no id and
+ * no timestamp, so a dedup that compares frame CONTENT cannot tell "the same
+ * frame arrived twice" from "the same character arrived twice". Long chunks
+ * never reproduce it: the deltas have to be IDENTICAL and ADJACENT, and
+ * single-character streaming guarantees that for every doubled character in the
+ * string. The durable plane cannot show this at all — the log was always right.
+ *
+ * Check it in the browser MID-STREAM. Once `message_end` lands the settle step
+ * reconciles the row against pi's record, which would paper over a lost delta.
+ */
+async function streamCanary(peer: string): Promise<void> {
+  if (CANARY === null) return
+  rpc(peer, {
+    type: "message_start",
+    message: { role: "assistant", content: [] },
+  })
+  for (const ch of CANARY) {
+    await wait(30 * TURN_MS)
+    rpc(peer, {
+      type: "message_update",
+      assistantMessageEvent: {
+        type: "text_delta",
+        contentIndex: 0,
+        delta: ch,
+      },
+    })
+  }
+  rpc(peer, {
+    type: "message_end",
+    message: {
+      role: "assistant",
+      content: [{ type: "text", text: CANARY }],
+    },
+  })
 }
 
 // ── inbound ──────────────────────────────────────────────────────────────────
