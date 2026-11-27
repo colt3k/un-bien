@@ -40,6 +40,11 @@ import {
 } from "./markdown.js"
 import { bodyRenderKey, mayClamp, wantsMarkdown } from "./body-render.js"
 import {
+  CHIP_TTL_MS,
+  chipClock,
+  witnessedCompaction,
+} from "./compaction-chip.js"
+import {
   INITIAL_WINDOW,
   LOAD_MORE,
   growWindow,
@@ -648,6 +653,14 @@ export class App {
   /** The newest compaction row that is NOT on screen, and the one-shot window
    *  and row the reader asked to jump to. See `syncCompactionChip`. */
   private chipRowId: string | null = null
+  /** Compaction rows already present at the first render — history the reader
+   *  did not witness, which must never raise the chip. See `compaction-chip`.
+   *  Captured once per room; `replayStable` cannot stand in for it because a
+   *  live row flips to that flag as soon as the entry walk anchors it. */
+  private baselineCompactions: Set<string> | null = null
+  /** When the chip first appeared for `chipRowId`, for the fade. */
+  private chipSince: number | null = null
+  private chipFade: ReturnType<typeof setTimeout> | null = null
   private jumpWindow: TranscriptWindow | null = null
   private pendingJump: string | null = null
   /** What the last render drew, so a bare scroll can re-aim the chip without
@@ -2198,6 +2211,9 @@ export class App {
     $("loadEarlier").hidden = true
     this.compactionJump.hidden = true
     this.chipRowId = null
+    this.chipSince = null
+    this.baselineCompactions = null
+    this.clearChipFade()
     // `reset()` clears the ended flag too, so the NEXT room's composer is not
     // still painted as the finished state of the room that just went away.
     this.reducer.reset()
@@ -2939,6 +2955,8 @@ export class App {
         // after the read had already said otherwise.
         const label = this.history ? historyLabel(this.history) : null
         this.sub.textContent = `${this.active.name} · ${label ?? "synced"}`
+        // Everything now in the log is history the reader did not watch.
+        this.captureCompactionBaseline()
         break
       }
       case "session_launch_dirs_result": {
@@ -3246,23 +3264,75 @@ export class App {
    *  own text, and clicking it walks the window back to the row. */
   private syncCompactionChip(items: TranscriptItem[]): void {
     const chip = this.compactionJump
-    let target: TranscriptItem | null = null
-    for (let i = items.length - 1; i >= 0; i--) {
-      const item = items[i]
-      if (item && item.kind === "compaction") {
-        target = item
-        break
-      }
-    }
-    if (target === null || this.onScreen(target.row)) {
+    // No baseline yet means the replay has not finished (or never announced
+    // it), so nothing here is known to be history. Suppress rather than guess:
+    // a missing pointer is a smaller error than a permanent one.
+    if (this.baselineCompactions === null) {
       chip.hidden = true
-      this.chipRowId = null
+      this.clearChipFade()
       return
     }
+    const target = witnessedCompaction(items, this.baselineCompactions)
+    if (target === null || this.onScreen(target.row)) {
+      // Hidden, but the clock is NOT reset: the twenty seconds run from the
+      // chip's first appearance, so scrolling off and back cannot revive it.
+      chip.hidden = true
+      this.clearChipFade()
+      return
+    }
+    const clock = chipClock(
+      target.row,
+      this.chipRowId,
+      this.chipSince,
+      Date.now(),
+    )
     this.chipRowId = target.row
+    this.chipSince = clock.since
+    if (clock.expired) {
+      chip.hidden = true
+      this.clearChipFade()
+      return
+    }
     chip.textContent = `↑ ${target.text}`
     chip.title = "jump to the compaction"
     chip.hidden = false
+    // Renders are event-driven. A transcript that stops changing gets no further
+    // render, so the fade needs its own timer or the chip outlives its window.
+    this.clearChipFade()
+    this.chipFade = setTimeout(
+      () => {
+        this.chipFade = null
+        this.syncCompactionChip(this.lastItems)
+      },
+      CHIP_TTL_MS - (Date.now() - clock.since),
+    )
+  }
+
+  private clearChipFade(): void {
+    if (this.chipFade !== null) {
+      clearTimeout(this.chipFade)
+      this.chipFade = null
+    }
+  }
+
+  /** Freeze the compactions already in the log, taken at `session_sync_end`.
+   *  These are history the reader did not watch, so they never raise the header
+   *  chip — which is what made it permanent: in a long session the newest
+   *  compaction is always scrolled above the viewport, so the header carried
+   *  "↑ Context compacted (213,325 tokens)" from the first frame, for an event
+   *  from hours ago that explained nothing the reader had seen.
+   *
+   *  Taken here, not at the first render: the first render happens BEFORE the
+   *  replayed rows arrive, so a baseline captured there is empty and every
+   *  historical compaction reads as new. Re-taken on every sync end, so a
+   *  reconnect that replays a compaction the reader missed retires it. */
+  private captureCompactionBaseline(): void {
+    this.baselineCompactions = new Set(
+      this.reducer
+        .snapshot()
+        .items.filter((i) => i.kind === "compaction")
+        .map((i) => i.row),
+    )
   }
 
   /** Drawn at all (it may be outside the window), and inside the scroll box. */
