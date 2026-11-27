@@ -402,11 +402,32 @@ off-tailnet fallback rather than the default.
 
 | Thing                                      | What it is                                                                                                                                                                                                                 |
 | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `web-client/scripts/fake-machine.ts`       | a scripted machine double that drives the **real Rust relay** without Pi, so the browser end can be exercised end to end. Every frame it emits was copied from `extension/src`; it proves nothing about the real extension |
+| `web-client/scripts/fake-machine.ts`       | a scripted machine double that drives the **real Rust relay** without Pi, so the browser end can be exercised end to end. Every frame it emits was copied from `extension/src`; it proves nothing about the real extension. `--canary "TEXT"` adds one more assistant message that streams `TEXT` **one character at a time** — see below |
 | `?capture=1` + `__unbienDump("NNN")`       | tee every inbound envelope to JSONL for a conformance fixture. Off unless the URL asks for it                                                                                                                              |
 | `?fresh=1`                                 | open the viewer without replaying the last room                                                                                                                                                                            |
 | `?kbdebug`                                 | a panel of viewport facts, for keyboard-inset problems that only reproduce on the phone                                                                                                                                    |
 | `contracts/conformance/capture-build.json` | pins the exact published build the fixtures came from, with its integrity hash; the corpus test fails if the pin drifts                                                                                                    |
+
+### Why the canary streams one character at a time
+
+The durable plane cannot show a bug in the live fold at all — the relay log was
+always right, which is why a reload always looked fine. And long chunks never
+reproduce the delta-dedup bug either: that rule only bit when two deltas were
+**identical and adjacent**. Streaming one character at a time guarantees that for
+every doubled character in the string.
+
+```sh
+node web-client/scripts/fake-machine.ts --canary "443 200 3443 3000 HTTP OFF LL PP ZZ AA" --turn-ms 3
+# prints an unbien://pair?t=… to paste into the web client's "Pair a machine" box
+```
+
+Attach, send any prompt, and watch the last row arrive. Correct is
+`443 200 3443 3000 HTTP OFF LL PP ZZ AA`; the bug rendered
+`43 20 343 30 9 1 HTP OF L P Z A`.
+
+**Check it while it is still typing.** Once `message_end` lands, the settle step
+reconciles the row against Pi's record and quietly repairs a lost delta — so a
+check after the turn proves the net, not the streaming path.
 
 ---
 

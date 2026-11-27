@@ -139,9 +139,7 @@ describe("dirRows", () => {
           path: "/Users/you/dev/GoLang/src/colt3k",
           exists: true,
           truncated: true,
-          children: [
-            { path: "/Users/you/dev/GoLang/src/colt3k/a", name: "a" },
-          ],
+          children: [{ path: "/Users/you/dev/GoLang/src/colt3k/a", name: "a" }],
         },
       ],
     })!
