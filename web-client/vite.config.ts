@@ -78,6 +78,18 @@ export default defineConfig({
   // bundles it at startup. Production does not care: the build splits it into
   // its own chunk either way.
   optimizeDeps: { include: ["jsqr"] },
+  // NO SPA FALLBACK. Vite's default (`spa`) makes dev AND preview answer any
+  // unmatched path with index.html and status 200 — including a hashed JS
+  // module that is not there. A missing chunk then arrives as HTML with a 200,
+  // the browser parses it as a module, and the failure surfaces as
+  // `SyntaxError: Unexpected token '<'` with no 404 anywhere in the network
+  // log. That is what turned a rebuild that emptied dist/ into an undebuggable
+  // blank tab on a phone: the reload failed for the same reason, and nothing
+  // on the page said why. This client has NO path-based routing — the only
+  // history call (app.ts, the `?fresh=1` hatch) rewrites the QUERY string — so
+  // the fallback buys nothing and hides everything. `mpa` makes a missing
+  // asset an honest 404.
+  appType: "mpa",
   build: {
     target: "es2022",
     sourcemap: true,
