@@ -1,0 +1,127 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 730" role="img"
+     aria-label="Sequence: how a browser tab connects, pairs, attaches and drives a pi session"
+     font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif">
+  <rect id="bg" x="0" y="0" width="100%" height="100%" fill="#ffffff"/>
+  <style>
+    .lane { fill:#eef1f5; stroke:#94a3b8; stroke-width:1.5 }
+    .lanef{ fill:#e7f6f1; stroke:#0f766e; stroke-width:1.8 }
+    .life { stroke:#cbd5e1; stroke-width:1; stroke-dasharray:3 4 }
+    .t    { font-size:13px; fill:#0f172a; font-weight:600 }
+    .s    { font-size:10.5px; fill:#5b6b7f }
+    .h    { font-size:11px; fill:#334155; font-weight:700; letter-spacing:.08em }
+    .m    { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:11px; fill:#0f172a }
+    .ttl  { font-size:19px; fill:#0f172a; font-weight:700 }
+    .sub  { font-size:12.5px; fill:#64748b }
+    .arw  { stroke:#475569; stroke-width:1.5; fill:none }
+    .arwb { stroke:#94a3b8; stroke-width:1.5; fill:none; stroke-dasharray:5 3 }
+    .lbl  { font-size:11px; fill:#1f2937 }
+    .num  { font-size:11px; fill:#0f766e; font-weight:700 }
+    .sep  { stroke:#e2e8f0; stroke-width:1 }
+    .note { fill:#fffbeb; stroke:#b45309; stroke-width:1.4 }
+  </style>
+
+  <defs>
+    <marker id="q" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+    <marker id="qb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/>
+    </marker>
+  </defs>
+
+  <text class="ttl" x="40" y="34">From a URL to a driven session — the order things actually happen</text>
+  <text class="sub" x="40" y="56">the page is served by Vite; everything after that is one WebSocket to the relay</text>
+
+  <!-- lanes -->
+  <rect class="lanef" x="70" y="86" width="160" height="44" rx="6"/>
+  <text class="t" x="90" y="106">browser tab</text>
+  <text class="s" x="90" y="122">web-client</text>
+
+  <rect class="lane" x="400" y="86" width="160" height="44" rx="6"/>
+  <text class="t" x="420" y="106">relay :3000</text>
+  <text class="s" x="420" y="122">unbien-relay</text>
+
+  <rect class="lane" x="730" y="86" width="160" height="44" rx="6"/>
+  <text class="t" x="750" y="106">pi + extension</text>
+  <text class="s" x="750" y="122">the machine end</text>
+
+  <line class="life" x1="150" y1="130" x2="150" y2="712"/>
+  <line class="life" x1="480" y1="130" x2="480" y2="712"/>
+  <line class="life" x1="810" y1="130" x2="810" y2="712"/>
+
+  <!-- ── phase 1 ── -->
+  <line class="sep" x1="40" y1="150" x2="1120" y2="150"/>
+  <text class="h" x="40" y="168">1 · CONNECT AND AUTHENTICATE</text>
+
+  <path class="arw" d="M150,190 L480,190" marker-end="url(#q)"/>
+  <text class="num" x="494" y="179">1</text>
+  <text class="lbl" x="508" y="179">WebSocket open — <tspan class="m">ws://host:3000</tspan>, or <tspan class="m">wss://host:3443</tspan> through tailscale serve</text>
+
+  <path class="arwb" d="M480,216 L150,216" marker-end="url(#qb)"/>
+  <text class="num" x="494" y="205">2</text>
+  <text class="lbl" x="508" y="205">the relay's identity, then a challenge</text>
+
+  <path class="arw" d="M150,242 L480,242" marker-end="url(#q)"/>
+  <text class="num" x="494" y="231">3</text>
+  <text class="lbl" x="508" y="231">signed with this tab's own Ed25519 key; the relay's identity is pinned TOFU here</text>
+
+  <path class="arwb" d="M480,268 L150,268" marker-end="url(#qb)"/>
+  <text class="num" x="494" y="257">4</text>
+  <text class="lbl" x="508" y="257">authenticated — the dot in the header is exactly this state</text>
+
+  <!-- ── phase 2 ── -->
+  <line class="sep" x1="40" y1="290" x2="1120" y2="290"/>
+  <text class="h" x="40" y="308">2 · PAIR — A SINGLE-USE CODE THAT DIES IN 60 SECONDS</text>
+
+  <rect class="note" x="40" y="316" width="1080" height="48" rx="5"/>
+  <text class="lbl" x="54" y="334">in the pi session, <tspan class="m">/unbien pair</tspan> prints <tspan class="m">unbien://pair?t=…&amp;epk=…&amp;n=…&amp;rm=…</tspan> — single use, and it expires 60 seconds after printing</text>
+  <text class="lbl" x="54" y="352">step 14's <tspan class="m">session_launch</tspan> is answered by the launcher daemon's control room, not by a pi — that is how a session starts when none is running</text>
+
+  <path class="arw" d="M150,386 L480,386" marker-end="url(#q)"/>
+  <text class="num" x="494" y="375">5</text>
+  <text class="lbl" x="508" y="375"><tspan class="m">pair_request { token, device_name }</tspan> — pasted, or decoded from a photographed QR</text>
+
+  <path class="arw" d="M480,412 L810,412" marker-end="url(#q)"/>
+  <text class="num" x="824" y="401">6</text>
+  <text class="lbl" x="838" y="401">the machine decides</text>
+
+  <path class="arw" d="M810,438 L480,438" marker-end="url(#q)"/>
+  <text class="num" x="824" y="427">7</text>
+  <text class="lbl" x="838" y="427">pair_ok, and a re-PUSH of the signed allow-list</text>
+
+  <path class="arwb" d="M480,464 L150,464" marker-end="url(#qb)"/>
+  <text class="num" x="494" y="453">8</text>
+  <text class="lbl" x="508" y="453">pair_ok / pair_error with the machine's reason — "already paired" is a green verdict, not a failure</text>
+
+  <!-- ── phase 3 ── -->
+  <line class="sep" x1="40" y1="486" x2="1120" y2="486"/>
+  <text class="h" x="40" y="504">3 · ATTACH AND RECONSTRUCT — REQUEST-DRIVEN, NEVER A HISTORY DUMP</text>
+
+  <path class="arw" d="M150,526 L480,526" marker-end="url(#q)"/>
+  <text class="num" x="494" y="515">9</text>
+  <text class="lbl" x="508" y="515"><tspan class="m">rooms_check</tspan>, then attach to <tspan class="m">(epk, roomId)</tspan> — caps come from the room record, not only from hello</text>
+
+  <path class="arwb" d="M810,552 L150,552" marker-end="url(#qb)"/>
+  <text class="num" x="494" y="541">10</text>
+  <text class="lbl" x="508" y="541"><tspan class="m">{ub} hello { caps, sessionId }</tspan> — FIRST, before any content; a new sessionId resets the transcript</text>
+
+  <path class="arw" d="M150,578 L480,578" marker-end="url(#q)"/>
+  <text class="num" x="494" y="567">11</text>
+  <text class="lbl" x="508" y="567"><tspan class="m">{rpc} get_entries { since }</tspan> — one call returns ONE page; the walk ends on the page that comes back EMPTY</text>
+
+  <path class="arwb" d="M480,604 L150,604" marker-end="url(#qb)"/>
+  <text class="num" x="494" y="593">12</text>
+  <text class="lbl" x="508" y="593"><tspan class="m">{ub} session_sync_end</tspan> is the terminator, and carries <tspan class="m">session_started_at</tspan></text>
+
+  <!-- ── phase 4 ── -->
+  <line class="sep" x1="40" y1="626" x2="1120" y2="626"/>
+  <text class="h" x="40" y="644">4 · LIVE — THE SAME REDUCER FOR HISTORY AND FOR DELTAS</text>
+
+  <path class="arwb" d="M810,666 L150,666" marker-end="url(#qb)"/>
+  <text class="num" x="494" y="655">13</text>
+  <text class="lbl" x="508" y="655"><tspan class="m">agent_chunk · tool_request · tool_result · compaction_start/end · {evt} panels</tspan></text>
+
+  <path class="arw" d="M150,692 L480,692" marker-end="url(#q)"/>
+  <text class="num" x="494" y="681">14</text>
+  <text class="lbl" x="508" y="681"><tspan class="m">prompt · steer · followUp · abort · session_launch_dirs · session_launch · terminate</tspan></text>
+</svg>

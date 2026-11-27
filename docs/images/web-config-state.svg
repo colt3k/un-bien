@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 652" role="img"
+     aria-label="Where configuration and state live for the un-bien web client: files on the machine and keys in the browser"
+     font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif">
+  <rect id="bg" x="0" y="0" width="100%" height="100%" fill="#ffffff"/>
+  <style>
+    .cfg  { fill:#fffbeb; stroke:#b45309; stroke-width:1.6 }
+    .st   { fill:#eef1f5; stroke:#94a3b8; stroke-width:1.5 }
+    .br   { fill:#e7f6f1; stroke:#0f766e; stroke-width:1.8 }
+    .t    { font-size:13.5px; fill:#0f172a; font-weight:600 }
+    .h    { font-size:11px; fill:#334155; font-weight:700; letter-spacing:.08em }
+    .m    { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:11px; fill:#0f172a }
+    .s    { font-size:11px; fill:#5b6b7f }
+    .f    { font-size:11px; fill:#115e59 }
+    .ttl  { font-size:19px; fill:#0f172a; font-weight:700 }
+    .sub  { font-size:12.5px; fill:#64748b }
+  </style>
+
+  <text class="ttl" x="24" y="34">Configuration, state, and what the browser remembers</text>
+  <text class="sub" x="24" y="56">config and state are deliberately separate roots; the browser keeps its own third store</text>
+
+  <!-- column 1: config -->
+  <rect class="cfg" x="24" y="80" width="384" height="462" rx="8"/>
+  <text class="h" x="40" y="102">CONFIG — THE FILES YOU EDIT</text>
+
+  <text class="m" x="40" y="124">$PI_CODING_AGENT_DIR/extensions/</text>
+  <text class="m" x="40" y="140">un-bien.json          (machine-wide)</text>
+  <text class="s" x="40" y="160">relay                    the URL the extension dials</text>
+  <text class="s" x="40" y="176">launch.dirs              "*" or an allow-list — the</text>
+  <text class="s" x="40" y="192">                         folder picker's contents</text>
+  <text class="s" x="40" y="208">launch.backend/fallback  tmux · herdr · rex</text>
+  <text class="s" x="40" y="224">launch.shell             login shell for launches</text>
+  <text class="s" x="40" y="240">service.runtime / .env   baked into the unit at install</text>
+  <text class="s" x="40" y="256">package_manager          else pi's npmCommand, else npm</text>
+  <text class="s" x="40" y="272">install_from_source      auto · always · never</text>
+  <text class="s" x="40" y="288">identity.storage         keychain (default) · file</text>
+  <text class="s" x="40" y="304">debug.envelope / panels /</text>
+  <text class="s" x="40" y="320">launcher / relay         the file logs, off by default</text>
+  <text class="s" x="40" y="336">defaults.*               machine-wide fallback for the</text>
+  <text class="s" x="40" y="352">                         per-cwd flags below</text>
+
+  <line x1="40" y1="372" x2="392" y2="372" stroke="#e2e8f0"/>
+
+  <text class="m" x="40" y="392">&lt;cwd&gt;/.pi/un-bien/config.json     (per folder)</text>
+  <text class="s" x="40" y="412">auto_start_relay         default true</text>
+  <text class="s" x="40" y="428">allow_remote_launch      gates the launch button</text>
+  <text class="s" x="40" y="444">allow_remote_terminate   gates the end button</text>
+  <text class="f" x="40" y="468">Config is NOT under the state root, by design</text>
+  <text class="f" x="40" y="484">(design 01M1CB6Q). <tspan class="m">/unbien settings</tspan> edits</text>
+  <text class="f" x="40" y="500">both trees inside pi, using pi's own components.</text>
+
+  <!-- column 2: state -->
+  <rect class="st" x="428" y="80" width="384" height="462" rx="8"/>
+  <text class="h" x="444" y="102">STATE — WHAT THE MACHINE WRITES</text>
+
+  <text class="m" x="444" y="124">~/.local/state/un-bien/</text>
+  <text class="s" x="444" y="142">UNBIEN_STATE_DIR &gt; UNBIEN_DIR &gt;</text>
+  <text class="s" x="444" y="158">UNBIEN_HOME &gt; ${XDG_STATE_HOME:-~/.local/state}/un-bien</text>
+
+  <text class="m" x="444" y="184">identity.json            the machine's Ed25519 seed</text>
+  <text class="m" x="444" y="202">relay-keypair.json       the relay's own identity</text>
+  <text class="m" x="444" y="220">pairing.db               the relay's pairing records</text>
+  <text class="m" x="444" y="238">peers.json               the signed allow-list the</text>
+  <text class="s" x="460" y="254">                         machine pushes on connect</text>
+  <text class="m" x="444" y="272">allow-list-version       the version stamp of that push</text>
+  <text class="m" x="444" y="290">mesh.db                  relay room/mesh state</text>
+  <text class="m" x="444" y="308">relay.log (+ .1)         capped, one rotation</text>
+  <text class="m" x="444" y="326">lifecycle.log            session start/shutdown, why</text>
+  <text class="s" x="460" y="342">                         un-bien went idle, mesh joins</text>
+  <text class="m" x="444" y="360">launcher.log             per-frame launcher chatter</text>
+  <text class="m" x="444" y="378">envelope-debug.log       when debug.envelope is on</text>
+  <text class="m" x="444" y="396">locks/  sessions/  skills/</text>
+  <text class="m" x="444" y="414">web-dump-identity.json   the capture tool's own device</text>
+
+  <line x1="444" y1="434" x2="796" y2="434" stroke="#dfe5ec"/>
+  <text class="s" x="444" y="454">The relay honours the SAME root, so one knob</text>
+  <text class="s" x="444" y="470">relocates both ends. Direct overrides win:</text>
+  <text class="m" x="444" y="490">UNBIEN_MESH_DB_PATH · UNBIEN_PAIRING_DB_PATH</text>
+  <text class="s" x="444" y="510">Never delete the keypair: every client's relay</text>
+  <text class="s" x="444" y="526">pin is bound to it.</text>
+
+  <!-- column 3: browser -->
+  <rect class="br" x="832" y="80" width="304" height="462" rx="8"/>
+  <text class="h" x="848" y="102">BROWSER — WHAT THE TAB REMEMBERS</text>
+  <text class="s" x="848" y="122">localStorage, one entry per browser profile</text>
+
+  <text class="m" x="848" y="148">unbien.web.identity.v1</text>
+  <text class="s" x="856" y="164">this device's Ed25519 seed + pubkey</text>
+  <text class="m" x="848" y="186">unbien.web.relays.v1</text>
+  <text class="s" x="856" y="202">the relay URL, and its pinned identity</text>
+  <text class="m" x="848" y="224">unbien.web.peers.v1</text>
+  <text class="s" x="856" y="240">machines this browser is paired to</text>
+  <text class="m" x="848" y="262">unbien.web.lastRoom.v1</text>
+  <text class="s" x="856" y="278">the room to re-attach on load</text>
+  <text class="m" x="848" y="300">unbien.web.lastView.v1</text>
+  <text class="s" x="856" y="316">anchor row + offset + window, so a</text>
+  <text class="s" x="856" y="332">refresh puts back where you READ TO</text>
+  <text class="m" x="848" y="354">unbien.web.launchDraft.v1</text>
+  <text class="s" x="856" y="370">the typed folder path — the one field</text>
+  <text class="s" x="856" y="386">the machine's list cannot supply</text>
+  <text class="m" x="848" y="408">unbien.web.pendingLaunch.v1</text>
+  <text class="m" x="848" y="426">unbien.web.prefs.v1</text>
+  <text class="s" x="856" y="442">hide thinking, tool-card defaults</text>
+  <text class="m" x="848" y="464">unbien.web.scanAttempt.v1</text>
+  <text class="m" x="848" y="482">unbien.web.allow-version</text>
+
+  <text class="f" x="848" y="508">Plaintext, not hardware-backed — which is</text>
+  <text class="f" x="848" y="524">why <tspan class="m">/unbien revoke</tspan> stays easy to reach.</text>
+
+  <!-- env band -->
+  <rect x="24" y="560" width="1112" height="76" rx="8" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text class="h" x="40" y="582">ENVIRONMENT — THE KNOBS THAT MOVE THINGS WITHOUT EDITING A FILE</text>
+  <text class="m" x="40" y="602">UNBIEN_RELAY (overrides config's relay) · UNBIEN_RELAY_PORT=3000 · UNBIEN_RELAY_BIND=0.0.0.0 · UNBIEN_STATE_DIR</text>
+  <text class="m" x="40" y="620">UNBIEN_DAEMON=1 (headless init, set for the launcher) · UNBIEN_DIRECT_CONFIG (inline per-cwd JSON) · RELAY_MAX_CT_MIB=4</text>
+  <text class="s" x="40" y="636">RUST_LOG beats debug.relay for the relay's log level · UNBIEN_LIFECYCLE_LOG=0 turns the lifecycle log off (the test suite sets it)</text>
+</svg>

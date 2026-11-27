@@ -1,0 +1,142 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 700" role="img"
+     aria-label="Processes, ports and connections that make the un-bien web client work"
+     font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif">
+  <rect id="bg" x="0" y="0" width="100%" height="100%" fill="#ffffff"/>
+  <style>
+    .up   { fill:#eef1f5; stroke:#94a3b8; stroke-width:1.5 }
+    .fork { fill:#e7f6f1; stroke:#0f766e; stroke-width:1.8 }
+    .opt  { fill:#f8fafc; stroke:#0f766e; stroke-width:1.4; stroke-dasharray:6 4 }
+    .panel{ fill:#fbfcfe; stroke:#cbd5e1; stroke-width:1; stroke-dasharray:5 4 }
+    .t    { font-size:14px; fill:#0f172a; font-weight:600 }
+    .s    { font-size:11.5px; fill:#5b6b7f }
+    .h    { font-size:11px; fill:#334155; font-weight:700; letter-spacing:.08em }
+    .hf   { font-size:11px; fill:#0f766e; font-weight:700; letter-spacing:.08em }
+    .f    { font-size:11.5px; fill:#115e59 }
+    .mono { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:11.5px; fill:#0f172a }
+    .ttl  { font-size:19px; fill:#0f172a; font-weight:700 }
+    .sub  { font-size:12.5px; fill:#64748b }
+    .arw  { stroke:#64748b; stroke-width:1.6; fill:none }
+    .arwf { stroke:#0f766e; stroke-width:1.9; fill:none }
+    .lbl  { font-size:10px; fill:#334155 }
+    .lblf { font-size:10px; fill:#0f766e; font-weight:600 }
+  </style>
+
+  <defs>
+    <marker id="p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#64748b"/>
+    </marker>
+    <marker id="pt" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#0f766e"/>
+    </marker>
+  </defs>
+
+  <text class="ttl" x="40" y="34">What has to be running for the web client to work</text>
+  <text class="sub" x="40" y="56">three processes on the machine, one tab on the phone, and one port contract between the page and the relay</text>
+
+  <!-- ── column 1: the phone and what serves it (24..340) ── -->
+  <rect class="panel" x="24" y="84" width="316" height="446" rx="8"/>
+  <text class="hf" x="36" y="104">THE PHONE — ONE TAB</text>
+
+  <rect class="fork" x="36" y="116" width="292" height="150" rx="6"/>
+  <text class="t" x="48" y="140">web-client (this fork)</text>
+  <text class="s" x="48" y="158">no server, no daemon, no install</text>
+  <text class="f" x="48" y="178">device Ed25519 keypair in localStorage</text>
+  <text class="f" x="48" y="194">relay identity pinned TOFU at pair time</text>
+  <text class="f" x="48" y="210">imports @geohar/un-bien/client — the</text>
+  <text class="f" x="48" y="226">wire is not re-implemented; three</text>
+  <text class="f" x="48" y="242">node-isms are aliased in vite.config.ts</text>
+
+  <rect class="up" x="36" y="290" width="292" height="112" rx="6"/>
+  <text class="t" x="48" y="314">Vite — static files only</text>
+  <text class="s" x="48" y="332">dev     :5173  strictPort, HMR</text>
+  <text class="s" x="48" y="348">preview :4173  dist/ — the phone path</text>
+  <text class="s" x="48" y="366">host: true; allowedHosts:</text>
+  <text class="s" x="48" y="382">.ts.net  .local  localhost</text>
+
+  <rect class="opt" x="36" y="426" width="292" height="88" rx="6"/>
+  <text class="t" x="48" y="450">tailscale serve — optional</text>
+  <text class="s" x="48" y="468">443  → 4173   (https page)</text>
+  <text class="s" x="48" y="484">3443 → 3000   (wss relay)</text>
+  <text class="s" x="48" y="502">cert: the node's own .ts.net cert</text>
+
+  <path class="arw" d="M182,290 L182,272" marker-end="url(#p)"/>
+  <text class="lbl" x="190" y="284">GET http(s)</text>
+  <path class="arw" d="M100,426 L100,408" marker-end="url(#p)"/>
+  <text class="lbl" x="46" y="420">443 → 4173</text>
+
+  <!-- ── column 2: the relay (404..676) ── -->
+  <rect class="panel" x="404" y="84" width="272" height="446" rx="8"/>
+  <text class="h" x="416" y="104">THE RELAY — ONE PROCESS</text>
+
+  <rect class="up" x="416" y="116" width="248" height="238" rx="6"/>
+  <text class="t" x="428" y="140">unbien-relay (Rust)</text>
+  <text class="mono" x="428" y="162">:3000  on 0.0.0.0</text>
+  <text class="s" x="428" y="180">UNBIEN_RELAY_PORT · UNBIEN_RELAY_BIND</text>
+  <text class="s" x="428" y="202">GET /           WebSocket upgrade</text>
+  <text class="s" x="428" y="218">GET /health     "OK" — the health probe</text>
+  <text class="s" x="428" y="234">GET/POST /mesh/:hash  membership</text>
+  <text class="s" x="428" y="256">no TLS: termination is the public</text>
+  <text class="s" x="428" y="272">edge's job (relay/src/peering.rs)</text>
+  <text class="s" x="428" y="294">frame ceiling RELAY_MAX_CT_MIB=4</text>
+  <text class="s" x="428" y="310">log: relay.log, capped + one rotation;</text>
+  <text class="s" x="428" y="326">drop warnings rate-limited per minute</text>
+
+  <rect class="opt" x="416" y="378" width="248" height="136" rx="6"/>
+  <text class="h" x="428" y="400">A DUMB PIPE, ON PURPOSE</text>
+  <text class="s" x="428" y="420">Routes by (peer, room). It holds the</text>
+  <text class="s" x="428" y="436">pairing allow-list and mesh state, but</text>
+  <text class="s" x="428" y="452">the operator can see routed plaintext.</text>
+  <text class="s" x="428" y="468">Self-host one you trust: the browser</text>
+  <text class="s" x="428" y="484">dials it directly — nothing else sits</text>
+  <text class="s" x="428" y="500">between the tab and the machine.</text>
+
+  <!-- gap 340..404 -->
+  <path class="arwf" d="M344,190 L400,190" marker-end="url(#pt)"/>
+  <text class="lblf" x="342" y="176">ws:// :3000</text>
+  <text class="lblf" x="342" y="206">wss:// :3443</text>
+  <path class="arw" d="M344,446 L400,446" marker-end="url(#p)"/>
+  <text class="lbl" x="342" y="432">3443 → 3000</text>
+
+  <!-- ── column 3: the machine (740..1136) ── -->
+  <rect class="panel" x="740" y="84" width="396" height="446" rx="8"/>
+  <text class="h" x="752" y="104">THE MACHINE — TWO OUTBOUND RELAY CLIENTS</text>
+
+  <rect class="up" x="752" y="116" width="372" height="150" rx="6"/>
+  <text class="t" x="764" y="140">pi session + un-bien extension</text>
+  <text class="s" x="764" y="160">outbound ws:// to the relay URL in config —</text>
+  <text class="s" x="764" y="176">it listens on NO port, so the machine needs</text>
+  <text class="s" x="764" y="192">no inbound firewall rule</text>
+  <text class="s" x="764" y="212">advertises a room per session: name, cwd, caps</text>
+  <text class="s" x="764" y="228">(remote_launch, remote_terminate, models, …)</text>
+  <text class="s" x="764" y="248">machine identity: one Ed25519 seed — keychain</text>
+  <text class="s" x="764" y="264">by default, file if identity.storage = "file"</text>
+
+  <rect class="up" x="752" y="290" width="372" height="112" rx="6"/>
+  <text class="t" x="764" y="314">unbien-launcher daemon</text>
+  <text class="s" x="764" y="334">also an outbound relay client — a mesh peer that</text>
+  <text class="s" x="764" y="350">is NOT a pi session, so a phone can start one</text>
+  <text class="s" x="764" y="366">when none is running. Joins the machine-level</text>
+  <text class="s" x="764" y="382">control room and advertises remote_launch.</text>
+
+  <rect class="up" x="752" y="426" width="372" height="88" rx="6"/>
+  <text class="t" x="764" y="450">launch backend: tmux (default) · herdr · rex</text>
+  <text class="s" x="764" y="468">no port. The launcher spawns pi inside a tmux</text>
+  <text class="s" x="764" y="484">window through a LOGIN shell, because a launchd</text>
+  <text class="s" x="764" y="500">daemon otherwise spawns pi devoid of your PATH.</text>
+
+  <!-- gap 676..740 -->
+  <path class="arw" d="M680,190 L736,190" marker-start="url(#p)" marker-end="url(#p)"/>
+  <text class="lbl" x="686" y="176">ws://</text>
+  <path class="arw" d="M680,346 L736,346" marker-start="url(#p)" marker-end="url(#p)"/>
+  <text class="lbl" x="686" y="332">ws://</text>
+  <path class="arw" d="M938,426 L938,410" marker-end="url(#p)"/>
+  <text class="lbl" x="946" y="422">spawns</text>
+
+  <!-- port contract band -->
+  <rect class="fork" x="24" y="552" width="1112" height="124" rx="8"/>
+  <text class="t" x="40" y="578">The port contract — the one thing that silently breaks a deployment</text>
+  <text class="f" x="40" y="600">An http page defaults the relay box to http://&lt;the host you opened&gt;:3000 (ws://). An https page MUST default to https://&lt;host&gt;:3443 (wss://): a secure page cannot open an</text>
+  <text class="f" x="40" y="616">insecure ws:// socket at all — the browser blocks it as mixed content before any un-bien code runs. The rule lives in web-client/src/framing.ts (RELAY_PORT 3000, RELAY_TLS_PORT 3443).</text>
+  <text class="f" x="40" y="632">scripts/https.sh carries the same 3443 as RELAY_TLS_PORT. Change one without the other and the client dials a port nothing is listening on, with an error that says nothing about why.</text>
+  <text class="f" x="40" y="650">The relay itself never learns TLS. The front is either tailscale serve (trusted cert, no CA to install on a phone) or, off-tailnet, scripts/https.sh mkcert + a socat front.</text>
+</svg>
