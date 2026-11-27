@@ -340,6 +340,18 @@
           rows="1"
           placeholder="message the session…"
         ></textarea>
+        <!-- Enter sends and Shift+Enter does not, but a soft keyboard gives you
+             a Shift you TAP rather than one you hold, so on a phone the
+             modifier is never down when Enter lands. This is the break for
+             thumbs — see src/composer-newline.ts. -->
+        <button
+          id="newlineBtn"
+          class="icon"
+          type="button"
+          title="new line — Shift+Enter on a hardware keyboard"
+        >
+          ⏎
+        </button>
         <!-- NO `capture` attribute, unlike the pairing scanner's `scanFile`.
              `capture` pins the picker to the camera; without it the OS offers
              BOTH photos and camera from one tap, which is what an attachment

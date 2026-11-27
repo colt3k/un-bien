@@ -86,6 +86,7 @@ import {
   ANDROID_RECT_SLACK_PX,
   type VirtualKeyboardLike,
 } from "./keyboard-inset.js"
+import { insertNewlineAt } from "./composer-newline.js"
 import { relayUrlForPage } from "./framing.js"
 import {
   MAX_ATTACHMENTS,
@@ -563,6 +564,7 @@ export class App {
   /** Queue a message for after the running turn. A field rather than a `$()` at
    *  each use, because the ended view hides it alongside the other controls. */
   private readonly queueBtn = $<HTMLButtonElement>("queueBtn")
+  private readonly newlineBtn = $<HTMLButtonElement>("newlineBtn")
   /** Images staged for the next message. Kept OUT of the reducer on purpose:
    *  they are the composer's own state, not part of the transcript, and the
    *  fold has no idea what to do with a message that has not been sent. */
@@ -1219,6 +1221,7 @@ export class App {
     this.launchName.addEventListener("input", () => this.scheduleDraftSave())
     this.sendBtn.addEventListener("click", () => this.send("auto"))
     this.queueBtn.addEventListener("click", () => this.send("queue"))
+    this.newlineBtn.addEventListener("click", () => this.insertNewline())
     // The button opens the picker; the input stays hidden because a styled
     // button is what fits the composer row. This only works because the click
     // is a real user gesture — a `click()` from anywhere else is blocked.
@@ -1279,6 +1282,24 @@ export class App {
       setMonoProse(this.monoProseMode)
       this.transcript.classList.toggle("mono-prose", this.monoProseMode)
     })
+  }
+
+  /** The soft-keyboard way to break a line. Enter sends, Shift+Enter does not,
+   *  and on glass there is no Shift to hold down while Enter is tapped — see
+   *  `composer-newline.ts` for why the insertion itself is a separate module. */
+  private insertNewline(): void {
+    const { value, caret } = insertNewlineAt({
+      value: this.input.value,
+      selectionStart: this.input.selectionStart,
+      selectionEnd: this.input.selectionEnd,
+    })
+    this.input.value = value
+    this.input.setSelectionRange(caret, caret)
+    // Focus stays with the field: the point of the button is to keep typing,
+    // and a button that steals focus makes the next keystroke go nowhere.
+    this.input.focus()
+    this.autogrow()
+    this.scheduleDraftSave()
   }
 
   private autogrow(): void {
@@ -3189,6 +3210,7 @@ export class App {
     this.input.hidden = ended
     this.sendBtn.hidden = ended
     this.queueBtn.hidden = ended
+    this.newlineBtn.hidden = ended
     this.stopBtn.hidden = ended || !this.busy
     this.endedNote.hidden = !ended
     // An attachment for a conversation that can no longer take a message is
