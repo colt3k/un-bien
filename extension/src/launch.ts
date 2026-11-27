@@ -118,7 +118,16 @@ export function _buildTmuxLaunchArgs(
     ? [
         "new-window",
         "-t",
-        session,
+        // The trailing colon is load-bearing. A bare `-t un-bien` does NOT mean
+        // "the session": tmux resolves a bare name against the WINDOWS of the
+        // current session first, and window names come from the folder basename
+        // — so launching in a folder named like the session (the default session
+        // is `un-bien`, and so is this repo) makes `-t un-bien` name THAT
+        // window. tmux then asks for a new window at the window's own index and
+        // refuses it: "create window failed: index 2 in use", on every launch,
+        // forever, until the window is renamed. The colon pins the target to
+        // the session with no window specified. Verified on tmux 3.8.
+        `${session}:`,
         "-n",
         windowName,
         "-c",

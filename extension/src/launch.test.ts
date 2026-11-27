@@ -71,7 +71,7 @@ describe("launch backends — tmux/herdr argv + tilde expansion", () => {
     ).toEqual([
       "new-window",
       "-t",
-      "un-bien",
+      "un-bien:",
       "-n",
       "pi-foo",
       "-c",
@@ -81,6 +81,26 @@ describe("launch backends — tmux/herdr argv + tilde expansion", () => {
       "-n",
       "My Session",
     ])
+  })
+
+  test("remote launch: the tmux target names the SESSION, never a same-named window", () => {
+    // Live failure, and the reason this is pinned. The shared session is
+    // `un-bien`; launching in a folder named `un-bien` makes a WINDOW named
+    // `un-bien`. tmux resolves a bare `-t un-bien` to that window, asks for a
+    // new window at its (occupied) index, and every later launch dies with
+    // "create window failed: index 2 in use". Reproduced on tmux 3.8; the
+    // trailing colon is what keeps the target a session.
+    const argv = _buildTmuxLaunchArgs(
+      "un-bien",
+      "un-bien",
+      "/tmp/un-bien",
+      true,
+    )
+    expect(argv.slice(0, 4)).toEqual(["new-window", "-t", "un-bien:", "-n"])
+    // The session-CREATE branch needs no colon: -s already names a session.
+    expect(_buildTmuxLaunchArgs("un-bien", "w", "/tmp/w", false)[3]).toBe(
+      "un-bien",
+    )
   })
 
   test("remote launch: herdr workspace-create argv is a safe array, cwd + label", () => {
