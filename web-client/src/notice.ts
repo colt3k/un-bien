@@ -84,6 +84,26 @@ export function launchFailureHint(code: string): string {
 }
 
 /**
+ * A launch failure as one line for the phone: the hint, plus what the machine
+ * actually said when it said anything.
+ *
+ * The hint names a fix; the machine's message names the cause, and for
+ * `spawn_failed` it is the ONLY thing that does — a tmux argv error and a
+ * missing binary are the same code. Dropping it is what made eight failed
+ * launches look like a mystery while `launcher.log` carried the answer.
+ *
+ * The machine already caps its side at 400 chars; this is a narrow phone row, so
+ * it is clipped rather than allowed to wrap the panel. Newlines are folded: the
+ * note is one line by construction.
+ */
+export function launchFailureNote(code: string, machineMessage = ""): string {
+  const hint = launchFailureHint(code)
+  const detail = machineMessage.replace(/\s+/g, " ").trim().slice(0, 180)
+  if (!detail || detail === hint) return hint
+  return `${hint} — the machine said: ${detail}`
+}
+
+/**
  * What a room listing that did not work means.
  *
  * `relayConnected` is not decoration. The relay SUPPRESSES a repeat `rooms_check`

@@ -104,7 +104,7 @@ import {
 } from "./launch-dirs.js"
 import {
   describeError,
-  launchFailureHint,
+  launchFailureNote,
   roomListFailure,
   toastMessage,
 } from "./notice.js"
@@ -2940,6 +2940,10 @@ export class App {
       }
       case "session_launch_result": {
         const code = typeof ub.code === "string" ? ub.code : ""
+        // The machine's own words. `code` alone cannot tell a bad tmux argv
+        // from a missing binary — both are `spawn_failed` — and this is the
+        // only place the difference can reach the phone.
+        const machineMessage = typeof ub.message === "string" ? ub.message : ""
         const inReplyTo =
           typeof ub.in_reply_to === "string" ? ub.in_reply_to : ""
         if (this.pendingLaunch && inReplyTo === this.pendingLaunch.id) {
@@ -2952,13 +2956,13 @@ export class App {
             this.pendingLaunch = null
             clearTimeout(this.launchTimer)
             forgetPendingLaunch()
-            this.setLaunchNote(launchFailureHint(code))
+            this.setLaunchNote(launchFailureNote(code, machineMessage))
           }
         }
         this.toast(
           ub.ok === true
             ? `launched (${String(ub.backend ?? "?")})`
-            : `launch failed: ${code || String(ub.message ?? "unknown")}`,
+            : `launch failed: ${launchFailureNote(code, machineMessage)}`,
         )
         break
       }
