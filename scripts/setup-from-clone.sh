@@ -17,6 +17,11 @@
 # What it deliberately does NOT do: pair a device. `/unbien pair` prints a
 # single-use code inside a Pi session, and printing that code from a script
 # would make it printable by something other than the human holding the phone.
+#
+# It also does not turn on TLS. `scripts/https.sh on` writes `tailscale serve`
+# handlers, which is a decision about the public edge rather than a build step,
+# so this script prints the pointer when a tailnet is up and leaves the choice
+# to you. See docs/from-clone.md §6.
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -28,6 +33,7 @@ RUN=1
 DRY=0
 SKIP_DEPS=0 SKIP_BUILD=0 SKIP_RELAY=0 SKIP_LAUNCHER=0 SKIP_PI=0
 DOCTOR=0
+TAILNET=0 # set by preflight; only used to decide whether to offer the TLS step
 
 step() { printf '\n== %s\n' "$*"; }
 ok()   { printf '   ok   %s\n' "$*"; }
@@ -43,7 +49,7 @@ run() { # command and args; printed instead of executed under --dry-run
   "$@"
 }
 
-usage() { sed -n '2,20p' "${BASH_SOURCE[0]}"; }
+usage() { sed -n '2,24p' "${BASH_SOURCE[0]}"; }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -91,7 +97,7 @@ health_ok() {
 LAUNCHER_LABEL="com.georgeharker.unbien.launcher"
 LAUNCHER_UNIT="unbien-launcher.service"
 launcher_state() {
-  local target="" manager=""
+  local target="" interp="" manager=""
   case "$(uname -s)" in
     Darwin)
       local plist="$HOME/Library/LaunchAgents/$LAUNCHER_LABEL.plist"
@@ -99,6 +105,9 @@ launcher_state() {
         warn "no launcher unit at $plist"
         return 1
       fi
+      # ProgramArguments is `<node> <launcher.js> [args…]` — token 0 is the
+      # runtime, and it is checked too, not just the entry file.
+      interp="$(plutil -extract ProgramArguments.0 raw -o - "$plist" 2>/dev/null || true)"
       target="$(plutil -extract ProgramArguments.1 raw -o - "$plist" 2>/dev/null || true)"
       manager="launchd"
       ;;
@@ -109,7 +118,10 @@ launcher_state() {
         return 1
       fi
       # ExecStart= is `<node> <launcher.js> [args…]`: the entry is token 2.
-      target="$(sed -n 's/^ExecStart=//p' "$unit" | head -1 | awk '{print $2}')"
+      local exec_line
+      exec_line="$(sed -n 's/^ExecStart=//p' "$unit" | head -1)"
+      interp="$(awk '{print $1}' <<<"$exec_line")"
+      target="$(awk '{print $2}' <<<"$exec_line")"
       manager="systemd --user"
       ;;
     *)
@@ -124,11 +136,43 @@ launcher_state() {
     bad "entry file is MISSING — that is a build problem, not a service problem"
     return 1
   fi
+
+  # The INTERPRETER is the other half of the unit's command line, and it is the
+  # half a package manager moves. `brew upgrade node` replaces
+  # <prefix>/Cellar/node/<version>/bin/node and deletes the old version's
+  # directory; a unit holding that path cannot start, launchd answers
+  # EX_CONFIG (78), and launcher.log stays EMPTY. A daemon already running
+  # survives the upgrade and dies at its next restart — a confusing day to be
+  # debugging, and "entry file exists" says nothing about it.
+  if [[ -z "$interp" ]]; then
+    warn "unit command line is not readable — check it by hand"
+  elif [[ ! -x "$interp" ]]; then
+    bad "the unit's runtime no longer exists: $interp"
+    note "a package-manager upgrade moved it. Point the unit at the stable alias:"
+    note "  macOS:  /opt/homebrew/opt/node/bin/node   (Intel: /usr/local/opt/node/bin/node)"
+    note "  Linux:  the ExecStart= line in systemd/user/$LAUNCHER_UNIT"
+    return 1
+  elif [[ "$interp" == *"/Cellar/"* ]]; then
+    warn "unit bakes a versioned Cellar path: $interp"
+    note "the next 'brew upgrade node' deletes it and the launcher stops coming back"
+  else
+    ok "runtime exists: $interp"
+  fi
+
   if [[ "$manager" == "launchd" ]]; then
-    if launchctl print "gui/$(id -u)/$LAUNCHER_LABEL" >/dev/null 2>&1; then
-      ok "launchd has it loaded"
-    else
+    local job="gui/$(id -u)/$LAUNCHER_LABEL" print
+    print="$(launchctl print "$job" 2>/dev/null || true)"
+    if [[ -z "$print" ]]; then
       warn "launchd does not have it loaded (start it, or log out/in)"
+    elif grep -qE '^[[:space:]]*state = running' <<<"$print"; then
+      ok "launchd has it running (pid $(grep -m1 -E '^[[:space:]]*pid = ' <<<"$print" | awk '{print $3}'))"
+    else
+      # Loaded-but-not-running is the shape of an unexecutable unit: launchd
+      # keeps retrying, the daemon never logs a line.
+      bad "launchd has it loaded but NOT running: $(grep -m1 -E '^[[:space:]]*state = ' <<<"$print" | awk -F' = ' '{print $2}')"
+      grep -m1 -E '^[[:space:]]*last exit code' <<<"$print" | sed 's/^[[:space:]]*/   also: /'
+      note "a non-zero exit with an EMPTY launcher.log means launchd could not exec the"
+      note "runtime path above — fix that before reading the log for a cause"
     fi
   else
     if systemctl --user is-active --quiet "$LAUNCHER_UNIT" 2>/dev/null; then
@@ -305,6 +349,7 @@ preflight() {
   esac
 
   if command -v tailscale >/dev/null 2>&1 && tailscale status --json >/dev/null 2>&1; then
+    TAILNET=1
     ok "tailscale up — reachable from anywhere on your tailnet"
   else
     note "no tailnet, and that is fine: the phone reaches this machine by LAN address."
@@ -346,6 +391,17 @@ doctor() {
   "$ROOT/scripts/relay-service.sh" status || true
   "$WEB/scripts/start.sh" relay status || true
   launcher_state || true
+
+  # TLS is not part of the setup, so `doctor` says which side of that line you
+  # are on rather than leaving it to be discovered from a broken connection.
+  step "TLS edge (optional)"
+  if command -v tailscale >/dev/null 2>&1 && tailscale status >/dev/null 2>&1; then
+    note "tailnet up. TLS is a deployment choice, not a setup step:"
+    note "  $ROOT/scripts/https.sh status   what is served now, and the URLs to paste"
+    note "  $ROOT/scripts/https.sh on       https page :443, wss relay :3443"
+  else
+    note "no tailnet — plain http on the LAN is a supported setup (docs/from-clone.md §6)"
+  fi
 }
 
 if [[ "$DOCTOR" == 1 ]]; then
@@ -454,6 +510,20 @@ echo "   Restart the client any time with:"
 echo "       web-client/scripts/start.sh $SERVE"
 echo "   Read-only health check:"
 echo "       web-client/scripts/start.sh doctor"
+
+# Offer TLS only when the thing that serves it can actually work. The script
+# still does not run it: writing tailscale serve handlers is a decision about
+# the public edge, and `on` is one command away for whoever wants it.
+if [[ "$TAILNET" == 1 ]]; then
+  serve_port=4173
+  if [[ "$SERVE" == "dev" ]]; then serve_port=5173; fi
+  echo
+  echo "   On a tailnet, https is one command (deliberately not run for you):"
+  echo "       scripts/https.sh on        # https page :443, wss relay :3443"
+  echo "       scripts/https.sh status    # the exact URLs to paste"
+  echo "   Until then the page is http://…:$serve_port, and QR pairing is a photo"
+  echo "   upload — the camera API only exists on a secure page."
+fi
 
 if [[ "$RUN" == 1 && "$DRY" == 0 ]]; then
   step "starting the web client ($SERVE) — Ctrl-C to stop"

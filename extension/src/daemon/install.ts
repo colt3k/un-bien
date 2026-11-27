@@ -17,7 +17,11 @@ import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { unbienStateHome } from "../paths.js"
 import { loadConfig } from "../config.js"
-import { resolveServiceRuntime, serviceEnv } from "./service_env.js"
+import {
+  resolveServiceRuntime,
+  serviceEnv,
+  stableRuntimePath,
+} from "./service_env.js"
 
 /**
  * Generates and activates a system service for the un-bien launcher daemon so
@@ -98,7 +102,12 @@ export function findNodeBinary(): string {
   // binary. Embedding it in the service unit means the user gets the
   // exact same Node version they invoked `unbien install` with — no
   // PATH ambiguity at boot time.
-  return process.execPath
+  //
+  // Then make it survive. Under Homebrew execPath is a versioned Cellar path
+  // that `brew upgrade node` deletes, and a unit holding a deleted path does
+  // not fail loudly: launchd answers `EX_CONFIG (78)` and the daemon's own log
+  // stays empty. See `stableRuntimePath`.
+  return stableRuntimePath(process.execPath)
 }
 
 export function findTemplate(

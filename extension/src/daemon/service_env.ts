@@ -9,7 +9,7 @@
  * an absolute path for the same reason.
  */
 import { execFileSync } from "node:child_process"
-import { existsSync } from "node:fs"
+import { existsSync, realpathSync } from "node:fs"
 import { homedir } from "node:os"
 import { delimiter, isAbsolute, join } from "node:path"
 import type { UnBienConfig } from "../config.js"
@@ -96,25 +96,60 @@ export function whichOnPath(
   return null
 }
 
+/**
+ * Rewrite an absolute runtime path into one that survives a package-manager
+ * upgrade.
+ *
+ * `process.execPath` under Homebrew is a VERSIONED path —
+ * `/opt/homebrew/Cellar/node/26.13.1_2/bin/node`. It is absolute, it exists,
+ * and `brew upgrade node` deletes it. A service unit that baked it cannot be
+ * started again: launchd reports `last exit code = 78: EX_CONFIG` and writes
+ * NOTHING to the service's own log, so the daemon is simply gone and silent.
+ * Seen live: a launcher with 2.2 days of uptime survived the upgrade, then died
+ * the moment something restarted it — and `doctor` still said "entry file
+ * exists", because the entry file was never the problem.
+ *
+ * Homebrew keeps a stable symlink at `<prefix>/opt/<formula>/bin/<name>` and
+ * repoints it on every upgrade, so bake that when it resolves to the same
+ * binary. Anything else (nvm, asdf, a distro package) is returned unchanged —
+ * there is no stable alias to offer, which is why the install-time check and
+ * `doctor` verify the path rather than trusting it.
+ */
+export function stableRuntimePath(p: string): string {
+  const m = /^(.+)\/Cellar\/([^/]+)\/[^/]+\/(.+)$/.exec(p)
+  if (!m) return p
+  const stable = join(m[1]!, "opt", m[2]!, m[3]!)
+  try {
+    return existsSync(stable) && realpathSync(stable) === realpathSync(p)
+      ? stable
+      : p
+  } catch {
+    // A path we cannot resolve is a path we must not rewrite.
+    return p
+  }
+}
+
 /** The absolute runtime binary the launcher service runs on: `service.runtime`
  *  (a name resolved on PATH, or an absolute path), else the runtime running
  *  the install. Throws when the configured runtime cannot be found, so the
- *  install fails instead of writing a unit that cannot start. */
+ *  install fails instead of writing a unit that cannot start. Every answer is
+ *  passed through `stableRuntimePath`: a unit must not bake a path a package
+ *  manager is free to delete. */
 export function resolveServiceRuntime(
   config: UnBienConfig,
   opts: { execPath?: string; path?: string } = {},
 ): string {
   const configured = config.service?.runtime?.trim()
-  if (!configured) return opts.execPath ?? process.execPath
+  if (!configured) return stableRuntimePath(opts.execPath ?? process.execPath)
   if (isAbsolute(configured)) {
     if (!existsSync(configured))
       throw new Error(`service.runtime ${configured} does not exist`)
-    return configured
+    return stableRuntimePath(configured)
   }
   const found = whichOnPath(configured, opts.path)
   if (!found)
     throw new Error(`service.runtime "${configured}" was not found on PATH`)
-  return found
+  return stableRuntimePath(found)
 }
 
 export type PackageManager = "npm" | "bun" | "pnpm"

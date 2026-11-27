@@ -53,9 +53,20 @@ describe("detectPlatform", () => {
 })
 
 describe("findNodeBinary", () => {
-  test("returns process.execPath (absolute)", () => {
-    expect(findNodeBinary()).toBe(process.execPath)
-    expect(isAbsolute(findNodeBinary())).toBe(true) // `/...` POSIX, `C:\...` win32
+  test("returns an absolute runtime path that exists", () => {
+    const node = findNodeBinary()
+    expect(isAbsolute(node)).toBe(true) // `/...` POSIX, `C:\...` win32
+    expect(existsSync(node)).toBe(true)
+  })
+
+  test("never bakes a versioned Homebrew Cellar path", () => {
+    // The contract is not "equal to process.execPath" — it is "a path that is
+    // still there after a package-manager upgrade". A unit holding
+    // <prefix>/Cellar/node/<version>/bin/node dies the day `brew upgrade node`
+    // deletes that directory, and launchd says only `EX_CONFIG (78)`, with an
+    // empty service log. Seen live: a launcher with 2.2 days of uptime survived
+    // the upgrade and never came back after a restart.
+    expect(findNodeBinary()).not.toMatch(/\/Cellar\/[^/]+\/[^/]+\//)
   })
 })
 
@@ -269,7 +280,7 @@ describe("defaultRenderVars", () => {
       if (saved === undefined) delete process.env["PI_CODING_AGENT_DIR"]
       else process.env["PI_CODING_AGENT_DIR"] = saved
     }
-    expect(vars.node).toBe(process.execPath)
+    expect(vars.node).toBe(findNodeBinary())
     expect(vars.launcher.endsWith(join("bin", "launcher.js"))).toBe(true)
     expect(isAbsolute(vars.home)).toBe(true)
     expect(vars.user.length).toBeGreaterThan(0)

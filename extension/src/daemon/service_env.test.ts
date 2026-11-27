@@ -15,6 +15,7 @@ import {
   resolveServiceRuntime,
   serviceEnv,
   serviceEnvNames,
+  stableRuntimePath,
   globalPackageRoot,
   resolvePackageManager,
   packageManagerConfigured,
@@ -84,6 +85,56 @@ describe("service runtime", () => {
     expect(() =>
       resolveServiceRuntime({ service: { runtime: join(dir, "gone") } }),
     ).toThrow(/does not exist/)
+  })
+})
+
+describe("runtime path stability: a unit must not bake a path brew deletes", () => {
+  // The live failure. ProgramArguments[0] was
+  // <prefix>/Cellar/node/26.13.1_2/bin/node. `brew upgrade node` replaced
+  // 26.13.1_2 with 26.13.1_4, the old directory went with it, and the launcher
+  // could never start again: launchd answered EX_CONFIG (78) and wrote nothing
+  // to launcher.log. The daemon had 2.2 days of uptime, so it survived the
+  // upgrade and died at the first restart.
+  const root = mkdtempSync(join(tmpdir(), "unbien-runtime-"))
+  const cellarBin = join(root, "Cellar", "node", "26.13.1_2", "bin", "node")
+  const optBin = join(root, "opt", "node", "bin", "node")
+  mkdirSync(join(cellarBin, ".."), { recursive: true })
+  mkdirSync(join(optBin, ".."), { recursive: true })
+  writeFileSync(cellarBin, "#!/bin/sh\n")
+  symlinkSync(cellarBin, optBin)
+
+  test("a Homebrew Cellar path becomes the stable opt symlink", () => {
+    expect(stableRuntimePath(cellarBin)).toBe(optBin)
+  })
+
+  test("the stable symlink itself is left alone", () => {
+    expect(stableRuntimePath(optBin)).toBe(optBin)
+  })
+
+  test("a versioned path with no stable alias is returned unchanged", () => {
+    const nvm = join(root, ".nvm", "versions", "node", "v25.2.1", "bin", "node")
+    mkdirSync(join(nvm, ".."), { recursive: true })
+    writeFileSync(nvm, "#!/bin/sh\n")
+    expect(stableRuntimePath(nvm)).toBe(nvm)
+  })
+
+  test("a Cellar path with no opt alias is returned unchanged", () => {
+    const gone = join(root, "Cellar", "node", "9.9.9", "bin", "node")
+    mkdirSync(join(gone, ".."), { recursive: true })
+    writeFileSync(gone, "#!/bin/sh\n")
+    expect(stableRuntimePath(gone)).toBe(gone)
+  })
+
+  test("an opt alias pointing at a DIFFERENT binary is not used", () => {
+    const other = join(root, "Cellar", "node", "1.0.0", "bin", "node")
+    mkdirSync(join(other, ".."), { recursive: true })
+    writeFileSync(other, "#!/bin/sh\n")
+    // opt/node/bin/node points at 26.13.1_2, not at this one.
+    expect(stableRuntimePath(other)).toBe(other)
+  })
+
+  test("resolveServiceRuntime bakes the stable path, not the Cellar one", () => {
+    expect(resolveServiceRuntime({}, { execPath: cellarBin })).toBe(optBin)
   })
 })
 

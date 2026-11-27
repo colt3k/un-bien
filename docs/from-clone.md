@@ -296,6 +296,56 @@ Two smaller footguns in the same area:
   run it — the unit runs this checkout — but if you want that command from source
   too: `npm i -g ./launcher`.
 
+### The other way this goes wrong silently: the unit's runtime path
+
+A service unit is a snapshot of absolute paths, and it holds **two** of them: the
+entry file, and the interpreter that runs it. `doctor` used to check only the
+entry file — the half that almost never moves.
+
+`process.execPath` under Homebrew is a **versioned** path:
+
+```text
+/opt/homebrew/Cellar/node/26.13.1_2/bin/node   ← what the unit baked
+/opt/homebrew/Cellar/node/26.13.1_4/bin/node   ← what `brew upgrade node` left
+```
+
+The upgrade deletes the old directory. A daemon already running does not notice —
+it holds an open image — so it survives, sometimes for days, and dies at its
+first restart. launchd then says:
+
+```text
+state            = spawn scheduled
+last exit code   = 78: EX_CONFIG
+```
+
+and writes **nothing** to `launcher.log`, because the process never started. No
+stack trace, no "not found", no `ENOENT` anywhere. The exit code is the only
+clue, and `state = running` never appears, so "launchd has it loaded" is true
+and useless.
+
+`findNodeBinary()` now rewrites a Cellar path to Homebrew's stable alias
+(`<prefix>/opt/node/bin/node`), which is repointed on every upgrade, and
+`setup-from-clone.sh doctor` checks the interpreter as well as the entry file —
+including flagging a unit that still bakes a `/Cellar/` path. nvm and asdf paths
+are versioned too and have no stable alias to offer, so for those the check is
+what protects you.
+
+Already stuck? Read the path out of the unit, point it at the stable alias, and
+reload the job:
+
+```sh
+L=com.georgeharker.unbien.launcher
+P="$HOME/Library/LaunchAgents/$L.plist"
+plutil -extract ProgramArguments raw -o - "$P"      # read what it baked
+/usr/libexec/PlistBuddy -c "Set :ProgramArguments:0 /opt/homebrew/opt/node/bin/node" "$P"
+launchctl bootout   "gui/$(id -u)/$L"
+launchctl bootstrap "gui/$(id -u)" "$P"
+```
+
+On Linux the same hazard is the `ExecStart=` line in
+`~/.config/systemd/user/unbien-launcher.service` — a versioned nvm path moves
+the same way when you switch node versions.
+
 ---
 
 ## 6. The browser client
@@ -351,6 +401,43 @@ like losing the session.
 Then pair: `/unbien pair` in the pi session prints a single-use code; the drawer
 takes that code and the relay URL (`http://<your-node>:3000`). Full walkthrough,
 including troubleshooting: [`../web-client/USAGE.md`](../web-client/USAGE.md).
+
+### TLS: `tailscale serve` in front of both ends
+
+Optional, and `setup-from-clone.sh` deliberately does not turn it on: it prints the
+pointer when it sees a tailnet and leaves the decision to you, because writing
+`tailscale serve` handlers changes the public edge.
+
+```sh
+./scripts/https.sh on      # 443 -> 4173 (page), 3443 -> 3000 (relay)
+./scripts/https.sh status  # what is served, and the URLs to paste
+./scripts/https.sh off     # removes exactly what `on` added — never `serve reset`
+```
+
+Why this rather than Vite holding a certificate: `tailscale serve` uses the node's
+own `.ts.net` certificate, which every device already on the tailnet trusts — no
+warning page, no CA profile on a phone. Vite *can* hold a key
+(`UNBIEN_TLS_KEY` / `UNBIEN_TLS_CERT`), but that path exists for the off-tailnet
+`mkcert` fallback, and the relay never learns TLS at all: `relay/src/peering.rs`
+says termination is the public edge's job.
+
+The consequence for the client is the part that bites. An `https` page cannot open
+a `ws://` socket — the browser blocks it as mixed content before any un-bien code
+runs — so when the page itself is https the client defaults the relay box to
+**`wss://<host>:3443`**. That port is written twice, in `scripts/https.sh`
+(`RELAY_TLS_PORT`) and `web-client/src/framing.ts` (`RELAY_TLS_PORT`), and
+`scripts/https.test.sh` asserts the two agree; drift looks like a client that
+connects to nothing.
+
+What skipping TLS costs, and what it does not:
+
+- **Pairing and every crypto step: unaffected.** The wire is Ed25519 from `@noble`,
+  not WebCrypto, so a non-secure origin is not a barrier.
+- **The live QR viewfinder: lost.** `getUserMedia` is a secure-context API, so on
+  plain `http` it is absent rather than denied. Photographing the terminal and
+  uploading the photo still works.
+- **Access from outside your network: not a TLS question.** That is what the
+  tailnet in the table above is for.
 
 ---
 
