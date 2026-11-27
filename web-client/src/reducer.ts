@@ -313,17 +313,18 @@ export function toEnvelope(line: unknown): EnvelopeMessage | null {
   return null
 }
 
-/** Key-sorted JSON, so two frames that carry the same facts in a different key
- *  order compare equal. Used by the delta dedup guard. */
-function stableKey(value: unknown): string {
-  if (value === null || typeof value !== "object")
-    return JSON.stringify(value) ?? "null"
-  if (Array.isArray(value)) return `[${value.map(stableKey).join(",")}]`
-  const obj = value as Record<string, unknown>
-  return `{${Object.keys(obj)
-    .sort()
-    .map((k) => `${JSON.stringify(k)}:${stableKey(obj[k])}`)
-    .join(",")}}`
+/** Can `small` be obtained from `big` by deleting characters? This is how the
+ *  settle step tells "this row LOST characters on the way in" (every character
+ *  it has is in the record, in the same order) from "this row genuinely differs
+ *  from the record". Code-unit comparison, so both sides are counted the same
+ *  way whatever the text contains. */
+function isSubsequence(small: string, big: string): boolean {
+  if (small.length > big.length) return false
+  let i = 0
+  for (let j = 0; j < big.length && i < small.length; j++) {
+    if (big[j] === small[i]) i++
+  }
+  return i === small.length
 }
 
 /** Blocking dialogs — the only `extension_ui_request` methods that become a
@@ -908,18 +909,25 @@ export class TranscriptReducer {
   private applyMessageUpdate(rpc: Frame, rowHint?: string): void {
     const event = asFrame(rpc.assistantMessageEvent)
     if (!event) return
-    // Delta dedup, matching the reference's rule (SessionState.swift:457 —
-    // "full-frame delta dedup: identical frames are redeliveries", added after
-    // run 2026-09-18 "every chunk repeats" under overlapping reconnects).
-    // This client used to compare only `type|delta`, which is STRICTER than the
-    // reference and ate legitimate text: a scrubbed capture of a real turn has
-    // three consecutive deltas that scrub to the same string, and the looser rule
-    // dropped two of them. Full-frame equality at least requires the timestamps
-    // and usage to match too. It is still a heuristic — see the 020 scenario's
-    // note for where it can bite.
-    const signature = stableKey(rpc)
-    if (signature === this.lastDelta) return
-    this.lastDelta = signature
+    // NO CONTENT DEDUP OF DELTAS.
+    // The reference (SessionState.swift:457) drops a delta whose full frame
+    // equals the previous one — added after run 2026-09-18, "every chunk
+    // repeats" under overlapping reconnects. But a `text_delta` frame carries
+    // NOTHING that identifies it: no timestamp, no sequence, just
+    // `{type:"text_delta", contentIndex, delta}`. To that rule, "the same frame
+    // arrived twice" and "the same character twice" are literally the same
+    // thing. It ate every repeated character in every streamed reply — "Port
+    // 443" rendered "Port 43", "HTTP 200" rendered "HTP 20", "3000" rendered
+    // "30" — and only a reload showed the truth, because the durable log was
+    // always correct and just this fold was not.
+    //
+    // The overlap it was written for is already handled, by architecture rather
+    // than by heuristic: every (re)attach calls `reset()` and does a full replay
+    // (app.ts), so a reconnect cannot leave a stale delta behind to be repeated,
+    // and a redelivered settled message is caught by `identifyIndex` below.
+    //
+    // If transport-level duplication ever comes back, fix it with a frame
+    // sequence from the relay and dedup on THAT. Content is not an identity.
 
     const kind: ItemKind =
       event.type === "thinking_start" ||
@@ -1112,9 +1120,16 @@ export class TranscriptReducer {
       // never lost, and the row keeps the position the viewer watched.
       const item = this.touch(kind, this.openAssistant)
       item.streaming = false
-      // No text is copied from the settled message: what streamed is what the
-      // viewer watched, and the reference's live settle attaches images and
-      // closes the bubble without touching the text the deltas built.
+      // Reconcile against pi's record. What streamed is normally what the viewer
+      // watched and the whole story — but it is not ALWAYS the whole story: a
+      // fold that loses a frame leaves the row short, and the viewer sits on
+      // "Port 43" until they reload. So when the streamed text is a SUBSEQUENCE
+      // of the settled text — the exact shape of "we dropped characters", and
+      // also the shape of a client that joined mid-stream and saw only a prefix
+      // — the record wins. Anything else is left alone: streamed text holding
+      // characters the record does not is a real difference, and reflowing text
+      // someone has already read is worse than a gap.
+      if (text !== "" && isSubsequence(item.text, text)) item.text = text
       this.attachImages(item, message.content)
       this.identifyIndex.set(key, this.openAssistant)
       this.pendingRows.add(this.openAssistant)
@@ -1440,8 +1455,6 @@ export class TranscriptReducer {
   private messageSeq = 0
   /** Live-born compaction markers, counted the way core counts them. */
   private compactionSeq = 0
-  /** Full-frame dedup for streaming deltas; see `applyMessageUpdate`. */ private lastDelta:
-    string | undefined
 
   /** The `<kind>#<seq>` placeholder the corpus uses when ids are not replay-stable. */
   private row(kind: ItemKind, rowHint?: string): string {
@@ -1578,7 +1591,6 @@ export class TranscriptReducer {
     this.pendingRows.clear()
     this.openAssistant = null
     this.openReasoning = null
-    this.lastDelta = undefined
     this.asks.clear()
     this.subagents = []
     this.plan = null

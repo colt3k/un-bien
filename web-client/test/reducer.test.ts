@@ -19,7 +19,7 @@ function text(frame: Record<string, unknown>): EnvelopeMessage {
 }
 
 describe("streaming fold", () => {
-  it("keeps what streamed: message_end settles the row, it does not re-write it", () => {
+  it("reconciles the settled row when the fold lost characters", () => {
     const snapshot = fold([
       text({
         type: "message_start",
@@ -55,15 +55,91 @@ describe("streaming fold", () => {
     ]).snapshot()
 
     expect(snapshot.items).toHaveLength(1)
-    // The deltas are the record of what the viewer watched. The settled frame
-    // carries MORE text here, and the reference deliberately does not swap it
-    // in — same rule as the `text_end` event, which is ignored outright.
+    // The deltas are the record of what the viewer watched — but they are not
+    // always the WHOLE record. A fold that drops a frame leaves the row short
+    // and the viewer sits on truncated text until they reload, which is exactly
+    // how the dropped-digit bug presented. So when the streamed text is a
+    // SUBSEQUENCE of pi's settled text — every character it has is in the
+    // record, in order, the shape of "we lost some" — the record wins.
+    // Deliberate divergence from the reference; see the note in
+    // `applyMessageEnd`.
     expect(snapshot.items[0]).toMatchObject({
       kind: "assistant",
-      text: "hello",
+      text: "hello there",
       streaming: false,
     })
     expect(snapshot.items[0]?.row).toBe("assistant#1")
+  })
+
+  it("does NOT re-write a row whose text genuinely differs from the record", () => {
+    // The other side of that rule: "hello!" is not obtainable from "hello" by
+    // deleting characters, so this is a real difference, not a loss. Reflowing
+    // text someone has already read is worse than a gap, so the row is left.
+    const snapshot = fold([
+      text({
+        type: "message_start",
+        message: { role: "assistant", content: [] },
+      }),
+      text({
+        type: "message_update",
+        assistantMessageEvent: { type: "text_start", contentIndex: 0 },
+      }),
+      text({
+        type: "message_update",
+        assistantMessageEvent: {
+          type: "text_delta",
+          contentIndex: 0,
+          delta: "hello",
+        },
+      }),
+      text({
+        type: "message_update",
+        assistantMessageEvent: {
+          type: "text_delta",
+          contentIndex: 0,
+          delta: "!",
+        },
+      }),
+      text({
+        type: "message_end",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "hello" }],
+        },
+      }),
+    ]).snapshot()
+    expect(snapshot.items[0]?.text).toBe("hello!")
+  })
+
+  it("keeps every repeated character a stream sends", () => {
+    // The bug this guards. A `text_delta` frame carries no id and no timestamp,
+    // so a dedup that compares frame CONTENT cannot tell "the same frame
+    // arrived twice" from "the same character twice" — and it ate digits out of
+    // live replies: "Port 443" rendered "Port 43", "HTTP 200" rendered
+    // "HTP 20". Only a reload showed the truth, because the durable log was
+    // always right and just this fold was not.
+    const s = "Port 443. HTTP 200. :3443. 3000."
+    const frames: ReturnType<typeof text>[] = [
+      text({
+        type: "message_start",
+        message: { role: "assistant", content: [] },
+      }),
+      text({
+        type: "message_update",
+        assistantMessageEvent: { type: "text_start", contentIndex: 0 },
+      }),
+      ...[...s].map((ch) =>
+        text({
+          type: "message_update",
+          assistantMessageEvent: {
+            type: "text_delta",
+            contentIndex: 0,
+            delta: ch,
+          },
+        }),
+      ),
+    ]
+    expect(fold(frames).snapshot().items[0]?.text).toBe(s)
   })
 
   it("splits a thinking block into its own reasoning row", () => {
