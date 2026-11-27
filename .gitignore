@@ -8,6 +8,12 @@ DerivedData/
 # extension/ (TS) build + deps
 node_modules/
 dist/
+# web-client/scripts/build-swap.sh keeps `dist` as a SYMLINK to the newest
+# dist.build-<stamp>, so that rebuilds never blank the directory a live preview
+# is serving. `dist/` above matches directories only — a symlink named dist is
+# not one, so it needs its own rule.
+/web-client/dist
+/web-client/dist.build-*/
 # relay/ (Rust) build output
 target/
 # The XcodeGen-generated app/UnBien.xcodeproj IS tracked so Xcode opens without

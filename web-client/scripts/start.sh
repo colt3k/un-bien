@@ -219,8 +219,13 @@ case "$MODE" in
     already_running "$PREVIEW_PORT"
     relay_up || relay_up_cmd
     cd "$ROOT"
-    say "building dist/ …"
-    $(pnpm_cmd) -C web-client build
+    # The swap build, not a bare `vite build`. A plain build empties dist/
+    # before writing it, so anyone reloading gets a 404 — and a tab that never
+    # reloaded still breaks, because jsQR is a lazily-imported chunk whose old
+    # hashed filename has just been deleted. build-swap.sh builds beside dist/
+    # and renames the symlink over, atomically.
+    say "building dist/ (swap build — a live preview never sees an empty dist/) …"
+    "$WEB/scripts/build-swap.sh"
     say "serving dist/ on :${PREVIEW_PORT} — this is the one to use from a phone"
     show_urls "$PREVIEW_PORT"
     exec $(pnpm_cmd) -C web-client preview
