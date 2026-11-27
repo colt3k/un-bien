@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 480" role="img"
+     aria-label="The conformance corpus: one fixture set asserted by three independent runners"
+     font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif">
+  <rect id="bg" x="0" y="0" width="100%" height="100%" fill="#ffffff"/>
+  <style>
+    .up   { fill:#eef1f5; stroke:#94a3b8; stroke-width:1.5 }
+    .fork { fill:#e7f6f1; stroke:#0f766e; stroke-width:1.8 }
+    .spec { fill:#fffbeb; stroke:#b45309; stroke-width:1.6 }
+    .t    { font-size:14px; fill:#0f172a; font-weight:600 }
+    .s    { font-size:11.5px; fill:#5b6b7f }
+    .h    { font-size:11px; fill:#334155; font-weight:700; letter-spacing:.08em }
+    .f    { font-size:11.5px; fill:#115e59 }
+    .ttl  { font-size:19px; fill:#0f172a; font-weight:700 }
+    .sub  { font-size:12.5px; fill:#64748b }
+    .mono { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12px; fill:#0f172a }
+    .chip { fill:#ffffff; stroke:#0f766e; stroke-width:1.2 }
+    .chipt{ font-size:11px; fill:#0f766e; font-weight:600 }
+    .arw  { stroke:#94a3b8; stroke-width:1.6; fill:none }
+    .arwf { stroke:#0f766e; stroke-width:1.9; fill:none }
+  </style>
+
+  <defs>
+    <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/>
+    </marker>
+    <marker id="bt" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#0f766e"/>
+    </marker>
+  </defs>
+
+  <text class="ttl" x="32" y="34">One corpus, three runners — how a second client gets proven</text>
+  <text class="sub" x="32" y="56">contracts/conformance/ · vocab.md is the spec, the scenarios are the evidence</text>
+
+  <!-- fixtures -->
+  <rect class="fork" x="32" y="88" width="316" height="250" rx="8"/>
+  <text class="h" x="48" y="110">SCENARIOS / &lt;NNN-NAME&gt;/</text>
+
+  <rect x="48" y="122" width="284" height="44" rx="5" fill="#ffffff" stroke="#94a3b8"/>
+  <text class="mono" x="60" y="141">input.jsonl</text>
+  <text class="s" x="60" y="157">the exact wire frames, as delivered</text>
+
+  <rect x="48" y="174" width="284" height="44" rx="5" fill="#ffffff" stroke="#94a3b8"/>
+  <text class="mono" x="60" y="193">expected.json</text>
+  <text class="s" x="60" y="209">the normalized interpreted state</text>
+
+  <rect x="48" y="226" width="284" height="44" rx="5" fill="#ffffff" stroke="#94a3b8"/>
+  <text class="mono" x="60" y="245">meta.json</text>
+  <text class="s" x="60" y="261">origin, modes, capture date, scrub notes</text>
+
+  <rect class="chip" x="48" y="282" width="86" height="22" rx="11"/>
+  <text class="chipt" x="60" y="297">25 scenarios</text>
+  <rect class="chip" x="142" y="282" width="102" height="22" rx="11"/>
+  <text class="chipt" x="154" y="297">9 real captures</text>
+  <rect class="chip" x="252" y="282" width="80" height="22" rx="11"/>
+  <text class="chipt" x="264" y="297">live + replay</text>
+
+  <!-- vocabulary -->
+  <rect class="spec" x="384" y="88" width="250" height="250" rx="8"/>
+  <text class="h" x="400" y="110">VOCAB.MD — THE SPEC</text>
+  <text class="t" x="400" y="132">one normalized shape</text>
+  <text class="s" x="400" y="152">items[]: kind, row, text,</text>
+  <text class="s" x="400" y="168">images, streaming, state,</text>
+  <text class="s" x="400" y="184">tool, blocks (the tool</text>
+  <text class="s" x="400" y="200">card's result face), flags</text>
+  <text class="s" x="400" y="220">leafId · subagents ·</text>
+  <text class="s" x="400" y="236">pendingAsks · plan</text>
+  <text class="f" x="400" y="262">The interpreted state must be</text>
+  <text class="f" x="400" y="278">identical across MODES and</text>
+  <text class="f" x="400" y="294">across IMPLEMENTATIONS.</text>
+  <text class="s" x="400" y="316">One documented exception, on purpose.</text>
+
+  <!-- runners -->
+  <rect class="up" x="672" y="96" width="336" height="64" rx="6"/>
+  <text class="t" x="686" y="120">app/ — Swift SessionState</text>
+  <text class="s" x="686" y="138">upstream · ConformanceHarnessTests.swift</text>
+
+  <rect class="up" x="672" y="172" width="336" height="64" rx="6"/>
+  <text class="t" x="686" y="196">extension/ — the TS fold</text>
+  <text class="s" x="686" y="214">upstream · session/conformance.test.ts</text>
+
+  <rect class="fork" x="672" y="248" width="336" height="72" rx="6"/>
+  <text class="t" x="686" y="272">web-client/ — the browser fold</text>
+  <text class="f" x="686" y="290">NEW IN THIS FORK</text>
+  <text class="s" x="686" y="307">test/corpus.test.ts — all 25 run, skip list empty</text>
+
+  <path class="arw" d="M634,128 L672,128" marker-end="url(#b)"/>
+  <path class="arw" d="M634,204 L672,204" marker-end="url(#b)"/>
+  <path class="arwf" d="M634,284 L672,284" marker-end="url(#bt)"/>
+
+  <!-- capture tooling -->
+  <rect class="fork" x="32" y="360" width="976" height="100" rx="8"/>
+  <text class="t" x="48" y="386">Capture tooling — added by this fork</text>
+  <text class="f" x="48" y="408">Open the paired page with <tspan class="mono">&amp;capture=1</tspan> and call <tspan class="mono">__unbienDump("NNN")</tspan>: every inbound envelope downloads as JSONL. The tee is off unless the URL asks for it.</text>
+  <text class="f" x="48" y="426">Real scenarios carry capture.py and capture-steps.md — how to reproduce the capture, not just its output.</text>
+  <text class="f" x="48" y="444">capture-build.json pins the exact published build the goldens came from (integrity hash), and the corpus test fails if the pin drifts.</text>
+</svg>

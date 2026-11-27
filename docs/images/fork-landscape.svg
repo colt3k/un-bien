@@ -1,0 +1,132 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 660" role="img"
+     aria-label="The un-bien system: upstream pieces and fork-only pieces"
+     font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif">
+  <rect id="bg" x="0" y="0" width="100%" height="100%" fill="#ffffff"/>
+  <style>
+    .up   { fill:#eef1f5; stroke:#94a3b8; stroke-width:1.5 }
+    .fork { fill:#e7f6f1; stroke:#0f766e; stroke-width:1.8 }
+    .panel{ fill:#fbfcfe; stroke:#cbd5e1; stroke-width:1; stroke-dasharray:5 4 }
+    .t    { font-size:14px; fill:#0f172a; font-weight:600 }
+    .s    { font-size:12px; fill:#5b6b7f }
+    .h    { font-size:11px; fill:#334155; font-weight:700; letter-spacing:.08em }
+    .hf   { font-size:11px; fill:#0f766e; font-weight:700; letter-spacing:.06em }
+    .f    { font-size:11.5px; fill:#115e59 }
+    .ttl  { font-size:19px; fill:#0f172a; font-weight:700 }
+    .sub  { font-size:12.5px; fill:#64748b }
+    .lg   { font-size:12px; fill:#334155 }
+    .arw  { stroke:#64748b; stroke-width:1.6; fill:none }
+    .arwf { stroke:#0f766e; stroke-width:1.9; fill:none }
+    .lbl  { font-size:10px; fill:#64748b }
+  </style>
+
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#64748b"/>
+    </marker>
+    <marker id="at" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#0f766e"/>
+    </marker>
+  </defs>
+
+  <text class="ttl" x="32" y="34">The un-bien system: what upstream ships, and what this fork adds</text>
+  <text class="sub" x="32" y="56">fork point cdee234 (2026-11-16) · 151 commits ahead of upstream, 5 behind (measured 2026-11-25)</text>
+
+  <rect class="up" x="838" y="22" width="15" height="15" rx="3"/>
+  <text class="lg" x="860" y="34">upstream — georgeharker/un-bien</text>
+  <rect class="fork" x="838" y="45" width="15" height="15" rx="3"/>
+  <text class="lg" x="860" y="57">this fork — colt3k/un-bien</text>
+
+  <!-- panels -->
+  <rect class="panel" x="32" y="84" width="336" height="346" rx="8"/>
+  <text class="h" x="48" y="106">THE MACHINE</text>
+
+  <rect class="panel" x="400" y="84" width="216" height="346" rx="8"/>
+  <text class="h" x="416" y="106">THE RELAY</text>
+
+  <rect class="panel" x="648" y="84" width="440" height="346" rx="8"/>
+  <text class="h" x="664" y="106">CLIENT ENDS</text>
+
+  <!-- machine -->
+  <rect class="up" x="48" y="120" width="304" height="62" rx="6"/>
+  <text class="t" x="60" y="144">pi session + un-bien extension</text>
+  <text class="s" x="60" y="163">owns the session; the machine end of the wire</text>
+
+  <rect class="up" x="48" y="196" width="304" height="52" rx="6"/>
+  <text class="t" x="60" y="218">unbien-launcher daemon</text>
+  <text class="s" x="60" y="235">starts a pi session when none is running</text>
+
+  <path class="arw" d="M200,196 L200,186" marker-end="url(#a)"/>
+
+  <text class="hf" x="48" y="280">THIS FORK ADDS, MACHINE SIDE</text>
+  <text class="f" x="48" y="300">session_launch_dirs: pick the folder on the machine</text>
+  <text class="f" x="48" y="318">compaction start / end / fail + a pre-fold warning</text>
+  <text class="f" x="48" y="336">app_presence: stop streaming to an app that left</text>
+  <text class="f" x="48" y="354">lifecycle.log: why a session went idle</text>
+  <text class="f" x="48" y="372">/unbien settings: edit config inside pi</text>
+  <text class="f" x="48" y="390">install from the checkout, not from npm</text>
+  <text class="f" x="48" y="408">service env + pi's package manager honoured</text>
+
+  <!-- relay -->
+  <rect class="up" x="416" y="120" width="184" height="76" rx="6"/>
+  <text class="t" x="428" y="144">unbien-relay</text>
+  <text class="s" x="428" y="162">Rust, :3000</text>
+  <text class="s" x="428" y="179">routing pipe, no TLS</text>
+
+  <text class="hf" x="416" y="280">THIS FORK ADDS, RELAY SIDE</text>
+  <text class="f" x="416" y="300">relay.log: size cap + one</text>
+  <text class="f" x="416" y="318">rotated generation</text>
+  <text class="f" x="416" y="336">no doubled lines when the</text>
+  <text class="f" x="416" y="354">service redirects stdout</text>
+  <text class="f" x="416" y="366">drop warnings rate-limited:</text>
+  <text class="f" x="416" y="382">one a minute, not one a frame</text>
+  <text class="f" x="416" y="406">the browser end dials</text>
+  <text class="f" x="416" y="422">this same relay, over wss</text>
+
+  <!-- ends -->
+  <rect class="up" x="664" y="120" width="408" height="52" rx="6"/>
+  <text class="t" x="676" y="142">iOS / macOS SwiftUI app</text>
+  <text class="s" x="676" y="160">upstream — shipped on the App Store</text>
+
+  <rect class="up" x="664" y="184" width="408" height="52" rx="6"/>
+  <text class="t" x="676" y="206">unbien-cli — terminal client</text>
+  <text class="s" x="676" y="224">upstream — rendered with pi's own TUI parts</text>
+
+  <rect class="fork" x="664" y="248" width="408" height="168" rx="6"/>
+  <text class="t" x="676" y="272">web-client — a browser end</text>
+  <text class="hf" x="676" y="290">NEW IN THIS FORK · NO FRAMEWORK, NO NEW WIRE</text>
+  <text class="f" x="676" y="310">pair by pasted code, or a photographed QR</text>
+  <text class="f" x="676" y="328">the same transcript fold as the Swift app</text>
+  <text class="f" x="676" y="346">watch · steer · queue · abort · launch · end</text>
+  <text class="f" x="676" y="364">images in, resume on reload, unread counts</text>
+  <text class="f" x="676" y="382">446 tests; 25 corpus scenarios, no skips</text>
+  <text class="f" x="676" y="400">no tool-approval UI yet — the app still owns that</text>
+
+  <!-- links -->
+  <path class="arw" d="M374,151 L394,151" marker-start="url(#a)" marker-end="url(#a)"/>
+  <text class="lbl" x="384" y="142" text-anchor="middle">ws</text>
+  <path class="arw" d="M622,151 L642,151" marker-start="url(#a)" marker-end="url(#a)"/>
+  <text class="lbl" x="632" y="142" text-anchor="middle">wss</text>
+  <path class="arwf" d="M660,332 L624,332" marker-end="url(#at)"/>
+  <text class="lbl" x="642" y="324" text-anchor="middle">wss</text>
+
+  <!-- bottom band -->
+  <rect class="fork" x="32" y="452" width="520" height="178" rx="8"/>
+  <text class="t" x="48" y="478">contracts/ — one conformance corpus</text>
+  <text class="f" x="48" y="500">Wire frames in, one normalized expected.json out.</text>
+  <text class="f" x="48" y="518">Upstream had 10 scenarios; this fork has 25, and 9 of</text>
+  <text class="f" x="48" y="536">them are captures from real pi sessions, not authored.</text>
+  <text class="f" x="48" y="554">Three runners assert the SAME artifact: the Swift</text>
+  <text class="f" x="48" y="572">SessionState, the extension's TS fold, and the browser</text>
+  <text class="f" x="48" y="590">fold. A fourth client is a fourth runner — proven,</text>
+  <text class="f" x="48" y="608">not eyeballed. That is what makes the web end credible.</text>
+
+  <rect class="fork" x="568" y="452" width="520" height="178" rx="8"/>
+  <text class="t" x="584" y="478">scripts/ + INSTALL.md — run it from a clone</text>
+  <text class="f" x="584" y="500">setup-from-clone.sh — build, register this checkout</text>
+  <text class="f" x="584" y="518">with pi, install the relay as a service, install the</text>
+  <text class="f" x="584" y="536">launcher, serve the browser client.</text>
+  <text class="f" x="584" y="554">relay-service.sh — launchd / systemd-user, with the</text>
+  <text class="f" x="584" y="572">binary kept OUTSIDE the repo so cargo clean or a moved</text>
+  <text class="f" x="584" y="590">checkout cannot take the relay down silently.</text>
+  <text class="f" x="584" y="608">https.sh · revoke-peer.sh · guard-upstream.sh.</text>
+</svg>

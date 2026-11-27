@@ -94,12 +94,15 @@ tab, and the page full-reloads. Nothing is lost — the session lives on the rel
 and the transcript comes back — but it looks exactly like losing it, which is
 worth knowing before you debug a phone problem from a reload.
 
-Two things the script will not do:
+Three things the script will not do:
 
 - **Pair a device.** `/unbien pair` prints a single-use code inside a pi session;
   a script printing that code is a script deciding who gets a device.
 - **Choose your relay URL or launch directories.** Only you know which folders
   the phone may start sessions in.
+- **Turn on TLS.** `scripts/https.sh on` writes `tailscale serve` handlers, which
+  is a decision about your public edge, not a build step. The script prints the
+  pointer when it sees a tailnet — see **Serving over https** below.
 
 If `doctor` reports a copy of the extension installed outside this checkout,
 remove it (`npm uninstall -g @geohar/un-bien`). The install commands delegate to
@@ -142,6 +145,40 @@ restarting pi. Absent or `"*"` means **any folder is launchable**, which is the
 default; narrow it rather than relying on nothing being set. Whether launch is
 enabled at all is the per-folder `allow_remote_launch` flag — `dirs` narrows
 where within that.
+
+---
+
+## Serving over https (optional)
+
+Plain `http` is a supported end state, not a broken one: pairing is Ed25519 from
+`@noble`, not WebCrypto, so a non-secure origin does not lock you out. What `http`
+costs you is the live camera — `getUserMedia` is a secure-context API, so on plain
+`http` the QR viewfinder is not denied, it is **absent**, and pairing by scan
+becomes "photograph the terminal, upload the photo".
+
+On a tailnet box, https is one command:
+
+```sh
+./scripts/https.sh on        # 443 -> 4173 (page), 3443 -> 3000 (relay)
+./scripts/https.sh status    # what is served, and the URLs to paste
+./scripts/https.sh off       # removes exactly what `on` added — never `serve reset`
+```
+
+`tailscale serve` terminates TLS with the node's own `.ts.net` certificate, which
+every device already on the tailnet trusts: no warning page, no CA to install on a
+phone. Vite holds no key and the relay never learns TLS — termination is the edge's
+job.
+
+**The one thing to know:** an `https` page cannot open a `ws://` socket, so the
+client defaults the relay box to **`wss://<host>:3443`** rather than `:3000`. That
+number lives in two places that must agree — `scripts/https.sh` and
+`web-client/src/framing.ts` — and `scripts/https.test.sh` fails if they drift,
+because the failure is a client dialing a port nothing listens on.
+
+Off a tailnet, `./scripts/https.sh mkcert` is the fallback: a local CA cert plus a
+`socat` front. A self-signed cert on iOS means a profile install plus the
+Certificate Trust Settings toggle nobody finds, which is why that path is the
+fallback and not the default.
 
 ---
 
