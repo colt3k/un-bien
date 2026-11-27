@@ -293,6 +293,13 @@ export function isAndroidUserAgent(userAgent: string): boolean {
  * which is exactly when the pill is up, so over-reserving costs a gap that the
  * pill would otherwise be filling. Under-reserving puts the field under the
  * pill, which is the bug this exists to fix.
+ *
+ * Confirmed on that same tablet afterwards: `ios chrome pill reserve 72px`,
+ * `bottom limit 616px`, `painted 72px`, composer 549→616px, field bottom 600px
+ * — the capsule now sits in the strip below the field rather than across it.
+ * The number is still a rounded-up guess at the pill's height rather than a
+ * measurement of it, but it is now a guess that has been seen to clear the
+ * thing on the device it was read from.
  */
 export const IOS_CHROME_ACCESSORY_BAR_PX = 72
 
