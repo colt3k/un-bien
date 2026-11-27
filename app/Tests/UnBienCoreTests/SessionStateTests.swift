@@ -637,6 +637,84 @@ final class SessionStateTests: XCTestCase {
         XCTAssertEqual(markers.map(\.caption),
                        ["Context compacted (5100 tokens)", "Context compacted (9100 tokens)"])
     }
+
+    // A repeated character is NOT a redelivery. The fold used to skip a
+    // message_update identical to the previous one, on the theory that a genuine
+    // repeated word always changes `usage`. Measured on a real captured turn
+    // (contracts/conformance/scenarios/015): 29 of 228 adjacent message_update
+    // frames are byte-identical WITH usage present — so legitimate deltas were
+    // eaten and "443" rendered "43", "LL" rendered "L". A delta frame carries no
+    // id and no timestamp, so content equality cannot tell the two apart.
+    func testIdenticalAdjacentDeltasAllApply() {
+        var state = SessionState()
+        state.applyRPC(.object(["type": .string("turn_start")]))
+        let frame: JSONValue = .object([
+            "type": .string("message_update"),
+            "usage": .object(["output": .number(1)]),
+            "assistantMessageEvent": .object(["type": .string("text_delta"),
+                                              "delta": .string("4")]),
+        ])
+        state.applyRPC(frame)
+        state.applyRPC(frame)
+        state.applyRPC(frame)
+        guard case .assistant(let bubble)? = state.items.last else {
+            return XCTFail("no assistant bubble")
+        }
+        XCTAssertEqual(bubble.text, "444",
+                       "three byte-identical deltas are content, not two redeliveries")
+    }
+
+    // The net under the removed guard: a settled message_end carries the whole
+    // text, so when the streamed text is a subsequence of it, pi's version wins
+    // and a delta lost in flight is repaired at settle rather than staying lost.
+    func testSettleRepairsALostDelta() {
+        var state = SessionState()
+        state.applyRPC(.object(["type": .string("turn_start")]))
+        let delta = { (s: String) in
+            JSONValue.object(["type": .string("message_update"),
+                              "assistantMessageEvent": .object(["type": .string("text_delta"),
+                                                                "delta": .string(s)])])
+        }
+        state.applyRPC(delta("4"))
+        state.applyRPC(delta("3"))   // suppose the second "4" was lost in flight
+        state.applyRPC(.object(["type": .string("message_end"),
+                                "message": .object(["role": .string("assistant"),
+                                                    "content": .string("443")])]))
+        guard case .assistant(let bubble)? = state.items.last else {
+            return XCTFail("no assistant bubble")
+        }
+        XCTAssertEqual(bubble.text, "443", "settle reconciles the streamed row against pi's record")
+    }
+
+    // …but only when the streamed text is contained in order. If pi rewrote or
+    // retracted text, overwriting would lose what the user already watched.
+    func testSettleDoesNotClobberNonSubsequenceText() {
+        var state = SessionState()
+        state.applyRPC(.object(["type": .string("turn_start")]))
+        let delta = { (s: String) in
+            JSONValue.object(["type": .string("message_update"),
+                              "assistantMessageEvent": .object(["type": .string("text_delta"),
+                                                                "delta": .string(s)])])
+        }
+        state.applyRPC(delta("xyz"))
+        state.applyRPC(.object(["type": .string("message_end"),
+                                "message": .object(["role": .string("assistant"),
+                                                    "content": .string("443")])]))
+        guard case .assistant(let bubble)? = state.items.last else {
+            return XCTFail("no assistant bubble")
+        }
+        XCTAssertEqual(bubble.text, "xyz", "not a subsequence — keep what was streamed")
+    }
+
+    func testIsSubsequenceIsGraphemeBased() {
+        XCTAssertTrue(SessionState.isSubsequence("443", "443"))
+        XCTAssertTrue(SessionState.isSubsequence("43", "443"), "skipping forward is allowed")
+        XCTAssertFalse(SessionState.isSubsequence("444", "443"), "one 4 short is not a subsequence")
+        XCTAssertTrue(SessionState.isSubsequence("", "anything"), "empty is a subsequence of all")
+        // One emoji is ONE character on both sides, not two UTF-16 units.
+        XCTAssertTrue(SessionState.isSubsequence("a\u{1F600}b", "a\u{1F600}b"))
+        XCTAssertFalse(SessionState.isSubsequence("ba", "ab"), "order matters")
+    }
 }
 
 // MARK: - Entry-born provider errors ride log position (run 2026-09-17:
@@ -787,5 +865,4 @@ final class EntryBornErrorNoticeTests: XCTestCase {
             if case let .notice(n) = $0 { return n.code == "branch" } else { return false }
         }, "divergence flags a branch notice")
     }
-
 }

@@ -144,9 +144,6 @@ public struct SessionState: Equatable, Sendable {
     /// `appendCompaction` for what 023's real wire did to the idea of a content key.
     var unanchoredLiveCompactionIDs: [String] = []
     private var noticeSeq = 0
-    /// LAST message_update frame applied — full-frame delta dedup: identical
-    /// frames are redeliveries (a real event's usage.output increments).
-    private var lastMessageUpdateFrame: JSONValue?
     // rpc-envelope reduction state
     private var rpcTurn: String?
     private var rpcTurnSeq = 0
@@ -477,19 +474,18 @@ public struct SessionState: Equatable, Sendable {
                 liveArrivals += 1
             }
         case "message_update":
-            // FULL-FRAME DEDUP (user, 2026-09-18 — pi docs: message_update
-            // carries usage metrics): a REAL repeated-word event increments
-            // usage.output → its frame DIFFERS from the previous one →
-            // applies; a REDELIVERY is byte-identical including usage →
-            // skipped. The earlier (kind, contentIndex, delta) inner-event key
-            // could drop a genuine repeated word; the whole frame cannot.
-            // Mirrors message_end's identify guard for the delta plane (the
-            // transport's "never redelivers" assumption broke under
-            // overlapping reconnects — run 2026-09-18 "every chunk repeats").
-            if let last = lastMessageUpdateFrame, last == frame {
-                return   // redelivery — no fold, no arrival bump
-            }
-            lastMessageUpdateFrame = frame
+            // NO CONTENT DEDUP ON THE DELTA PLANE. The rule this replaced
+            // skipped a frame identical to the previous one, on the theory
+            // that a genuine repeated word always changes `usage`. Measured on
+            // a real captured turn (contracts/conformance/scenarios/015): 29 of
+            // 228 adjacent message_update pairs are BYTE-IDENTICAL, and `usage`
+            // is present on all of them. So the rule ate legitimate deltas —
+            // "443" rendered "43", "LL" rendered "L" — in proportion to how
+            // repetitive the text was.
+            // A delta frame carries no id and no timestamp, so content equality
+            // cannot tell a redelivery from a repetition: there is nothing to
+            // key on. The durable plane is unaffected either way, which is why
+            // a reload always looked fine.
             if applyRPCDelta(frame["assistantMessageEvent"]) { liveArrivals += 1 }
         case "tool_execution_start":
             if openToolCard(toolCallID: frame["toolCallId"]?.stringValue ?? "",
@@ -635,7 +631,8 @@ public struct SessionState: Equatable, Sendable {
                     // (turn isn't done until agent_settled). During a replay walk
                     // this branch is OFF: a replayed settled message is NOT the
                     // open live bubble — append it directly instead.
-                    if let rowID = settleOpenAssistant(images: images) {
+                    if let rowID = settleOpenAssistant(images: images,
+                                                       settledText: message?["content"]?.joinedText() ?? "") {
                         let idk = Self.identify(message)
                         identifyIndex[idk] = rowID
                         pendingRowIDs.insert(rowID)
@@ -942,14 +939,35 @@ public struct SessionState: Equatable, Sendable {
     /// `rekeyRow` swaps in the pi entry id when the delta lands). Returns the
     /// settled row's id (for the pending registration), nil if no open bubble.
     @discardableResult
-    private mutating func settleOpenAssistant(images: [WireImage]) -> String? {
+    private mutating func settleOpenAssistant(images: [WireImage], settledText: String) -> String? {
         guard let index = openAssistantIndex, case let .assistant(old) = items[index] else { return nil }
+        // Same net as the web fold. A settled message_end carries the whole
+        // text, so if the streamed text is a subsequence of it, pi's version
+        // wins: a delta lost in flight is repaired at settle instead of staying
+        // lost. Anything else (rewritten or retracted text) keeps the streamed
+        // text and the entry replay reconciles it later.
+        let text = settledText != "" && Self.isSubsequence(old.text, settledText)
+            ? settledText
+            : old.text
         items[index] = .assistant(AssistantBubble(id: old.id, inReplyTo: old.inReplyTo,
-                                                  text: old.text, streaming: false,
+                                                  text: text, streaming: false,
                                                   usage: old.usage,
                                                   images: images.isEmpty ? old.images : images,
                                                   replayStable: false))
         return items[index].id
+    }
+
+    /// True when every character of `small` appears in `big`, in order.
+    /// Grapheme clusters, so an emoji counts as one character either side.
+    static func isSubsequence(_ small: String, _ big: String) -> Bool {
+        var rest = big.makeIterator()
+        outer: for ch in small {
+            while let next = rest.next() {
+                if next == ch { continue outer }
+            }
+            return false
+        }
+        return true
     }
 
     /// Re-key a PENDING live row to its real pi ENTRY id (id-scheme v2: the
