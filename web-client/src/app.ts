@@ -69,11 +69,13 @@ import {
 } from "./history-status.js"
 import { parseInvite, type PairingInvite } from "./invite.js"
 import {
+  accessoryBarReservePx,
   bottomGapPx,
   bottomLimitPx,
   browserLabel,
   insetForLimitPx,
   isAndroidUserAgent,
+  isIOSChromeUserAgent,
   keyboardInsetPx,
   KEYBOARD_PROBE_RUNG_PX,
   KEYBOARD_PROBE_RUNGS,
@@ -843,6 +845,7 @@ export class App {
     rectSlack: number
     keyboardTop: number | null
     vk: VirtualKeyboardLike | null
+    pillReserve: number
   }): void {
     const probe = this.keyboardProbe
     const vv = window.visualViewport
@@ -878,6 +881,7 @@ export class App {
       fieldHeight: field.height,
       keyboardTop: facts.keyboardTop,
       focused: focused?.id || focused?.tagName || "(none)",
+      pillReserve: facts.pillReserve,
     }).join("\n")
   }
 
@@ -916,13 +920,22 @@ export class App {
     const rectSlack = isAndroidUserAgent(navigator.userAgent)
       ? ANDROID_RECT_SLACK_PX
       : 0
-    const bottomLimit = bottomLimitPx({
-      keyboardTop,
-      visualHeight: vv.height,
-      visualOffsetTop: vv.offsetTop,
-      slack,
-      rectSlack,
+    // Chrome on iPad floats an autofill pill — key, card, map pin — over the
+    // page and says nothing about it: `virtualKeyboard` is absent there, and
+    // the viewport does not move by a pixel when it appears. The line has to be
+    // raised by hand. See keyboard-inset.ts for the number and its error bar.
+    const pillReserve = accessoryBarReservePx({
+      isIOSChrome: isIOSChromeUserAgent(navigator.userAgent),
+      typing: this.someoneIsTyping(),
     })
+    const bottomLimit =
+      bottomLimitPx({
+        keyboardTop,
+        visualHeight: vv.height,
+        visualOffsetTop: vv.offsetTop,
+        slack,
+        rectSlack,
+      }) - pillReserve
     let inset = Math.max(
       claim,
       insetForLimitPx({
@@ -955,6 +968,7 @@ export class App {
         rectSlack,
         keyboardTop,
         vk,
+        pillReserve,
       })
     }
   }

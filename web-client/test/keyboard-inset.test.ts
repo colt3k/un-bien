@@ -2,12 +2,15 @@ import { describe, expect, it } from "vitest"
 import {
   ANDROID_KEYBOARD_SLACK_PX,
   ANDROID_RECT_SLACK_PX,
+  accessoryBarReservePx,
   bottomGapPx,
   bottomLimitPx,
   browserLabel,
   insetForLimitPx,
   DEFAULT_BOTTOM_GAP_PX,
   isAndroidUserAgent,
+  IOS_CHROME_ACCESSORY_BAR_PX,
+  isIOSChromeUserAgent,
   keyboardInsetPx,
   keyboardProbeLines,
   keyboardSlackPx,
@@ -395,6 +398,7 @@ describe("keyboardProbeLines", () => {
       fieldBottom: 473,
       keyboardTop: null,
       focused: "input",
+      pillReserve: 0,
     })
     expect(lines.join("\n")).toContain("virtualKeyboard overlays=n/a")
     expect(lines.join("\n")).toContain("secure context false")
@@ -434,6 +438,7 @@ describe("keyboardProbeLines", () => {
       fieldBottom: 493,
       keyboardTop: 510,
       focused: "input",
+      pillReserve: 0,
     })
     for (const line of lines) {
       expect(line.length).toBeLessThanOrEqual(56)
@@ -498,5 +503,54 @@ describe("liftForPokePx", () => {
     }
     expect(inset).toBe(411)
     expect(baseHeight - inset).toBe(bottomLimit)
+  })
+})
+
+describe("the iPad Chrome autofill pill", () => {
+  const ipadSafari =
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
+  const ipadChrome =
+    "Mozilla/5.0 (iPad; CPU OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/150.0.7871.113 Mobile/15E148 Safari/604.1"
+  const androidChrome =
+    "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/158.0 Mobile Safari/537.36"
+
+  it("is charged to Chrome on iOS and to nothing else", () => {
+    expect(isIOSChromeUserAgent(ipadChrome)).toBe(true)
+    // Safari on the same tablet draws no pill and must keep what it has.
+    expect(isIOSChromeUserAgent(ipadSafari)).toBe(false)
+    expect(isIOSChromeUserAgent(androidChrome)).toBe(false)
+  })
+
+  it("is charged only while someone is typing", () => {
+    // The pill arrives with a focused field and leaves with it, so the space it
+    // costs exists only in the case that space is clearing.
+    expect(accessoryBarReservePx({ isIOSChrome: true, typing: true })).toBe(
+      IOS_CHROME_ACCESSORY_BAR_PX,
+    )
+    expect(accessoryBarReservePx({ isIOSChrome: true, typing: false })).toBe(0)
+    expect(accessoryBarReservePx({ isIOSChrome: false, typing: true })).toBe(0)
+  })
+
+  it("lifts the field clear of the pill on the measured iPad numbers", () => {
+    // Read off the tablet's own panel: innerHeight 688, visualViewport 688,
+    // offsetTop 0, `virtualKeyboard overlays=n/a (none)`. Every built-in source
+    // says the keyboard claims nothing — `painted 0px` — and the pill landed on
+    // the field: composer 621→688, field bottom 672.
+    const layoutHeight = 688
+    const unreserved = bottomLimitPx({
+      keyboardTop: null,
+      visualHeight: 688,
+      visualOffsetTop: 0,
+      slack: 0,
+      rectSlack: 0,
+    })
+    expect(insetForLimitPx({ layoutHeight, bottomLimit: unreserved })).toBe(0)
+
+    const limit = unreserved - IOS_CHROME_ACCESSORY_BAR_PX
+    const inset = insetForLimitPx({ layoutHeight, bottomLimit: limit })
+    expect(inset).toBe(IOS_CHROME_ACCESSORY_BAR_PX)
+    // The composer's bottom edge, and with it the field, now ends above the
+    // pill's measured top (~632px on that screen).
+    expect(layoutHeight - inset).toBeLessThan(632)
   })
 })

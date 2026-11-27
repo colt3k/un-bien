@@ -272,6 +272,50 @@ export function isAndroidUserAgent(userAgent: string): boolean {
 }
 
 /**
+ * Chrome on iPad floats an autofill pill — key, card, map pin — over the page,
+ * and NOTHING about the page says it is there.
+ *
+ * Measured on an iPad (CriOS/150.0.7871.113) with the composer focused:
+ * `innerHeight 688px`, `dvh 688px`, `visualViewport 688px offsetTop 0px`, and
+ * `virtualKeyboard overlays=n/a (none)`. The VirtualKeyboard API is absent on
+ * CriOS, so the rectangle path is not available at all, and the viewport did
+ * not move by a single pixel — `painted 0px`, composer 621→688px, field bottom
+ * 672px, and the pill sitting right on top of the field being typed in.
+ *
+ * So there is nothing to measure. The pill's own edge is not exposed to the
+ * page, and the probe's ladder cannot bound it the way it bounds a keyboard:
+ * the pill is a centred capsule, not a full-width strip, so the rungs stay
+ * visible in the space beside it. The number below is read off a screenshot
+ * using the probe's own rung spacing (24px) as the ruler, which puts the pill's
+ * top roughly 56px above the bottom edge, good to perhaps ±10px.
+ *
+ * 72 rather than 56: the reserve applies only while a text field has focus,
+ * which is exactly when the pill is up, so over-reserving costs a gap that the
+ * pill would otherwise be filling. Under-reserving puts the field under the
+ * pill, which is the bug this exists to fix.
+ */
+export const IOS_CHROME_ACCESSORY_BAR_PX = 72
+
+/**
+ * Chrome on iOS/iPadOS. `CriOS` is the narrow signal: Safari on the same tablet
+ * draws no such pill and must keep the behaviour it has. The same kind of UA
+ * gate as `isAndroidUserAgent`, for the same reason — there is no capability
+ * signal for "this browser floats a control over the page".
+ */
+export function isIOSChromeUserAgent(userAgent: string): boolean {
+  return /\bCriOS\//.test(userAgent)
+}
+
+/** What that pill costs the layout right now: only while someone is typing,
+ *  because that is the only time the pill is on screen. */
+export function accessoryBarReservePx(f: {
+  isIOSChrome: boolean
+  typing: boolean
+}): number {
+  return f.isIOSChrome && f.typing ? IOS_CHROME_ACCESSORY_BAR_PX : 0
+}
+
+/**
  * Whether that floor is owed right now.
  *
  * `limitFromViewport` is the important condition: the API can be present and its
@@ -349,6 +393,8 @@ export function keyboardProbeLines(facts: {
   fieldHeight: number
   keyboardTop: number | null
   focused: string
+  /** What the iPad autofill pill is being charged for, 0 everywhere else. */
+  pillReserve: number
 }): string[] {
   const px = (n: number) => `${Math.round(n)}px`
   const claimed = keyboardInsetPx({
@@ -370,6 +416,7 @@ export function keyboardProbeLines(facts: {
     // one number the screenshot was taken to show. Each line here has to survive
     // a 360px-wide screen.
     `android slack ${px(facts.slack)}  rect slack ${px(facts.rectSlack)}`,
+    `ios chrome pill reserve ${px(facts.pillReserve)}`,
     `bottom limit ${px(facts.bottomLimit)}   viewport claim ${px(claimed)}   painted ${px(facts.inset)}`,
     // The number that answers "is it too tight?" without a phone in the room.
     `gap to keyboard ${
