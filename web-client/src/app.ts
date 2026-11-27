@@ -392,8 +392,19 @@ export function blockNodes(blocks: Block[]): Node[] {
         // as a single colour (`mdCodeBlock` — the green in its transcript).
         // Same split here, so an unknown fence is coloured rather than left flat.
         const tokens = tokenize(block.text, block.lang)
-        if (tokens === null) code.classList.add("md-code-plain")
-        else
+        if (tokens === null) {
+          // No recognised language: colour the block flat, but STILL SHOW IT.
+          // `tokenize` returns null for any fence without a language in FAMILY
+          // — which is most fences in chat — and this branch used to add the
+          // class and never insert the text, so every such block rendered as an
+          // EMPTY BOX. The parser was fine; markdown.test.ts asserts the block
+          // carries its text. Nothing covered the DOM step, so a whole code
+          // block could vanish from a message and the suite stayed green. Seen
+          // live: a canary line typed as a plain fence simply did not appear on
+          // a phone, and the empty <pre> was the only trace.
+          code.classList.add("md-code-plain")
+          code.textContent = block.text
+        } else
           for (const token of tokens)
             code.append(
               token.role === "plain"
