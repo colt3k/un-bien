@@ -89,6 +89,37 @@ export default defineConfig({
   // history call (app.ts, the `?fresh=1` hatch) rewrites the QUERY string — so
   // the fallback buys nothing and hides everything. `mpa` makes a missing
   // asset an honest 404.
+  plugins: [
+    {
+      // CONTENT-HASHED ASSETS ARE IMMUTABLE; index.html IS NOT.
+      // Vite's preview answers both with `Cache-Control: no-cache`, which means
+      // "revalidate every time". For `index-CHLD0zMU.js` that throws away a
+      // guarantee: the name IS the content, so those bytes can never change
+      // under that name. A phone on a tailnet pays a conditional round trip per
+      // asset on every visit before anything paints.
+      //
+      // Scoped to /assets/ on purpose. `preview.headers` would cover index.html
+      // too, and index.html is the one file that MUST stay revalidated — it is
+      // what names the new hashes. Caching it is how a client gets pinned to a
+      // build that no longer exists.
+      //
+      // Pairs with scripts/build-swap.sh: the swap carries the previous build's
+      // assets forward one generation, so an immutable cache cannot strand a tab
+      // still asking for old names.
+      name: "unbien-immutable-assets",
+      configurePreviewServer(server) {
+        server.middlewares.use((req, res, next) => {
+          if (typeof req.url === "string" && req.url.startsWith("/assets/")) {
+            res.setHeader(
+              "Cache-Control",
+              "public, max-age=31536000, immutable",
+            )
+          }
+          next()
+        })
+      },
+    },
+  ],
   appType: "mpa",
   build: {
     target: "es2022",
