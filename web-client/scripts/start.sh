@@ -151,7 +151,21 @@ doctor() {
 already_running() { # port
   if listening "$1"; then
     say "Already running on :$1 (pid $(listener_pid "$1")) — open http://localhost:$1"
-    say "Restart it with:  scripts/start.sh stop && scripts/start.sh ${MODE}"
+    if [[ "$MODE" == "preview" ]]; then
+      # Do NOT restart to pick up a new build. `vite preview` resolves the dist
+      # SYMLINK per request, so scripts/build-swap.sh is picked up by the server
+      # that is already running — proven: one long-lived process served two
+      # different builds with no restart. Restarting is the reflex people reach
+      # for, and it fixes nothing: an open tab's session rides the relay's
+      # WebSocket on :3000, not Vite. This branch used to offer ONLY the
+      # restart line, while `already_running` also exits before it would build —
+      # so the script removed the safe path and recommended the unsafe one, and
+      # a hand-run `vite build` then emptied dist/ under a live server.
+      say "Rebuild without restarting:  scripts/build-swap.sh    then refresh the tab"
+      say "Restart it with:             scripts/start.sh stop && scripts/start.sh ${MODE}"
+    else
+      say "Restart it with:  scripts/start.sh stop && scripts/start.sh ${MODE}"
+    fi
     exit 0
   fi
 }
